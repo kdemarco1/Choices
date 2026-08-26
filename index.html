@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hollow House</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div id="app">
+
+    <!-- Character creation screen -->
+    <section id="screen-create" class="screen">
+      <div class="frame">
+        <h1>Who's going in?</h1>
+        <p class="subtitle">Every stat you pick here will quietly gate what you can say and do later. Choose carefully — the house is listening.</p>
+
+        <label class="label" for="name-input">Name</label>
+        <input id="name-input" type="text" maxlength="20" placeholder="Enter a name" />
+
+        <label class="label">Class</label>
+        <div id="class-row" class="class-row"></div>
+
+        <label class="label">Portrait color</label>
+        <div id="color-row" class="color-row"></div>
+
+        <div class="preview-row">
+          <div id="preview-portrait" class="portrait"></div>
+          <div>
+            <div id="preview-name" class="preview-name">Unnamed traveler</div>
+            <div id="preview-class" class="preview-class"></div>
+          </div>
+        </div>
+
+        <button id="start-button" class="primary-button">Step inside</button>
+      </div>
+    </section>
+
+    <!-- Explore screen -->
+    <section id="screen-explore" class="screen hidden">
+      <div class="frame">
+        <div id="hud" class="hud"></div>
+
+        <div class="map-wrap">
+          <div id="map-grid" class="map-grid"></div>
+          <p class="hint">Move with arrow keys or WASD. Walk into C (caretaker) or G (groundskeeper) to talk.</p>
+        </div>
+
+        <div class="log-panel">
+          <div class="log-title">Log</div>
+          <div id="log-list"></div>
+        </div>
+
+        <div id="dialogue-overlay" class="overlay hidden">
+          <div class="dialogue-box">
+            <div id="dialogue-speaker" class="speaker"></div>
+            <div id="dialogue-text" class="dialogue-text"></div>
+            <div id="dialogue-choices" class="choice-list"></div>
+            <button id="dialogue-exit" class="exit-button">Step back (Esc)</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script src="data.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
