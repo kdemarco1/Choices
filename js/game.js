@@ -24,14 +24,12 @@ const keys = new Set();
 
 // Raycaster tuning
 const FOV = (66 * Math.PI) / 180;
-const NUM_RAYS = 220;
 const MAX_DEPTH = 9;
 const RAY_STEP = 0.02;
 const MOVE_SPEED = 0.045;
 const ROT_SPEED = 0.045; // used only for arrow-key fallback rotation
 const MOUSE_SENSITIVITY = 0.0022;
 const PITCH_SENSITIVITY = 0.6;
-const MAX_PITCH = 90; // pixels the horizon can shift up/down
 const PLAYER_RADIUS = 0.22;
 const INTERACT_DIST = 1.15;
 
@@ -203,8 +201,22 @@ function onCanvasMouseLeave() {
 
 const canvas = document.getElementById("viewport");
 const ctx = canvas.getContext("2d");
-const CW = canvas.width;
-const CH = canvas.height;
+let CW = 0;
+let CH = 0;
+let NUM_RAYS = 220;
+let MAX_PITCH = 90;
+
+function resizeCanvas() {
+  CW = canvas.width = window.innerWidth;
+  CH = canvas.height = window.innerHeight;
+  // More screen width earns more rays (sharper columns), capped for perf.
+  NUM_RAYS = Math.max(160, Math.min(480, Math.floor(CW / 3)));
+  // Keep the look-up/down range proportional to the taller/shorter window.
+  MAX_PITCH = CH * 0.35;
+}
+
+resizeCanvas();
+window.addEventListener("resize", resizeCanvas);
 
 canvas.addEventListener("mousemove", onCanvasMouseMove);
 canvas.addEventListener("mouseleave", onCanvasMouseLeave);

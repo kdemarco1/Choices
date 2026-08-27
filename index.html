@@ -12,7 +12,7 @@
 
     <!-- Title screen -->
     <section id="screen-title" class="screen">
-      <div class="frame frame-title">
+      <div class="center-panel">
         <h1 class="title-flicker">HOLLOW HOUSE</h1>
         <p class="subtitle">Something in Mara's letters stopped making sense a month ago. Tonight she goes to find out why.</p>
         <button id="title-start-button" class="primary-button">Start</button>
@@ -22,7 +22,7 @@
 
     <!-- Settings screen -->
     <section id="screen-settings" class="screen hidden">
-      <div class="frame">
+      <div class="center-panel">
         <h1>Settings</h1>
 
         <label class="label">Controls</label>
@@ -35,18 +35,16 @@
       </div>
     </section>
 
-    <!-- Explore screen (first-person raycast view) -->
+    <!-- Explore screen (full-bleed first-person raycast view) -->
     <section id="screen-explore" class="screen hidden">
-      <div class="frame">
-        <div id="hud" class="hud"></div>
+      <div class="game-frame">
+        <canvas id="viewport"></canvas>
 
-        <div class="viewport-wrap">
-          <canvas id="viewport" width="400" height="260"></canvas>
-          <div id="interact-prompt" class="interact-prompt hidden"></div>
-        </div>
-        <p class="hint">W/A/S/D to move and strafe. Move the mouse over the view to look around (up/down and left/right). Press E to interact.</p>
+        <div id="hud" class="hud hud-overlay"></div>
+        <div id="interact-prompt" class="interact-prompt hidden"></div>
+        <p class="hint hint-overlay">W/A/S/D to move and strafe. Move the mouse over the view to look around. Press E to interact.</p>
 
-        <div class="log-panel">
+        <div class="log-panel log-overlay">
           <div class="log-title">Log</div>
           <div id="log-list"></div>
         </div>

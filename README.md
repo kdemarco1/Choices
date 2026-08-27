@@ -51,26 +51,29 @@ automatically.
 Three screens, controlled by `state.phase` in `game.js`: `title` →
 `explore` (with an optional detour to `settings`).
 
-- **Title screen** — a flickering title, a one-line hook, and Start /
-  Settings. No character creation: you always play **Mara Voss**, a fixed
+- **Title / Settings screens** are centered content on a full-bleed dark
+  background — no boxed card, no border. The title flickers subtly via a
+  CSS keyframe animation.
+- **Explore screen is edge-to-edge.** The `<canvas>` fills the entire
+  browser window (`resizeCanvas()` in `game.js` sets its actual pixel
+  width/height to `window.innerWidth`/`innerHeight`, and re-runs on the
+  `resize` event so resizing the browser or rotating a device keeps it
+  full-bleed). The HUD, the interact prompt, and the log are drawn as
+  semi-transparent overlays positioned on top of the canvas rather than
+  stacked above/below it, so nothing steals space from the view.
+  - `NUM_RAYS` (ray/column count) and `MAX_PITCH` (how far you can look
+    up/down) both scale with the window's width and height, so the view
+    stays sharp and proportional at any window size rather than looking
+    chunky on a large monitor or over-rotated on a small one.
+- **No character creation**: you always play **Mara Voss**, a fixed
   protagonist defined once in `PROTAGONIST` (`data.js`), stats included.
-  That's deliberate — some dialogue checks will always pass for her and
-  others will always fail, which gives her a fixed identity rather than a
-  build you optimize.
-- **Settings screen** — currently just a controls reminder and one real
-  toggle (`showPrompts`, whether the `[E] ...` interact prompt appears).
-  Add more toggles here as `state.settings.*` and read them wherever
-  relevant, the same way `updateInteractPrompt()` checks `showPrompts`.
-- **Explore screen** is a **first-person raycaster** (the classic
-  Wolfenstein/DOOM technique), drawn to a `<canvas>` every animation frame —
-  not a 3D engine, just math: for each vertical strip of the screen, cast a
-  ray out from the player until it hits a wall, and draw a taller or
-  shorter wall slice depending on how far away that hit was.
+  Some dialogue checks will always pass for her and others will always
+  fail — a fixed identity rather than a build you optimize.
 
 Other details, unchanged from before:
 
-- **`state`** in `game.js` holds player position/angle, stats, flags, the
-  message log, settings, and which NPC (if any) you're talking to.
+- **`state`** in `game.js` holds player position/angle/pitch, stats, flags,
+  the message log, settings, and which NPC (if any) you're talking to.
 - **The map** (`MAP` in `data.js`) is a binary grid: `0` = open floor,
   `1` = wall. NPCs and the exit live in their own arrays (`NPCS`, `EXIT`)
   with floating-point coordinates, since movement is continuous.
