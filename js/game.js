@@ -12,7 +12,7 @@
 const state = {
   phase: "title", // "title" | "settings" | "explore"
   stats: null,
-  player: { ...PLAYER_START }, // x, y, angle (radians)
+  player: { ...PLAYER_START, pitch: 0 }, // x, y, angle (radians), pitch (px, look up/down)
   flags: {},
   log: [],
   activeNpc: null, // "caretaker" | "groundskeeper" | null
@@ -28,7 +28,10 @@ const NUM_RAYS = 220;
 const MAX_DEPTH = 9;
 const RAY_STEP = 0.02;
 const MOVE_SPEED = 0.045;
-const ROT_SPEED = 0.045;
+const ROT_SPEED = 0.045; // used only for arrow-key fallback rotation
+const MOUSE_SENSITIVITY = 0.0022;
+const PITCH_SENSITIVITY = 0.6;
+const MAX_PITCH = 90; // pixels the horizon can shift up/down
 const PLAYER_RADIUS = 0.22;
 const INTERACT_DIST = 1.15;
 
@@ -124,27 +127,76 @@ function isWall(x, y) {
 function tryMovePlayer() {
   if (state.activeNpc) return; // frozen mid-dialogue
 
+  // Arrow left/right still rotate, as a keyboard-only fallback for anyone
+  // not using mouse look (e.g. pointer lock isn't available/granted).
   let rot = 0;
-  if (keys.has("arrowleft") || keys.has("a")) rot -= ROT_SPEED;
-  if (keys.has("arrowright") || keys.has("d")) rot += ROT_SPEED;
+  if (keys.has("arrowleft")) rot -= ROT_SPEED;
+  if (keys.has("arrowright")) rot += ROT_SPEED;
   state.player.angle += rot;
 
-  let move = 0;
-  if (keys.has("arrowup") || keys.has("w")) move += MOVE_SPEED;
-  if (keys.has("arrowdown") || keys.has("s")) move -= MOVE_SPEED;
+  // WASD drives movement relative to facing direction: W/S forward/back,
+  // A/D strafe left/right. Arrow up/down also move forward/back.
+  let forward = 0;
+  if (keys.has("w") || keys.has("arrowup")) forward += 1;
+  if (keys.has("s") || keys.has("arrowdown")) forward -= 1;
 
-  if (move !== 0) {
-    const nx = state.player.x + Math.cos(state.player.angle) * move;
-    const ny = state.player.y + Math.sin(state.player.angle) * move;
+  let strafe = 0;
+  if (keys.has("d")) strafe += 1;
+  if (keys.has("a")) strafe -= 1;
+
+  if (forward !== 0 || strafe !== 0) {
+    const forwardAngle = state.player.angle;
+    const strafeAngle = state.player.angle + Math.PI / 2;
+
+    const dx = (Math.cos(forwardAngle) * forward + Math.cos(strafeAngle) * strafe) * MOVE_SPEED;
+    const dy = (Math.sin(forwardAngle) * forward + Math.sin(strafeAngle) * strafe) * MOVE_SPEED;
+
+    const nx = state.player.x + dx;
+    const ny = state.player.y + dy;
     // Resolve X and Y separately so the player can slide along walls
     // instead of sticking when moving diagonally into a corner.
-    if (!isWall(nx + Math.sign(move) * PLAYER_RADIUS * Math.cos(state.player.angle), state.player.y)) {
+    if (!isWall(nx + Math.sign(dx || 1) * PLAYER_RADIUS, state.player.y)) {
       state.player.x = nx;
     }
-    if (!isWall(state.player.x, ny + Math.sign(move) * PLAYER_RADIUS * Math.sin(state.player.angle))) {
+    if (!isWall(state.player.x, ny + Math.sign(dy || 1) * PLAYER_RADIUS)) {
       state.player.y = ny;
     }
   }
+}
+
+// ---- mouse look (hover-tracked, no pointer lock) -------------------------------
+// The cursor stays free the whole time — it never gets captured — so the
+// player can always click dialogue choices. Rotation is driven by the
+// change in cursor position between mousemove events while the cursor is
+// over the viewport, reset whenever the cursor leaves it.
+
+let lastMouseX = null;
+let lastMouseY = null;
+
+function onCanvasMouseMove(e) {
+  if (state.phase !== "explore" || state.activeNpc) {
+    lastMouseX = null;
+    lastMouseY = null;
+    return;
+  }
+  if (lastMouseX !== null) {
+    const deltaX = e.clientX - lastMouseX;
+    state.player.angle += deltaX * MOUSE_SENSITIVITY;
+  }
+  if (lastMouseY !== null) {
+    const deltaY = e.clientY - lastMouseY;
+    // Moving the mouse up (deltaY negative) looks up, which shifts the
+    // horizon line down on screen — hence the sign flip.
+    state.player.pitch -= deltaY * PITCH_SENSITIVITY;
+    state.player.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, state.player.pitch));
+  }
+  lastMouseX = e.clientX;
+  lastMouseY = e.clientY;
+}
+
+function onCanvasMouseLeave() {
+  lastMouseX = null;
+  lastMouseY = null;
 }
 
 // ---- raycasting render --------------------------------------------------------
@@ -153,6 +205,9 @@ const canvas = document.getElementById("viewport");
 const ctx = canvas.getContext("2d");
 const CW = canvas.width;
 const CH = canvas.height;
+
+canvas.addEventListener("mousemove", onCanvasMouseMove);
+canvas.addEventListener("mouseleave", onCanvasMouseLeave);
 
 function castRay(angle) {
   const cos = Math.cos(angle);
@@ -168,11 +223,15 @@ function castRay(angle) {
 }
 
 function drawScene() {
-  // Ceiling and floor
+  const pitch = state.player.pitch;
+  const horizon = CH / 2 + pitch;
+
+  // Ceiling and floor — the horizon line shifts with pitch so looking up
+  // reveals more ceiling and looking down reveals more floor.
   ctx.fillStyle = "#0b0a0d";
-  ctx.fillRect(0, 0, CW, CH / 2);
+  ctx.fillRect(0, 0, CW, horizon);
   ctx.fillStyle = "#171310";
-  ctx.fillRect(0, CH / 2, CW, CH / 2);
+  ctx.fillRect(0, horizon, CW, CH - horizon);
 
   const colWidth = CW / NUM_RAYS;
   const zbuffer = new Array(NUM_RAYS);
@@ -187,7 +246,7 @@ function drawScene() {
     const brightness = Math.max(0, 1 - correctedDist / MAX_DEPTH);
     const shade = Math.floor(40 + brightness * 70);
     ctx.fillStyle = `rgb(${shade}, ${Math.floor(shade * 0.9)}, ${Math.floor(shade * 0.85)})`;
-    ctx.fillRect(i * colWidth, (CH - wallH) / 2, colWidth + 1, wallH);
+    ctx.fillRect(i * colWidth, (CH - wallH) / 2 + pitch, colWidth + 1, wallH);
   }
 
   drawSprites(zbuffer, colWidth);
@@ -195,6 +254,7 @@ function drawScene() {
 }
 
 function drawSprites(zbuffer, colWidth) {
+  const pitch = state.player.pitch;
   const sprites = [...NPCS, { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true }];
 
   sprites.forEach((sprite) => {
@@ -215,7 +275,7 @@ function drawSprites(zbuffer, colWidth) {
     const brightness = Math.max(0.15, 1 - dist / MAX_DEPTH);
     ctx.globalAlpha = brightness;
     ctx.fillStyle = sprite.color;
-    ctx.fillRect(screenX - size / 4, (CH - size) / 2, size / 2, size);
+    ctx.fillRect(screenX - size / 4, (CH - size) / 2 + pitch, size / 2, size);
     ctx.globalAlpha = 1;
   });
 }

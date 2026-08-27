@@ -325,3 +325,7 @@ h1 {
   border-color: #8a1f1f;
   color: #8a1f1f;
 }
+
+#viewport {
+  cursor: crosshair;
+}

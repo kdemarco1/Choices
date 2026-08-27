@@ -74,9 +74,23 @@ Other details, unchanged from before:
 - **The map** (`MAP` in `data.js`) is a binary grid: `0` = open floor,
   `1` = wall. NPCs and the exit live in their own arrays (`NPCS`, `EXIT`)
   with floating-point coordinates, since movement is continuous.
-- **Movement**: W/S (or ↑/↓) move forward/back; A/D (or ←/→) rotate.
-  Collision is checked separately on the X and Y axes so you slide along
-  walls instead of sticking in corners.
+- **Movement**: WASD moves relative to where you're facing — W/S forward
+  and back, A/D strafe left and right. Arrow up/down also move forward and
+  back, and arrow left/right rotate, as a keyboard-only fallback.
+- **Mouse look never captures the cursor.** While the mouse is hovering
+  over the viewport, moving it rotates the camera left/right and shifts the
+  horizon up/down for vertical look — both driven by comparing consecutive
+  `clientX`/`clientY` positions in `onCanvasMouseMove` (`game.js`), reset
+  whenever the cursor leaves the canvas. Vertical look is implemented the
+  classic 2.5D-raycaster way: there's no real pitch rotation, the horizon
+  line and every wall/sprite slice just shift up or down together
+  (`state.player.pitch`, clamped by `MAX_PITCH`) to fake the effect. The
+  cursor stays completely free the whole time, so clicking dialogue choices
+  always works normally. The trade-off versus pointer lock: once the
+  cursor hits the edge of the browser window, you'll need to move it back
+  before continuing to look further — there's no infinite scroll.
+- Collision is checked separately on the X and Y axes so you slide along
+  walls instead of sticking in corners, even while strafing diagonally.
 - **Interaction is proximity-based**: get within range of an NPC or the
   exit and (if the setting is on) a `[E] ...` prompt appears; pressing E
   triggers it. See `nearestInteractable()` in `game.js`.
@@ -101,8 +115,10 @@ Other details, unchanged from before:
    flickering) at high values.
 4. **Sound design** — the Web Audio API can add ambient creaks, stingers on
    jump-scare moments, or footsteps synced to movement.
-5. **Mouse look** — swap A/D-to-rotate for `pointer lock` + mouse movement
-   for a more modern FPS feel.
+5. **Pointer lock** — the mouse-look ceiling at the browser window's edge
+   is the main limitation of the current hover-based approach. Pointer lock
+   removes that limit at the cost of capturing the cursor, which would need
+   to be released before players can click dialogue choices.
 6. **Inventory / items** that unlock new dialogue options (a key, a journal
    page, a photograph).
 7. **Save/load** using `localStorage`, since the state object is already
