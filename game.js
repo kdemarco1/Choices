@@ -1,23 +1,35 @@
 // ---------------------------------------------------------------------------
 // GAME LOGIC
-// Plain JS, no build step needed — open index.html directly or serve the
-// folder (GitHub Pages works great). State lives in one object and every
-// screen re-renders from it, so it's easy to reason about and to add a
-// save/load system later (just JSON.stringify(state)).
+// Plain JS, no build step needed. Two parts:
+//   1. The character-creation screen (DOM-based, same as before).
+//   2. A first-person raycaster for exploring the manor, drawn to <canvas>.
+// State lives in one object; the render loop reads from it every frame.
 // ---------------------------------------------------------------------------
 
 const state = {
   phase: "create", // "create" | "explore"
   name: "",
-  classId: "warrior",
+  classId: "skeptic",
   color: PORTRAIT_COLORS[0],
   stats: null,
-  player: { ...PLAYER_START },
+  player: { ...PLAYER_START }, // x, y, angle (radians)
   flags: {},
   log: [],
-  activeNpc: null, // "elder" | "guard" | null
+  activeNpc: null, // "caretaker" | "groundskeeper" | null
   dialogueNode: "start",
 };
+
+const keys = new Set();
+
+// Raycaster tuning
+const FOV = (66 * Math.PI) / 180;
+const NUM_RAYS = 220;
+const MAX_DEPTH = 9;
+const RAY_STEP = 0.02;
+const MOVE_SPEED = 0.045;
+const ROT_SPEED = 0.045;
+const PLAYER_RADIUS = 0.22;
+const INTERACT_DIST = 1.15;
 
 function addLog(entry) {
   state.log.unshift(entry);
@@ -78,10 +90,11 @@ document.getElementById("start-button").addEventListener("click", () => {
   document.getElementById("screen-create").classList.add("hidden");
   document.getElementById("screen-explore").classList.remove("hidden");
   addLog(`${state.name || "The visitor"}, ${cls.name}, steps through the front door of the manor.`);
-  renderExploreScreen();
+  renderHud();
+  requestAnimationFrame(gameLoop);
 });
 
-// ---- explore screen --------------------------------------------------------
+// ---- HUD / log --------------------------------------------------------------
 
 function renderHud() {
   const hud = document.getElementById("hud");
@@ -92,33 +105,6 @@ function renderHud() {
       <div class="stat-line">NRV ${state.stats.nerve} · INS ${state.stats.insight} · RES ${state.stats.resolve}</div>
     </div>
   `;
-}
-
-function renderMap() {
-  const grid = document.getElementById("map-grid");
-  grid.style.gridTemplateColumns = `repeat(${GRID_SIZE}, 34px)`;
-  grid.style.gridTemplateRows = `repeat(${GRID_SIZE}, 34px)`;
-  grid.innerHTML = "";
-
-  MAP.forEach((row, y) => {
-    row.forEach((tile, x) => {
-      const div = document.createElement("div");
-      const isPlayer = state.player.x === x && state.player.y === y;
-      let classes = "tile";
-      let content = "";
-      if (tile === 1) classes += " wall";
-      if (tile === 2) content = "C";
-      if (tile === 3) content = "G";
-      if (tile === 4) classes += " exit";
-      if (isPlayer) {
-        classes += " player";
-        content = "@";
-      }
-      div.className = classes;
-      div.textContent = content;
-      grid.appendChild(div);
-    });
-  });
 }
 
 function renderLog() {
@@ -139,56 +125,224 @@ function renderLog() {
   });
 }
 
-function renderExploreScreen() {
-  renderHud();
-  renderMap();
-  renderLog();
+// ---- collision + movement ---------------------------------------------------
+
+function isWall(x, y) {
+  const col = Math.floor(x);
+  const row = Math.floor(y);
+  if (row < 0 || row >= MAP_ROWS || col < 0 || col >= MAP_COLS) return true;
+  return MAP[row][col] === 1;
 }
 
-// ---- movement --------------------------------------------------------------
+function tryMovePlayer(dt) {
+  if (state.activeNpc) return; // frozen mid-dialogue
 
-function tryMove(dx, dy) {
-  if (state.activeNpc) return; // no movement mid-dialogue
-  const nx = state.player.x + dx;
-  const ny = state.player.y + dy;
-  const tile = MAP[ny] ? MAP[ny][nx] : undefined;
-  if (tile === undefined || tile === 1) return;
+  let rot = 0;
+  if (keys.has("arrowleft") || keys.has("a")) rot -= ROT_SPEED;
+  if (keys.has("arrowright") || keys.has("d")) rot += ROT_SPEED;
+  state.player.angle += rot;
 
-  if (tile === 2) {
-    openDialogue("caretaker");
+  let move = 0;
+  if (keys.has("arrowup") || keys.has("w")) move += MOVE_SPEED;
+  if (keys.has("arrowdown") || keys.has("s")) move -= MOVE_SPEED;
+
+  if (move !== 0) {
+    const nx = state.player.x + Math.cos(state.player.angle) * move;
+    const ny = state.player.y + Math.sin(state.player.angle) * move;
+    // Resolve X and Y separately so the player can slide along walls
+    // instead of sticking when moving diagonally into a corner.
+    if (!isWall(nx + Math.sign(move) * PLAYER_RADIUS * Math.cos(state.player.angle), state.player.y)) {
+      state.player.x = nx;
+    }
+    if (!isWall(state.player.x, ny + Math.sign(move) * PLAYER_RADIUS * Math.sin(state.player.angle))) {
+      state.player.y = ny;
+    }
+  }
+}
+
+// ---- raycasting render --------------------------------------------------------
+
+const canvas = document.getElementById("viewport");
+const ctx = canvas.getContext("2d");
+const CW = canvas.width;
+const CH = canvas.height;
+
+const minimap = document.getElementById("minimap");
+const mctx = minimap.getContext("2d");
+
+function castRay(angle) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  let dist = 0;
+  while (dist < MAX_DEPTH) {
+    dist += RAY_STEP;
+    const testX = state.player.x + cos * dist;
+    const testY = state.player.y + sin * dist;
+    if (isWall(testX, testY)) break;
+  }
+  return Math.min(dist, MAX_DEPTH);
+}
+
+function drawScene() {
+  // Ceiling and floor
+  ctx.fillStyle = "#0b0a0d";
+  ctx.fillRect(0, 0, CW, CH / 2);
+  ctx.fillStyle = "#171310";
+  ctx.fillRect(0, CH / 2, CW, CH / 2);
+
+  const colWidth = CW / NUM_RAYS;
+  const zbuffer = new Array(NUM_RAYS);
+
+  for (let i = 0; i < NUM_RAYS; i++) {
+    const rayAngle = state.player.angle - FOV / 2 + (i / NUM_RAYS) * FOV;
+    const rawDist = castRay(rayAngle);
+    const correctedDist = rawDist * Math.cos(rayAngle - state.player.angle);
+    zbuffer[i] = correctedDist;
+
+    const wallH = Math.min(CH, CH / correctedDist);
+    const brightness = Math.max(0, 1 - correctedDist / MAX_DEPTH);
+    const shade = Math.floor(40 + brightness * 70);
+    ctx.fillStyle = `rgb(${shade}, ${Math.floor(shade * 0.9)}, ${Math.floor(shade * 0.85)})`;
+    ctx.fillRect(i * colWidth, (CH - wallH) / 2, colWidth + 1, wallH);
+  }
+
+  drawSprites(zbuffer, colWidth);
+  drawMinimap();
+  updateInteractPrompt();
+}
+
+function drawSprites(zbuffer, colWidth) {
+  const sprites = [...NPCS, { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true }];
+
+  sprites.forEach((sprite) => {
+    const dx = sprite.x - state.player.x;
+    const dy = sprite.y - state.player.y;
+    const dist = Math.hypot(dx, dy);
+    let angleToSprite = Math.atan2(dy, dx) - state.player.angle;
+    // normalize to [-PI, PI]
+    angleToSprite = Math.atan2(Math.sin(angleToSprite), Math.cos(angleToSprite));
+
+    if (Math.abs(angleToSprite) > FOV / 2 + 0.2) return; // outside view cone
+
+    const screenX = (0.5 + angleToSprite / FOV) * CW;
+    const col = Math.max(0, Math.min(NUM_RAYS - 1, Math.floor(screenX / colWidth)));
+    if (dist > zbuffer[col]) return; // hidden behind a wall
+
+    const size = Math.min(CH, CH / dist) * (sprite.isExit ? 0.5 : 0.75);
+    const brightness = Math.max(0.15, 1 - dist / MAX_DEPTH);
+    ctx.globalAlpha = brightness;
+    ctx.fillStyle = sprite.color;
+    ctx.fillRect(screenX - size / 4, (CH - size) / 2, size / 2, size);
+    ctx.globalAlpha = 1;
+  });
+}
+
+function drawMinimap() {
+  const scale = minimap.width / MAP_COLS;
+  mctx.clearRect(0, 0, minimap.width, minimap.height);
+  for (let row = 0; row < MAP_ROWS; row++) {
+    for (let col = 0; col < MAP_COLS; col++) {
+      mctx.fillStyle = MAP[row][col] === 1 ? "#0b0a0d" : "#2c2528";
+      mctx.fillRect(col * scale, row * scale, scale, scale);
+    }
+  }
+  NPCS.forEach((npc) => {
+    mctx.fillStyle = npc.color;
+    mctx.fillRect(npc.x * scale - 2, npc.y * scale - 2, 4, 4);
+  });
+  mctx.fillStyle = "#8a1f1f";
+  mctx.fillRect(EXIT.x * scale - 2, EXIT.y * scale - 2, 4, 4);
+
+  // player marker + facing direction
+  mctx.fillStyle = "#d8d3c4";
+  mctx.beginPath();
+  mctx.arc(state.player.x * scale, state.player.y * scale, 3, 0, Math.PI * 2);
+  mctx.fill();
+  mctx.strokeStyle = "#d8d3c4";
+  mctx.beginPath();
+  mctx.moveTo(state.player.x * scale, state.player.y * scale);
+  mctx.lineTo(
+    state.player.x * scale + Math.cos(state.player.angle) * 8,
+    state.player.y * scale + Math.sin(state.player.angle) * 8
+  );
+  mctx.stroke();
+}
+
+// ---- interaction (proximity + "E") -------------------------------------------
+
+function nearestInteractable() {
+  let closest = null;
+  let closestDist = INTERACT_DIST;
+
+  NPCS.forEach((npc) => {
+    const d = Math.hypot(npc.x - state.player.x, npc.y - state.player.y);
+    if (d < closestDist) {
+      closestDist = d;
+      closest = { type: "npc", id: npc.id, label: `Talk to the ${capitalize(npc.id)}` };
+    }
+  });
+
+  const exitDist = Math.hypot(EXIT.x - state.player.x, EXIT.y - state.player.y);
+  if (exitDist < closestDist) {
+    closest = {
+      type: "exit",
+      label: state.flags.cellarOpen ? "Descend into the cellar" : "The cellar door is locked",
+    };
+  }
+
+  return closest;
+}
+
+function capitalize(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function updateInteractPrompt() {
+  const prompt = document.getElementById("interact-prompt");
+  if (state.activeNpc) {
+    prompt.classList.add("hidden");
     return;
   }
-  if (tile === 3) {
-    openDialogue("groundskeeper");
+  const target = nearestInteractable();
+  if (!target) {
+    prompt.classList.add("hidden");
     return;
   }
-  if (tile === 4) {
+  prompt.textContent = `[E] ${target.label}`;
+  prompt.classList.remove("hidden");
+}
+
+function handleInteract() {
+  if (state.activeNpc) return;
+  const target = nearestInteractable();
+  if (!target) return;
+
+  if (target.type === "npc") {
+    openDialogue(target.id);
+  } else if (target.type === "exit") {
     if (state.flags.cellarOpen) {
       addLog("The cellar door creaks open onto darkness — more to explore beyond this prototype.");
     } else {
       addLog("The cellar door is locked tight. Someone here must have a key, or a reason to open it.");
     }
   }
-
-  state.player = { x: nx, y: ny };
-  renderMap();
 }
+
+// ---- keyboard input -----------------------------------------------------------
 
 window.addEventListener("keydown", (e) => {
   if (state.phase !== "explore") return;
-  const moves = {
-    ArrowUp: [0, -1], w: [0, -1], W: [0, -1],
-    ArrowDown: [0, 1], s: [0, 1], S: [0, 1],
-    ArrowLeft: [-1, 0], a: [-1, 0], A: [-1, 0],
-    ArrowRight: [1, 0], d: [1, 0], D: [1, 0],
-  };
-  if (moves[e.key]) {
+  const key = e.key.toLowerCase();
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
     e.preventDefault();
-    tryMove(moves[e.key][0], moves[e.key][1]);
+    keys.add(key);
   }
-  if (e.key === "Escape" && state.activeNpc) {
-    closeDialogue();
-  }
+  if (key === "e") handleInteract();
+  if (key === "escape" && state.activeNpc) closeDialogue();
+});
+
+window.addEventListener("keyup", (e) => {
+  keys.delete(e.key.toLowerCase());
 });
 
 // ---- dialogue ----------------------------------------------------------------
@@ -256,6 +410,16 @@ function chooseDialogueOption(choice) {
 }
 
 document.getElementById("dialogue-exit").addEventListener("click", closeDialogue);
+
+// ---- main loop -----------------------------------------------------------------
+
+function gameLoop() {
+  tryMovePlayer();
+  drawScene();
+  if (state.phase === "explore") {
+    requestAnimationFrame(gameLoop);
+  }
+}
 
 // ---- boot --------------------------------------------------------------------
 

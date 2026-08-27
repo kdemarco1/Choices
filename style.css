@@ -195,37 +195,46 @@ h1 {
   align-items: center;
 }
 
-.map-grid {
-  display: grid;
-  gap: 2px;
-}
-
-.tile {
-  width: 34px;
-  height: 34px;
+.viewport-wrap {
+  position: relative;
   display: flex;
-  align-items: center;
   justify-content: center;
-  border-radius: 2px;
-  font-size: 13px;
-  font-weight: bold;
-  font-family: "Courier New", monospace;
-  color: #6b6259;
-  background: #1a1619;
 }
 
-.tile.wall {
+#viewport {
+  width: 100%;
+  max-width: 400px;
+  border: 1px solid #2c2528;
+  border-radius: 3px;
+  display: block;
   background: #0b0a0d;
 }
 
-.tile.exit {
-  background: #2a1414;
-  color: #8a1f1f;
+#minimap {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 90px;
+  height: 90px;
+  border: 1px solid #2c2528;
+  border-radius: 3px;
+  opacity: 0.85;
+  background: rgba(11, 10, 13, 0.7);
 }
 
-.tile.player {
-  background: #d8d3c4;
-  color: #0b0a0d;
+.interact-prompt {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(11, 10, 13, 0.85);
+  border: 1px solid #8a1f1f;
+  color: #d8d3c4;
+  font-size: 12px;
+  font-family: "Courier New", monospace;
+  padding: 6px 12px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
 }
 
 .hint {

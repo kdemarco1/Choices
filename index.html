@@ -37,15 +37,17 @@
       </div>
     </section>
 
-    <!-- Explore screen -->
+    <!-- Explore screen (first-person raycast view) -->
     <section id="screen-explore" class="screen hidden">
       <div class="frame">
         <div id="hud" class="hud"></div>
 
-        <div class="map-wrap">
-          <div id="map-grid" class="map-grid"></div>
-          <p class="hint">Move with arrow keys or WASD. Walk into C (caretaker) or G (groundskeeper) to talk.</p>
+        <div class="viewport-wrap">
+          <canvas id="viewport" width="400" height="260"></canvas>
+          <canvas id="minimap" width="90" height="90"></canvas>
+          <div id="interact-prompt" class="interact-prompt hidden"></div>
         </div>
+        <p class="hint">W/S or ↑/↓ to move. A/D or ←/→ to turn. Press E to interact.</p>
 
         <div class="log-panel">
           <div class="log-title">Log</div>

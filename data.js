@@ -3,9 +3,35 @@
 // Keep content (classes, map layout, dialogue trees) separate from game
 // logic (game.js). Add new NPCs, rooms, and stat checks here without
 // touching how the game runs.
+//
+// MAP is a binary grid for the raycaster: 0 = open floor, 1 = wall.
+// NPCS and the EXIT are placed at floating-point coordinates inside that
+// grid (e.g. x: 7.5 means "the middle of column 7").
 // ---------------------------------------------------------------------------
 
-const GRID_SIZE = 9;
+const MAP = [
+  [1, 1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 1, 1, 0, 1, 1, 0, 1],
+  [1, 0, 1, 0, 0, 0, 1, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 1, 1, 0, 1, 0, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1],
+];
+
+const MAP_ROWS = MAP.length;
+const MAP_COLS = MAP[0].length;
+
+const PLAYER_START = { x: 1.5, y: 1.5, angle: 0 };
+
+const NPCS = [
+  { id: "caretaker", x: 7.5, y: 1.5, color: "#8c8478", label: "C" },
+  { id: "groundskeeper", x: 1.5, y: 6.5, color: "#5c6b52", label: "G" },
+];
+
+const EXIT = { x: 7.5, y: 6.5 };
 
 const CLASSES = [
   { id: "skeptic", name: "The Skeptic", tagline: "Doesn't believe in ghosts. Yet.", stats: { nerve: 5, insight: 2, resolve: 2 } },
@@ -14,21 +40,6 @@ const CLASSES = [
 ];
 
 const PORTRAIT_COLORS = ["#8a1f1f", "#5c6b52", "#6b6259", "#3a3a42", "#9c8b6f"];
-
-// Map legend: 0 floor, 1 wall, 2 NPC "caretaker", 3 NPC "groundskeeper", 4 cellar door
-const MAP = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 2, 1],
-  [1, 0, 1, 1, 0, 1, 1, 0, 1],
-  [1, 0, 1, 0, 0, 0, 1, 0, 1],
-  [1, 0, 0, 0, 1, 0, 0, 0, 1],
-  [1, 1, 1, 0, 1, 0, 1, 1, 1],
-  [1, 3, 0, 0, 0, 0, 0, 4, 1],
-  [1, 0, 0, 0, 1, 0, 0, 0, 1],
-  [1, 1, 1, 1, 1, 1, 1, 1, 1],
-];
-
-const PLAYER_START = { x: 1, y: 1 };
 
 // Dialogue trees keyed by NPC id. Each node has text and a list of choices.
 // A choice may require a stat threshold ("check"), may require a flag set
