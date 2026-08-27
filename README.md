@@ -48,46 +48,54 @@ automatically.
 
 ## How the game works
 
-The explore screen is a **first-person raycaster** (the classic
-Wolfenstein/DOOM technique), drawn to a `<canvas>` every animation frame —
-not a 3D engine, just math: for each vertical strip of the screen, cast a
-ray out from the player until it hits a wall, and draw a taller or shorter
-wall slice depending on how far away that hit was.
+Three screens, controlled by `state.phase` in `game.js`: `title` →
+`explore` (with an optional detour to `settings`).
 
-- **`state`** in `game.js` holds everything: player position/angle, stats,
-  flags, the message log, and which NPC (if any) you're talking to. It's a
-  natural place to hook up save/load later (`JSON.stringify(state)` into
-  `localStorage`, or a downloadable save file).
-- **The map** (`MAP` in `data.js`) is now a plain binary grid: `0` = open
-  floor, `1` = wall. NPCs and the exit live in their own arrays (`NPCS`,
-  `EXIT`) with floating-point coordinates, since movement is continuous
-  rather than tile-by-tile.
-- **Movement**: W/S (or ↑/↓) move forward/back along the direction you're
-  facing; A/D (or ←/→) rotate. Collision is checked separately on the X and
-  Y axes so you slide along walls instead of sticking in corners.
+- **Title screen** — a flickering title, a one-line hook, and Start /
+  Settings. No character creation: you always play **Mara Voss**, a fixed
+  protagonist defined once in `PROTAGONIST` (`data.js`), stats included.
+  That's deliberate — some dialogue checks will always pass for her and
+  others will always fail, which gives her a fixed identity rather than a
+  build you optimize.
+- **Settings screen** — currently just a controls reminder and one real
+  toggle (`showPrompts`, whether the `[E] ...` interact prompt appears).
+  Add more toggles here as `state.settings.*` and read them wherever
+  relevant, the same way `updateInteractPrompt()` checks `showPrompts`.
+- **Explore screen** is a **first-person raycaster** (the classic
+  Wolfenstein/DOOM technique), drawn to a `<canvas>` every animation frame —
+  not a 3D engine, just math: for each vertical strip of the screen, cast a
+  ray out from the player until it hits a wall, and draw a taller or
+  shorter wall slice depending on how far away that hit was.
+
+Other details, unchanged from before:
+
+- **`state`** in `game.js` holds player position/angle, stats, flags, the
+  message log, settings, and which NPC (if any) you're talking to.
+- **The map** (`MAP` in `data.js`) is a binary grid: `0` = open floor,
+  `1` = wall. NPCs and the exit live in their own arrays (`NPCS`, `EXIT`)
+  with floating-point coordinates, since movement is continuous.
+- **Movement**: W/S (or ↑/↓) move forward/back; A/D (or ←/→) rotate.
+  Collision is checked separately on the X and Y axes so you slide along
+  walls instead of sticking in corners.
 - **Interaction is proximity-based**: get within range of an NPC or the
-  exit and a `[E] ...` prompt appears at the bottom of the screen; pressing
-  E triggers it. See `nearestInteractable()` in `game.js`.
-- **Dialogue trees** are unchanged from the top-down version — plain
-  objects keyed by node name. Each choice can:
+  exit and (if the setting is on) a `[E] ...` prompt appears; pressing E
+  triggers it. See `nearestInteractable()` in `game.js`.
+- **Dialogue trees** are plain objects keyed by node name, in `DIALOGUES`
+  (`data.js`). Each choice can:
   - `next`: which node to jump to (or `null` to end the conversation)
-  - `check`: `{ stat: "insight", min: 4 }` — greys out the option unless the
-    player's stat meets the threshold
+  - `check`: `{ stat: "insight", min: 4 }` — greys out the option unless
+    Mara's stat meets the threshold
   - `requiresFlag`: only show this option if a flag was set earlier
   - `setFlags`: `{ hasCaretakerLead: true }` — remembered for the rest of
     the playthrough and can gate later choices with other NPCs
-- **The minimap** (top-right corner) is a second, smaller canvas that just
-  draws the wall grid, NPC dots, and a player marker each frame — useful
-  for development, but consider hiding or limiting it for the shipped game
-  if you want the manor to feel more disorienting.
 
 ## Natural next steps
 
 1. **Bigger map** — the raycaster scales to any size grid; try adding more
    rooms and corridors to `MAP` in `data.js`.
 2. **Textures instead of flat-shaded walls** — currently walls are just
-   shaded rectangles; texture-mapping them (even a simple repeating pattern)
-   is the next-biggest visual upgrade.
+   shaded rectangles; texture-mapping them (even a simple repeating
+   pattern) is the next-biggest visual upgrade.
 3. **A dread/sanity meter** — a fourth stat that rises with certain choices
    or areas and starts warping the render (screen shake, color shift,
    flickering) at high values.

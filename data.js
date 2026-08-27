@@ -33,13 +33,14 @@ const NPCS = [
 
 const EXIT = { x: 7.5, y: 6.5 };
 
-const CLASSES = [
-  { id: "skeptic", name: "The Skeptic", tagline: "Doesn't believe in ghosts. Yet.", stats: { nerve: 5, insight: 2, resolve: 2 } },
-  { id: "investigator", name: "The Investigator", tagline: "Notices what others miss, for better or worse.", stats: { nerve: 2, insight: 5, resolve: 2 } },
-  { id: "empath", name: "The Empath", tagline: "Feels what the house wants you to feel.", stats: { nerve: 2, insight: 2, resolve: 5 } },
-];
-
-const PORTRAIT_COLORS = ["#8a1f1f", "#5c6b52", "#6b6259", "#3a3a42", "#9c8b6f"];
+// The player has no say in who they are — a fixed protagonist with fixed
+// stats. Some dialogue checks will always pass for her, others will always
+// fail; that tension is the point.
+const PROTAGONIST = {
+  name: "Mara Voss",
+  color: "#6b6259",
+  stats: { nerve: 3, insight: 4, resolve: 3 },
+};
 
 // Dialogue trees keyed by NPC id. Each node has text and a list of choices.
 // A choice may require a stat threshold ("check"), may require a flag set

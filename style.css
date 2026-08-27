@@ -51,84 +51,11 @@ h1 {
   font-family: "Courier New", monospace;
 }
 
-#name-input {
-  width: 100%;
-  padding: 8px 10px;
-  background: #0b0a0d;
-  border: 1px solid #2c2528;
-  border-radius: 3px;
-  color: #d8d3c4;
-  font-size: 14px;
-  font-family: inherit;
-}
-
-.class-row {
-  display: flex;
-  gap: 8px;
-}
-
-.class-card {
-  flex: 1;
-  text-align: left;
-  border: 1px solid #2c2528;
-  border-radius: 4px;
-  padding: 10px;
-  cursor: pointer;
-  background: #171418;
-  color: inherit;
-  font-family: inherit;
-}
-
-.class-card.selected {
-  border-color: #8a1f1f;
-  background: #1e1216;
-}
-
-.class-name {
-  color: #d8d3c4;
-  font-size: 14px;
-  font-weight: bold;
-  margin-bottom: 4px;
-}
-
-.class-tagline {
-  color: #8c8478;
-  font-size: 11px;
-  margin-bottom: 8px;
-  line-height: 1.4;
-  min-height: 30px;
-  font-style: italic;
-}
-
-.stat-line {
-  color: #6b6259;
-  font-size: 11px;
-  font-family: "Courier New", monospace;
-}
-
-.color-row {
-  display: flex;
-  gap: 10px;
-}
-
-.color-swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
-
-.color-swatch.selected {
-  outline: 3px solid #d8d3c4;
-}
-
-.preview-row {
+.hud {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 20px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
 
 .portrait {
@@ -144,15 +71,10 @@ h1 {
   flex-shrink: 0;
 }
 
-.preview-name {
-  color: #d8d3c4;
-  font-size: 15px;
-  font-weight: bold;
-}
-
-.preview-class {
-  color: #8c8478;
-  font-size: 12px;
+.stat-line {
+  color: #6b6259;
+  font-size: 11px;
+  font-family: "Courier New", monospace;
 }
 
 .primary-button {
@@ -168,13 +90,6 @@ h1 {
   font-family: "Courier New", monospace;
   letter-spacing: 0.5px;
   cursor: pointer;
-}
-
-.hud {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 14px;
 }
 
 .hud .portrait {
@@ -208,18 +123,6 @@ h1 {
   border-radius: 3px;
   display: block;
   background: #0b0a0d;
-}
-
-#minimap {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 90px;
-  height: 90px;
-  border: 1px solid #2c2528;
-  border-radius: 3px;
-  opacity: 0.85;
-  background: rgba(11, 10, 13, 0.7);
 }
 
 .interact-prompt {
@@ -346,4 +249,79 @@ h1 {
   cursor: pointer;
   text-decoration: underline;
   padding: 0;
+}
+
+.frame-title {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.title-flicker {
+  font-family: "Courier New", monospace;
+  font-size: 28px;
+  letter-spacing: 4px;
+  color: #d8d3c4;
+  margin: 0 0 16px;
+  animation: flicker 6s infinite;
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.4; }
+  94% { opacity: 1; }
+  96% { opacity: 0.2; }
+  97% { opacity: 1; }
+}
+
+.frame-title .subtitle {
+  margin-bottom: 28px;
+}
+
+.secondary-button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 0;
+  background: transparent;
+  color: #8c8478;
+  border: 1px solid #2c2528;
+  border-radius: 3px;
+  font-size: 13px;
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+}
+
+.secondary-button:hover {
+  border-color: #8a1f1f;
+  color: #d8d3c4;
+}
+
+.settings-text {
+  color: #8c8478;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0 0 4px;
+}
+
+.toggle-button {
+  margin-top: 6px;
+  padding: 8px 14px;
+  background: #171418;
+  border: 1px solid #2c2528;
+  border-radius: 3px;
+  color: #d8d3c4;
+  font-size: 12px;
+  font-family: "Courier New", monospace;
+  cursor: pointer;
+}
+
+.toggle-button.on {
+  border-color: #5c6b52;
+  color: #5c6b52;
+}
+
+.toggle-button.off {
+  border-color: #8a1f1f;
+  color: #8a1f1f;
 }

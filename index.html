@@ -10,30 +10,28 @@
 
   <div id="app">
 
-    <!-- Character creation screen -->
-    <section id="screen-create" class="screen">
+    <!-- Title screen -->
+    <section id="screen-title" class="screen">
+      <div class="frame frame-title">
+        <h1 class="title-flicker">HOLLOW HOUSE</h1>
+        <p class="subtitle">Something in Mara's letters stopped making sense a month ago. Tonight she goes to find out why.</p>
+        <button id="title-start-button" class="primary-button">Start</button>
+        <button id="title-settings-button" class="secondary-button">Settings</button>
+      </div>
+    </section>
+
+    <!-- Settings screen -->
+    <section id="screen-settings" class="screen hidden">
       <div class="frame">
-        <h1>Who's going in?</h1>
-        <p class="subtitle">Every stat you pick here will quietly gate what you can say and do later. Choose carefully — the house is listening.</p>
+        <h1>Settings</h1>
 
-        <label class="label" for="name-input">Name</label>
-        <input id="name-input" type="text" maxlength="20" placeholder="Enter a name" />
+        <label class="label">Controls</label>
+        <p class="settings-text">W/S or ↑/↓ to move. A/D or ←/→ to turn. Press E to interact.</p>
 
-        <label class="label">Class</label>
-        <div id="class-row" class="class-row"></div>
+        <label class="label" for="toggle-prompts">On-screen interact prompts</label>
+        <button id="toggle-prompts" class="toggle-button"></button>
 
-        <label class="label">Portrait color</label>
-        <div id="color-row" class="color-row"></div>
-
-        <div class="preview-row">
-          <div id="preview-portrait" class="portrait"></div>
-          <div>
-            <div id="preview-name" class="preview-name">Unnamed traveler</div>
-            <div id="preview-class" class="preview-class"></div>
-          </div>
-        </div>
-
-        <button id="start-button" class="primary-button">Step inside</button>
+        <button id="settings-back-button" class="secondary-button" style="margin-top: 24px;">Back</button>
       </div>
     </section>
 
@@ -44,7 +42,6 @@
 
         <div class="viewport-wrap">
           <canvas id="viewport" width="400" height="260"></canvas>
-          <canvas id="minimap" width="90" height="90"></canvas>
           <div id="interact-prompt" class="interact-prompt hidden"></div>
         </div>
         <p class="hint">W/S or ↑/↓ to move. A/D or ←/→ to turn. Press E to interact.</p>

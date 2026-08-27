@@ -1,22 +1,23 @@
 // ---------------------------------------------------------------------------
 // GAME LOGIC
-// Plain JS, no build step needed. Two parts:
-//   1. The character-creation screen (DOM-based, same as before).
-//   2. A first-person raycaster for exploring the manor, drawn to <canvas>.
+// Plain JS, no build step needed. Three screens:
+//   1. Title screen (Start / Settings)
+//   2. Settings screen
+//   3. Explore screen — a first-person raycaster drawn to <canvas>
+// The player is a fixed, pre-defined protagonist (see PROTAGONIST in
+// data.js) — there is no character creation step.
 // State lives in one object; the render loop reads from it every frame.
 // ---------------------------------------------------------------------------
 
 const state = {
-  phase: "create", // "create" | "explore"
-  name: "",
-  classId: "skeptic",
-  color: PORTRAIT_COLORS[0],
+  phase: "title", // "title" | "settings" | "explore"
   stats: null,
   player: { ...PLAYER_START }, // x, y, angle (radians)
   flags: {},
   log: [],
   activeNpc: null, // "caretaker" | "groundskeeper" | null
   dialogueNode: "start",
+  settings: { showPrompts: true },
 };
 
 const keys = new Set();
@@ -37,61 +38,47 @@ function addLog(entry) {
   renderLog();
 }
 
-// ---- character creation screen -------------------------------------------
+// ---- screen switching -----------------------------------------------------
 
-function renderCreateScreen() {
-  const classRow = document.getElementById("class-row");
-  classRow.innerHTML = "";
-  CLASSES.forEach((cls) => {
-    const btn = document.createElement("button");
-    btn.className = "class-card" + (state.classId === cls.id ? " selected" : "");
-    btn.innerHTML = `
-      <div class="class-name">${cls.name}</div>
-      <div class="class-tagline">${cls.tagline}</div>
-      <div class="stat-line">NRV ${cls.stats.nerve} · INS ${cls.stats.insight} · RES ${cls.stats.resolve}</div>
-    `;
-    btn.addEventListener("click", () => {
-      state.classId = cls.id;
-      renderCreateScreen();
-    });
-    classRow.appendChild(btn);
+function showScreen(id) {
+  ["screen-title", "screen-settings", "screen-explore"].forEach((s) => {
+    document.getElementById(s).classList.toggle("hidden", s !== id);
   });
-
-  const colorRow = document.getElementById("color-row");
-  colorRow.innerHTML = "";
-  PORTRAIT_COLORS.forEach((color) => {
-    const btn = document.createElement("button");
-    btn.className = "color-swatch" + (state.color === color ? " selected" : "");
-    btn.style.background = color;
-    btn.setAttribute("aria-label", `Choose color ${color}`);
-    btn.addEventListener("click", () => {
-      state.color = color;
-      renderCreateScreen();
-    });
-    colorRow.appendChild(btn);
-  });
-
-  const selectedClass = CLASSES.find((c) => c.id === state.classId);
-  document.getElementById("preview-portrait").style.background = state.color;
-  document.getElementById("preview-portrait").textContent = (state.name || "?").charAt(0).toUpperCase();
-  document.getElementById("preview-name").textContent = state.name || "Unnamed traveler";
-  document.getElementById("preview-class").textContent = selectedClass.name;
 }
 
-document.getElementById("name-input").addEventListener("input", (e) => {
-  state.name = e.target.value;
-  renderCreateScreen();
-});
+// ---- title screen -----------------------------------------------------------
 
-document.getElementById("start-button").addEventListener("click", () => {
-  const cls = CLASSES.find((c) => c.id === state.classId);
-  state.stats = { ...cls.stats };
+document.getElementById("title-start-button").addEventListener("click", () => {
+  state.stats = { ...PROTAGONIST.stats };
   state.phase = "explore";
-  document.getElementById("screen-create").classList.add("hidden");
-  document.getElementById("screen-explore").classList.remove("hidden");
-  addLog(`${state.name || "The visitor"}, ${cls.name}, steps through the front door of the manor.`);
+  showScreen("screen-explore");
+  addLog(`${PROTAGONIST.name} steps through the front door of the manor.`);
   renderHud();
   requestAnimationFrame(gameLoop);
+});
+
+document.getElementById("title-settings-button").addEventListener("click", () => {
+  state.phase = "settings";
+  showScreen("screen-settings");
+  renderSettings();
+});
+
+document.getElementById("settings-back-button").addEventListener("click", () => {
+  state.phase = "title";
+  showScreen("screen-title");
+});
+
+// ---- settings screen ---------------------------------------------------------
+
+function renderSettings() {
+  const btn = document.getElementById("toggle-prompts");
+  btn.textContent = state.settings.showPrompts ? "On" : "Off";
+  btn.className = "toggle-button " + (state.settings.showPrompts ? "on" : "off");
+}
+
+document.getElementById("toggle-prompts").addEventListener("click", () => {
+  state.settings.showPrompts = !state.settings.showPrompts;
+  renderSettings();
 });
 
 // ---- HUD / log --------------------------------------------------------------
@@ -99,9 +86,9 @@ document.getElementById("start-button").addEventListener("click", () => {
 function renderHud() {
   const hud = document.getElementById("hud");
   hud.innerHTML = `
-    <div class="portrait" style="background:${state.color}">${(state.name || "?").charAt(0).toUpperCase()}</div>
+    <div class="portrait" style="background:${PROTAGONIST.color}">${PROTAGONIST.name.charAt(0)}</div>
     <div>
-      <div class="hud-name">${state.name || "Unnamed traveler"}</div>
+      <div class="hud-name">${PROTAGONIST.name}</div>
       <div class="stat-line">NRV ${state.stats.nerve} · INS ${state.stats.insight} · RES ${state.stats.resolve}</div>
     </div>
   `;
@@ -134,7 +121,7 @@ function isWall(x, y) {
   return MAP[row][col] === 1;
 }
 
-function tryMovePlayer(dt) {
+function tryMovePlayer() {
   if (state.activeNpc) return; // frozen mid-dialogue
 
   let rot = 0;
@@ -166,9 +153,6 @@ const canvas = document.getElementById("viewport");
 const ctx = canvas.getContext("2d");
 const CW = canvas.width;
 const CH = canvas.height;
-
-const minimap = document.getElementById("minimap");
-const mctx = minimap.getContext("2d");
 
 function castRay(angle) {
   const cos = Math.cos(angle);
@@ -207,7 +191,6 @@ function drawScene() {
   }
 
   drawSprites(zbuffer, colWidth);
-  drawMinimap();
   updateInteractPrompt();
 }
 
@@ -235,37 +218,6 @@ function drawSprites(zbuffer, colWidth) {
     ctx.fillRect(screenX - size / 4, (CH - size) / 2, size / 2, size);
     ctx.globalAlpha = 1;
   });
-}
-
-function drawMinimap() {
-  const scale = minimap.width / MAP_COLS;
-  mctx.clearRect(0, 0, minimap.width, minimap.height);
-  for (let row = 0; row < MAP_ROWS; row++) {
-    for (let col = 0; col < MAP_COLS; col++) {
-      mctx.fillStyle = MAP[row][col] === 1 ? "#0b0a0d" : "#2c2528";
-      mctx.fillRect(col * scale, row * scale, scale, scale);
-    }
-  }
-  NPCS.forEach((npc) => {
-    mctx.fillStyle = npc.color;
-    mctx.fillRect(npc.x * scale - 2, npc.y * scale - 2, 4, 4);
-  });
-  mctx.fillStyle = "#8a1f1f";
-  mctx.fillRect(EXIT.x * scale - 2, EXIT.y * scale - 2, 4, 4);
-
-  // player marker + facing direction
-  mctx.fillStyle = "#d8d3c4";
-  mctx.beginPath();
-  mctx.arc(state.player.x * scale, state.player.y * scale, 3, 0, Math.PI * 2);
-  mctx.fill();
-  mctx.strokeStyle = "#d8d3c4";
-  mctx.beginPath();
-  mctx.moveTo(state.player.x * scale, state.player.y * scale);
-  mctx.lineTo(
-    state.player.x * scale + Math.cos(state.player.angle) * 8,
-    state.player.y * scale + Math.sin(state.player.angle) * 8
-  );
-  mctx.stroke();
 }
 
 // ---- interaction (proximity + "E") -------------------------------------------
@@ -299,7 +251,7 @@ function capitalize(s) {
 
 function updateInteractPrompt() {
   const prompt = document.getElementById("interact-prompt");
-  if (state.activeNpc) {
+  if (state.activeNpc || !state.settings.showPrompts) {
     prompt.classList.add("hidden");
     return;
   }
@@ -423,4 +375,4 @@ function gameLoop() {
 
 // ---- boot --------------------------------------------------------------------
 
-renderCreateScreen();
+showScreen("screen-title");
