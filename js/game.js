@@ -56,6 +56,10 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   addLog(`${PROTAGONIST.name} steps through the front door of the manor.`);
   renderHud();
   requestAnimationFrame(gameLoop);
+  // This click is itself a user gesture, so requesting the lock here
+  // (rather than waiting for a separate click on the canvas) works in
+  // every browser that supports Pointer Lock.
+  canvas.requestPointerLock();
 });
 
 document.getElementById("title-settings-button").addEventListener("click", () => {
@@ -168,33 +172,32 @@ function tryMovePlayer() {
 // change in cursor position between mousemove events while the cursor is
 // over the viewport, reset whenever the cursor leaves it.
 
-let lastMouseX = null;
-let lastMouseY = null;
+// ---- mouse look (pointer lock) -------------------------------------------------
+// Pointer lock gives truly unlimited look-around (no "stuck at the screen
+// edge" problem) since the browser reports relative movement instead of
+// absolute cursor position. The trade-off is a captured, invisible cursor
+// — so we release the lock automatically the instant dialogue opens, and
+// re-request it the instant dialogue closes, so choices are always
+// clickable and looking around always has full range the rest of the time.
 
-function onCanvasMouseMove(e) {
-  if (state.phase !== "explore" || state.activeNpc) {
-    lastMouseX = null;
-    lastMouseY = null;
-    return;
+function requestLook() {
+  if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== canvas) {
+    canvas.requestPointerLock();
   }
-  if (lastMouseX !== null) {
-    const deltaX = e.clientX - lastMouseX;
-    state.player.angle += deltaX * MOUSE_SENSITIVITY;
-  }
-  if (lastMouseY !== null) {
-    const deltaY = e.clientY - lastMouseY;
-    // Moving the mouse up (deltaY negative) looks up, which shifts the
-    // horizon line down on screen — hence the sign flip.
-    state.player.pitch -= deltaY * PITCH_SENSITIVITY;
-    state.player.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, state.player.pitch));
-  }
-  lastMouseX = e.clientX;
-  lastMouseY = e.clientY;
 }
 
-function onCanvasMouseLeave() {
-  lastMouseX = null;
-  lastMouseY = null;
+function onPointerLockChange() {
+  const hint = document.getElementById("pointer-lock-hint");
+  const locked = document.pointerLockElement === canvas;
+  const shouldShowHint = state.phase === "explore" && !state.activeNpc && !locked;
+  hint.classList.toggle("hidden", !shouldShowHint);
+}
+
+function onMouseMove(e) {
+  if (document.pointerLockElement !== canvas || state.activeNpc) return;
+  state.player.angle += e.movementX * MOUSE_SENSITIVITY;
+  state.player.pitch -= e.movementY * PITCH_SENSITIVITY;
+  state.player.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, state.player.pitch));
 }
 
 // ---- raycasting render --------------------------------------------------------
@@ -218,8 +221,9 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener("resize", resizeCanvas);
 
-canvas.addEventListener("mousemove", onCanvasMouseMove);
-canvas.addEventListener("mouseleave", onCanvasMouseLeave);
+canvas.addEventListener("click", requestLook);
+document.addEventListener("pointerlockchange", onPointerLockChange);
+document.addEventListener("mousemove", onMouseMove);
 
 function castRay(angle) {
   const cos = Math.cos(angle);
@@ -376,11 +380,18 @@ function openDialogue(npcId) {
   state.dialogueNode = "start";
   document.getElementById("dialogue-overlay").classList.remove("hidden");
   renderDialogue();
+  // Release the lock so the cursor reappears and choices are clickable.
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
 }
 
 function closeDialogue() {
   state.activeNpc = null;
   document.getElementById("dialogue-overlay").classList.add("hidden");
+  // This is called from a click handler (a choice or the exit button), so
+  // it's a valid user gesture and re-locking here is allowed.
+  canvas.requestPointerLock();
 }
 
 function passesCheck(choice) {

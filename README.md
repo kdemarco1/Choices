@@ -1,128 +1,19 @@
 # Hollow House
 
-A small explorable-map horror RPG prototype: character creation, a manor you
-walk through with the keyboard, and NPC conversations that branch based on
-your stats, your nerve, and the choices you've already made.
+A first-person horror exploration game. Plain HTML/CSS/JS — no build step, no dependencies.
+
+## Controls
+
+- **W A S D** — move and strafe
+- **Mouse** — look around (click the view to enable)
+- **E** — interact
+- **Esc** — close dialogue
 
 ## Project structure
 
 ```
-rpg-game/
-├── index.html      Page structure — two screens (create, explore) plus a
-│                    dialogue overlay
-├── css/
-│   └── style.css    All visual styling
-├── js/
-│   ├── data.js      Content: classes, map layout, dialogue trees
-│   └── game.js       Logic: state, rendering, movement, dialogue handling
-└── README.md
+index.html      Page structure
+css/style.css   Styling
+js/data.js      Game content: map, character, dialogue
+js/game.js      Game engine: rendering, movement, dialogue logic
 ```
-
-Content and logic are split on purpose. To add a new NPC, room, or line of
-dialogue, you should only ever need to touch `data.js`.
-
-## Running it locally
-
-No build step — just open `index.html` in a browser. If your browser blocks
-local file access for scripts, run a tiny local server instead:
-
-```bash
-cd rpg-game
-python3 -m http.server 8000
-# then visit http://localhost:8000
-```
-
-## Deploying to GitHub Pages (free hosting)
-
-1. Create a new GitHub repo and push this folder's contents to it (the repo
-   root should contain `index.html` directly, not nested inside another
-   folder).
-2. On GitHub, go to **Settings → Pages**.
-3. Under **Source**, choose the branch you pushed (usually `main`) and the
-   `/ (root)` folder, then save.
-4. GitHub gives you a URL like `https://yourusername.github.io/repo-name/`
-   — it can take a minute to go live after the first deploy.
-
-Any time you push new commits to that branch, the live site updates
-automatically.
-
-## How the game works
-
-Three screens, controlled by `state.phase` in `game.js`: `title` →
-`explore` (with an optional detour to `settings`).
-
-- **Title / Settings screens** are centered content on a full-bleed dark
-  background — no boxed card, no border. The title flickers subtly via a
-  CSS keyframe animation.
-- **Explore screen is edge-to-edge.** The `<canvas>` fills the entire
-  browser window (`resizeCanvas()` in `game.js` sets its actual pixel
-  width/height to `window.innerWidth`/`innerHeight`, and re-runs on the
-  `resize` event so resizing the browser or rotating a device keeps it
-  full-bleed). The HUD, the interact prompt, and the log are drawn as
-  semi-transparent overlays positioned on top of the canvas rather than
-  stacked above/below it, so nothing steals space from the view.
-  - `NUM_RAYS` (ray/column count) and `MAX_PITCH` (how far you can look
-    up/down) both scale with the window's width and height, so the view
-    stays sharp and proportional at any window size rather than looking
-    chunky on a large monitor or over-rotated on a small one.
-- **No character creation**: you always play **Mara Voss**, a fixed
-  protagonist defined once in `PROTAGONIST` (`data.js`), stats included.
-  Some dialogue checks will always pass for her and others will always
-  fail — a fixed identity rather than a build you optimize.
-
-Other details, unchanged from before:
-
-- **`state`** in `game.js` holds player position/angle/pitch, stats, flags,
-  the message log, settings, and which NPC (if any) you're talking to.
-- **The map** (`MAP` in `data.js`) is a binary grid: `0` = open floor,
-  `1` = wall. NPCs and the exit live in their own arrays (`NPCS`, `EXIT`)
-  with floating-point coordinates, since movement is continuous.
-- **Movement**: WASD moves relative to where you're facing — W/S forward
-  and back, A/D strafe left and right. Arrow up/down also move forward and
-  back, and arrow left/right rotate, as a keyboard-only fallback.
-- **Mouse look never captures the cursor.** While the mouse is hovering
-  over the viewport, moving it rotates the camera left/right and shifts the
-  horizon up/down for vertical look — both driven by comparing consecutive
-  `clientX`/`clientY` positions in `onCanvasMouseMove` (`game.js`), reset
-  whenever the cursor leaves the canvas. Vertical look is implemented the
-  classic 2.5D-raycaster way: there's no real pitch rotation, the horizon
-  line and every wall/sprite slice just shift up or down together
-  (`state.player.pitch`, clamped by `MAX_PITCH`) to fake the effect. The
-  cursor stays completely free the whole time, so clicking dialogue choices
-  always works normally. The trade-off versus pointer lock: once the
-  cursor hits the edge of the browser window, you'll need to move it back
-  before continuing to look further — there's no infinite scroll.
-- Collision is checked separately on the X and Y axes so you slide along
-  walls instead of sticking in corners, even while strafing diagonally.
-- **Interaction is proximity-based**: get within range of an NPC or the
-  exit and (if the setting is on) a `[E] ...` prompt appears; pressing E
-  triggers it. See `nearestInteractable()` in `game.js`.
-- **Dialogue trees** are plain objects keyed by node name, in `DIALOGUES`
-  (`data.js`). Each choice can:
-  - `next`: which node to jump to (or `null` to end the conversation)
-  - `check`: `{ stat: "insight", min: 4 }` — greys out the option unless
-    Mara's stat meets the threshold
-  - `requiresFlag`: only show this option if a flag was set earlier
-  - `setFlags`: `{ hasCaretakerLead: true }` — remembered for the rest of
-    the playthrough and can gate later choices with other NPCs
-
-## Natural next steps
-
-1. **Bigger map** — the raycaster scales to any size grid; try adding more
-   rooms and corridors to `MAP` in `data.js`.
-2. **Textures instead of flat-shaded walls** — currently walls are just
-   shaded rectangles; texture-mapping them (even a simple repeating
-   pattern) is the next-biggest visual upgrade.
-3. **A dread/sanity meter** — a fourth stat that rises with certain choices
-   or areas and starts warping the render (screen shake, color shift,
-   flickering) at high values.
-4. **Sound design** — the Web Audio API can add ambient creaks, stingers on
-   jump-scare moments, or footsteps synced to movement.
-5. **Pointer lock** — the mouse-look ceiling at the browser window's edge
-   is the main limitation of the current hover-based approach. Pointer lock
-   removes that limit at the cost of capturing the cursor, which would need
-   to be released before players can click dialogue choices.
-6. **Inventory / items** that unlock new dialogue options (a key, a journal
-   page, a photograph).
-7. **Save/load** using `localStorage`, since the state object is already
-   structured for it.

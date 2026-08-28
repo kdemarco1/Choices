@@ -26,7 +26,7 @@
         <h1>Settings</h1>
 
         <label class="label">Controls</label>
-        <p class="settings-text">W/A/S/D to move and strafe. Move the mouse over the view to look around (up/down and left/right). Press E to interact.</p>
+        <p class="settings-text">W/A/S/D to move and strafe. Click the view, then move the mouse to look in any direction, including behind you. Click a dialogue choice to pause looking and answer.</p>
 
         <label class="label" for="toggle-prompts">On-screen interact prompts</label>
         <button id="toggle-prompts" class="toggle-button"></button>
@@ -42,7 +42,8 @@
 
         <div id="hud" class="hud hud-overlay"></div>
         <div id="interact-prompt" class="interact-prompt hidden"></div>
-        <p class="hint hint-overlay">W/A/S/D to move and strafe. Move the mouse over the view to look around. Press E to interact.</p>
+        <div id="pointer-lock-hint" class="pointer-lock-hint hidden">Click to look around</div>
+        <p class="hint hint-overlay">W/A/S/D to move and strafe. Mouse to look around, any direction. Press E to interact.</p>
 
         <div class="log-panel log-overlay">
           <div class="log-title">Log</div>
