@@ -18,6 +18,7 @@ const state = {
   activeNpc: null, // "caretaker" | "groundskeeper" | null
   dialogueNode: "start",
   settings: { showPrompts: true },
+  settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
 };
 
 const keys = new Set();
@@ -51,6 +52,12 @@ function showScreen(id) {
 
 document.getElementById("title-start-button").addEventListener("click", () => {
   state.stats = { ...PROTAGONIST.stats };
+  state.player = { ...PLAYER_START, pitch: 0 };
+  state.flags = {};
+  state.log = [];
+  state.activeNpc = null;
+  state.dialogueNode = "start";
+  keys.clear();
   state.phase = "explore";
   showScreen("screen-explore");
   addLog(`${PROTAGONIST.name} steps through the front door of the manor.`);
@@ -63,12 +70,54 @@ document.getElementById("title-start-button").addEventListener("click", () => {
 });
 
 document.getElementById("title-settings-button").addEventListener("click", () => {
+  state.settingsReturnTo = "title";
   state.phase = "settings";
   showScreen("screen-settings");
   renderSettings();
 });
 
 document.getElementById("settings-back-button").addEventListener("click", () => {
+  if (state.settingsReturnTo === "paused") {
+    state.phase = "paused";
+    showScreen("screen-explore"); // pause overlay is still showing underneath
+  } else {
+    state.phase = "title";
+    showScreen("screen-title");
+  }
+});
+
+// ---- pause menu ---------------------------------------------------------------
+
+function openPauseMenu() {
+  state.phase = "paused";
+  keys.clear();
+  document.getElementById("pause-overlay").classList.remove("hidden");
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
+}
+
+function closePauseMenu() {
+  document.getElementById("pause-overlay").classList.add("hidden");
+  state.phase = "explore";
+  requestAnimationFrame(gameLoop); // the render loop stopped while paused
+  // Called from a button click, so this is a valid user gesture.
+  canvas.requestPointerLock();
+}
+
+document.getElementById("pause-resume-button").addEventListener("click", closePauseMenu);
+
+document.getElementById("pause-settings-button").addEventListener("click", () => {
+  state.settingsReturnTo = "paused";
+  showScreen("screen-settings");
+  renderSettings();
+});
+
+document.getElementById("pause-leave-button").addEventListener("click", () => {
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
+  document.getElementById("pause-overlay").classList.add("hidden");
   state.phase = "title";
   showScreen("screen-title");
 });
@@ -359,14 +408,25 @@ function handleInteract() {
 // ---- keyboard input -----------------------------------------------------------
 
 window.addEventListener("keydown", (e) => {
-  if (state.phase !== "explore") return;
   const key = e.key.toLowerCase();
+
+  if (key === "escape") {
+    if (state.activeNpc) {
+      closeDialogue();
+    } else if (state.phase === "explore") {
+      openPauseMenu();
+    } else if (state.phase === "paused") {
+      closePauseMenu();
+    }
+    return;
+  }
+
+  if (state.phase !== "explore") return;
   if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
     e.preventDefault();
     keys.add(key);
   }
   if (key === "e") handleInteract();
-  if (key === "escape" && state.activeNpc) closeDialogue();
 });
 
 window.addEventListener("keyup", (e) => {

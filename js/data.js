@@ -33,19 +33,12 @@ const NPCS = [
 
 const EXIT = { x: 7.5, y: 6.5 };
 
-// The player has no say in who they are — a fixed protagonist with fixed
-// stats. Some dialogue checks will always pass for her, others will always
-// fail; that tension is the point.
 const PROTAGONIST = {
-  name: "Mara Voss",
+  name: "Maria Voss",
   color: "#6b6259",
   stats: { nerve: 3, insight: 4, resolve: 3 },
 };
 
-// Dialogue trees keyed by NPC id. Each node has text and a list of choices.
-// A choice may require a stat threshold ("check"), may require a flag set
-// earlier ("requiresFlag"), and can set flags that persist for the rest of
-// the playthrough ("setFlags") to influence later text and choices.
 const DIALOGUES = {
   caretaker: {
     start: {

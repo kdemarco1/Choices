@@ -26,7 +26,7 @@
         <h1>Settings</h1>
 
         <label class="label">Controls</label>
-        <p class="settings-text">W/A/S/D to move and strafe. Click the view, then move the mouse to look in any direction, including behind you. Click a dialogue choice to pause looking and answer.</p>
+        <p class="settings-text">W/A/S/D to move and strafe. Click the view, then move the mouse to look in any direction, including behind you. Click a dialogue choice to pause looking and answer. Esc pauses the game.</p>
 
         <label class="label" for="toggle-prompts">On-screen interact prompts</label>
         <button id="toggle-prompts" class="toggle-button"></button>
@@ -56,6 +56,15 @@
             <div id="dialogue-text" class="dialogue-text"></div>
             <div id="dialogue-choices" class="choice-list"></div>
             <button id="dialogue-exit" class="exit-button">Step back (Esc)</button>
+          </div>
+        </div>
+
+        <div id="pause-overlay" class="overlay overlay-center hidden">
+          <div class="dialogue-box pause-box">
+            <h1>Paused</h1>
+            <button id="pause-resume-button" class="primary-button">Resume</button>
+            <button id="pause-settings-button" class="secondary-button">Settings</button>
+            <button id="pause-leave-button" class="secondary-button">Leave Game</button>
           </div>
         </div>
       </div>

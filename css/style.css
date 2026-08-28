@@ -366,3 +366,17 @@ h1 {
   text-decoration: underline;
   padding: 0;
 }
+
+.overlay-center {
+  align-items: center;
+}
+
+.pause-box {
+  max-width: 320px;
+  text-align: center;
+}
+
+.pause-box h1 {
+  margin-top: 0;
+  text-align: center;
+}
