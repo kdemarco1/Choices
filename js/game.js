@@ -1,34 +1,27 @@
 // ---------------------------------------------------------------------------
 // GAME LOGIC
-// Plain JS, no build step needed. Three screens:
-//   1. Title screen (Start / Settings)
-//   2. Settings screen
-//   3. Explore screen — a first-person raycaster drawn to <canvas>
-// The player is a fixed, pre-defined protagonist (see PROTAGONIST in
-// data.js) — there is no character creation step.
-// State lives in one object; the render loop reads from it every frame.
-// ---------------------------------------------------------------------------
+// ----------------------------------------------------------------------
 
 const state = {
-  phase: "title", // "title" | "settings" | "explore"
+  phase: "title", 
+  location: "exterior",
   stats: null,
-  player: { ...PLAYER_START, pitch: 0 }, // x, y, angle (radians), pitch (px, look up/down)
+  player: { ...PLAYER_START, pitch: 0 },
   flags: {},
   log: [],
-  activeNpc: null, // "caretaker" | "groundskeeper" | null
+  activeNpc: null, 
   dialogueNode: "start",
   settings: { showPrompts: true },
-  settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
+  settingsReturnTo: "title",
 };
 
 const keys = new Set();
-
 // Raycaster tuning
 const FOV = (66 * Math.PI) / 180;
 const MAX_DEPTH = 9;
 const RAY_STEP = 0.02;
 const MOVE_SPEED = 0.045;
-const ROT_SPEED = 0.045; // used only for arrow-key fallback rotation
+const ROT_SPEED = 0.045;
 const MOUSE_SENSITIVITY = 0.0022;
 const PITCH_SENSITIVITY = 0.6;
 const PLAYER_RADIUS = 0.22;
@@ -43,7 +36,7 @@ function addLog(entry) {
 // ---- screen switching -----------------------------------------------------
 
 function showScreen(id) {
-  ["screen-title", "screen-settings", "screen-explore"].forEach((s) => {
+  ["screen-title", "screen-settings", "Story-screen", "screen-explore"].forEach((s) => {
     document.getElementById(s).classList.toggle("hidden", s !== id);
   });
 }
@@ -58,14 +51,50 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
+  state.phase = "story";
+  showScreen("Story-screen");
+  document.getElementById("Story-screen").classList.add("fade-in");
+  typeStory();
+});
+
+// ---- typewriter effect ------------------------------------------------------
+
+const storyString = PROTAGONIST.storyIntro;
+let typeInterval;
+
+function typeStory() {
+  const textEl = document.getElementById("story-text");
+  const promptEl = document.getElementById("story-prompt");
+  textEl.textContent = "";
+  promptEl.classList.add("hidden");
+  let i = 0;
+  clearInterval(typeInterval);
+  typeInterval = setInterval(() => {
+    textEl.textContent += storyString.charAt(i);
+    i++;
+    if (i >= storyString.length) {
+      clearInterval(typeInterval);
+      setTimeout(() => {
+        promptEl.classList.remove("hidden");
+      }, 1000);
+    }
+  }, 50); 
+}
+
+document.getElementById("Story-screen").addEventListener("click", () => {
+  if (state.phase !== "story") return;
+  const textEl = document.getElementById("story-text");
+  const promptEl = document.getElementById("story-prompt");
+  if (textEl.textContent.length < storyString.length) {
+    clearInterval(typeInterval);
+    textEl.textContent = storyString;
+    promptEl.classList.remove("hidden");
+    return;
+  }
   state.phase = "explore";
   showScreen("screen-explore");
-  addLog(`${PROTAGONIST.name} steps through the front door of the manor.`);
   renderHud();
   requestAnimationFrame(gameLoop);
-  // This click is itself a user gesture, so requesting the lock here
-  // (rather than waiting for a separate click on the canvas) works in
-  // every browser that supports Pointer Lock.
   canvas.requestPointerLock();
 });
 
@@ -171,30 +200,22 @@ function renderLog() {
 function isWall(x, y) {
   const col = Math.floor(x);
   const row = Math.floor(y);
-  if (row < 0 || row >= MAP_ROWS || col < 0 || col >= MAP_COLS) return true;
-  return MAP[row][col] === 1;
+  if (row < 0 || row >= CURRENT_MAP.length || col < 0 || col >= CURRENT_MAP[0].length) return true;
+  return CURRENT_MAP[row][col] === 1;
 }
 
 function tryMovePlayer() {
-  if (state.activeNpc) return; // frozen mid-dialogue
-
-  // Arrow left/right still rotate, as a keyboard-only fallback for anyone
-  // not using mouse look (e.g. pointer lock isn't available/granted).
+  if (state.activeNpc || state.phase !== "explore") return;
   let rot = 0;
   if (keys.has("arrowleft")) rot -= ROT_SPEED;
   if (keys.has("arrowright")) rot += ROT_SPEED;
   state.player.angle += rot;
-
-  // WASD drives movement relative to facing direction: W/S forward/back,
-  // A/D strafe left/right. Arrow up/down also move forward/back.
   let forward = 0;
   if (keys.has("w") || keys.has("arrowup")) forward += 1;
   if (keys.has("s") || keys.has("arrowdown")) forward -= 1;
-
   let strafe = 0;
   if (keys.has("d")) strafe += 1;
   if (keys.has("a")) strafe -= 1;
-
   if (forward !== 0 || strafe !== 0) {
     const forwardAngle = state.player.angle;
     const strafeAngle = state.player.angle + Math.PI / 2;
@@ -204,8 +225,6 @@ function tryMovePlayer() {
 
     const nx = state.player.x + dx;
     const ny = state.player.y + dy;
-    // Resolve X and Y separately so the player can slide along walls
-    // instead of sticking when moving diagonally into a corner.
     if (!isWall(nx + Math.sign(dx || 1) * PLAYER_RADIUS, state.player.y)) {
       state.player.x = nx;
     }
@@ -214,20 +233,6 @@ function tryMovePlayer() {
     }
   }
 }
-
-// ---- mouse look (hover-tracked, no pointer lock) -------------------------------
-// The cursor stays free the whole time — it never gets captured — so the
-// player can always click dialogue choices. Rotation is driven by the
-// change in cursor position between mousemove events while the cursor is
-// over the viewport, reset whenever the cursor leaves it.
-
-// ---- mouse look (pointer lock) -------------------------------------------------
-// Pointer lock gives truly unlimited look-around (no "stuck at the screen
-// edge" problem) since the browser reports relative movement instead of
-// absolute cursor position. The trade-off is a captured, invisible cursor
-// — so we release the lock automatically the instant dialogue opens, and
-// re-request it the instant dialogue closes, so choices are always
-// clickable and looking around always has full range the rest of the time.
 
 function requestLook() {
   if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== canvas) {
@@ -351,6 +356,13 @@ function nearestInteractable() {
   let closest = null;
   let closestDist = INTERACT_DIST;
 
+  if (CURRENT_MAP === EXTERIOR_MAP) {
+    const doorDist = Math.hypot(FRONT_DOOR.x - state.player.x, FRONT_DOOR.y - state.player.y);
+    if (doorDist < FRONT_DOOR.interactionDistance) {
+      closestDist = doorDist;
+      closest = { type: "door", id: FRONT_DOOR.id, label: FRONT_DOOR.label };
+    }
+  }
   NPCS.forEach((npc) => {
     const d = Math.hypot(npc.x - state.player.x, npc.y - state.player.y);
     if (d < closestDist) {
@@ -359,14 +371,15 @@ function nearestInteractable() {
     }
   });
 
-  const exitDist = Math.hypot(EXIT.x - state.player.x, EXIT.y - state.player.y);
-  if (exitDist < closestDist) {
-    closest = {
-      type: "exit",
-      label: state.flags.cellarOpen ? "Descend into the cellar" : "The cellar door is locked",
-    };
+  if (CURRENT_MAP === INTERIOR_MAP) {
+    const exitDist = Math.hypot(EXIT.x - state.player.x, EXIT.y - state.player.y);
+    if (exitDist < closestDist) {
+      closest = {
+        type: "exit",
+        label: state.flags.cellarOpen ? "Descend into the cellar" : "The cellar door is locked",
+      };
+    }
   }
-
   return closest;
 }
 
@@ -376,24 +389,33 @@ function capitalize(s) {
 
 function updateInteractPrompt() {
   const prompt = document.getElementById("interact-prompt");
-  if (state.activeNpc || !state.settings.showPrompts) {
+  if (state.activeNpc || state.phase !== "explore" || !state.settings.showPrompts) {
     prompt.classList.add("hidden");
+    prompt.onclick = null;
     return;
   }
   const target = nearestInteractable();
   if (!target) {
     prompt.classList.add("hidden");
+    prompt.onclick = null;
     return;
   }
   prompt.textContent = `[E] ${target.label}`;
   prompt.classList.remove("hidden");
+  prompt.onclick = (event) => {
+    event.stopPropagation();
+    handleInteract();
+  };
 }
 
 function handleInteract() {
   if (state.activeNpc) return;
   const target = nearestInteractable();
   if (!target) return;
-
+  if (target.type === "door") {
+    openFrontDoor();
+    return;
+  }
   if (target.type === "npc") {
     openDialogue(target.id);
   } else if (target.type === "exit") {
@@ -405,6 +427,25 @@ function handleInteract() {
   }
 }
 
+function openFrontDoor() {
+  if (CURRENT_MAP !== EXTERIOR_MAP) return;
+  addLog("The front door is unlocked. I can go inside.");
+  state.phase = "doorOpening";
+  if (document.pointerLockElement === canvas) {
+    document.exitPointerLock();
+  }
+  setTimeout(() => {
+    CURRENT_MAP = INTERIOR_MAP;
+    state.location = "interior";
+    state.player.x = FRONT_DOOR.interiorSpawn.x;
+    state.player.y = FRONT_DOOR.interiorSpawn.y;
+    state.player.angle = FRONT_DOOR.interiorSpawn.angle;
+    state.player.pitch = 0;
+    state.phase = "explore";
+    renderHud();
+    canvas.requestPointerLock();
+  }, 700);
+}
 // ---- keyboard input -----------------------------------------------------------
 
 window.addEventListener("keydown", (e) => {

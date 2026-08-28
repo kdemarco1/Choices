@@ -1,42 +1,50 @@
 // ---------------------------------------------------------------------------
 // GAME DATA
-// Keep content (classes, map layout, dialogue trees) separate from game
-// logic (game.js). Add new NPCs, rooms, and stat checks here without
-// touching how the game runs.
-//
-// MAP is a binary grid for the raycaster: 0 = open floor, 1 = wall.
-// NPCS and the EXIT are placed at floating-point coordinates inside that
-// grid (e.g. x: 7.5 means "the middle of column 7").
-// ---------------------------------------------------------------------------
 
-const MAP = [
+const EXTERIOR_MAP = [
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+];
+
+const INTERIOR_MAP = [
   [1, 1, 1, 1, 1, 1, 1, 1, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 1, 1, 0, 1, 1, 0, 1],
   [1, 0, 1, 0, 0, 0, 1, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 1],
-  [1, 1, 1, 0, 1, 0, 1, 1, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 1, 0, 0, 0, 1],
   [1, 1, 1, 1, 1, 1, 1, 1, 1],
 ];
 
-const MAP_ROWS = MAP.length;
-const MAP_COLS = MAP[0].length;
+let CURRENT_MAP = EXTERIOR_MAP;
 
-const PLAYER_START = { x: 1.5, y: 1.5, angle: 0 };
+const MAP_ROWS = CURRENT_MAP.length;
+const MAP_COLS = CURRENT_MAP[0].length;
+
+
+const PLAYER_START = { x: 5.5, y: 9.0, angle: -Math.PI / 2 };
 
 const NPCS = [
-  { id: "caretaker", x: 7.5, y: 1.5, color: "#8c8478", label: "C" },
-  { id: "groundskeeper", x: 1.5, y: 6.5, color: "#5c6b52", label: "G" },
+  { id: "caretaker", x: 6.5, y: 3.5, color: "#8c8478", label: "C" },
+  { id: "groundskeeper", x: 2.5, y: 6.5, color: "#5c6b52", label: "G" },
 ];
 
-const EXIT = { x: 7.5, y: 6.5 };
+const EXIT = { x: 1.5, y: 1.5 };
 
 const PROTAGONIST = {
   name: "Maria Voss",
   color: "#6b6259",
   stats: { nerve: 3, insight: 4, resolve: 3 },
+  storyIntro: "Something in John's letters stopped making sense months ago. I haven't heard from him in weeks. I better go check on him...I hope he's alright.",
 };
 
 const DIALOGUES = {
@@ -96,4 +104,11 @@ const DIALOGUES = {
       choices: [{ label: "I will.", next: null }],
     },
   },
+};
+
+const FRONT_DOOR = {id: "frontDoor", x: 5.5, y: 6.0, interactionDistance: 1.4, label: "Open Front Door", interiorSpawn: {
+    x: 4.5,
+    y: 5.5,
+    angle: -Math.PI / 2
+  }
 };
