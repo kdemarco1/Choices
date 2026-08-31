@@ -19,6 +19,7 @@ const state = {
   dialogueNode: "start",
   settings: { showPrompts: true },
   settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
+  inventory: {}, // itemId -> true, once picked up
 };
 
 const keys = new Set();
@@ -32,6 +33,17 @@ const MOUSE_SENSITIVITY = 0.0022;
 const PITCH_SENSITIVITY = 0.6;
 const PLAYER_RADIUS = 0.22;
 const INTERACT_DIST = 1.15;
+
+// Vision range: full range once both the flashlight and batteries are in
+// the inventory, a short oppressive range otherwise. Only the brightness
+// falloff changes — walls are still raycast at full MAX_DEPTH — so this is
+// cheap and doesn't affect collision or performance.
+const LIT_RANGE = MAX_DEPTH;
+const DARK_RANGE = 2.4;
+
+function currentLightRange() {
+  return state.inventory.flashlight && state.inventory.batteries ? LIT_RANGE : DARK_RANGE;
+}
 
 function addLog(entry) {
   state.log.unshift(entry);
@@ -55,6 +67,7 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   state.player = { ...PLAYER_START, pitch: 0 };
   state.flags = {};
   state.log = [];
+  state.inventory = {};
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
@@ -139,11 +152,16 @@ document.getElementById("toggle-prompts").addEventListener("click", () => {
 
 function renderHud() {
   const hud = document.getElementById("hud");
+  const carried = Object.keys(state.inventory).filter((id) => state.inventory[id]);
+  const carriedNames = carried
+    .map((id) => (ITEMS.find((it) => it.id === id) || {}).name || id)
+    .join(" · ");
   hud.innerHTML = `
     <div class="portrait" style="background:${PROTAGONIST.color}">${PROTAGONIST.name.charAt(0)}</div>
     <div>
       <div class="hud-name">${PROTAGONIST.name}</div>
       <div class="stat-line">NRV ${state.stats.nerve} · INS ${state.stats.insight} · RES ${state.stats.resolve}</div>
+      <div class="stat-line">Carrying: ${carriedNames || "nothing"}</div>
     </div>
   `;
 }
@@ -431,8 +449,10 @@ function drawScene() {
 
     // Distance fog plus a fixed darkening for one wall orientation — the
     // classic raycaster trick that makes corners and edges read clearly
-    // even with a flat, single wall texture.
-    const brightness = Math.max(0, 1 - dist / MAX_DEPTH) * (side === 1 ? 0.72 : 1);
+    // even with a flat, single wall texture. Falls off much faster without
+    // a working flashlight, which is what makes the dark actually dark.
+    const lightRange = currentLightRange();
+    const brightness = Math.max(0, 1 - dist / lightRange) * (side === 1 ? 0.72 : 1);
     const fogAlpha = Math.max(0, Math.min(1, 1 - brightness));
     ctx.fillStyle = `rgba(6, 5, 7, ${fogAlpha})`;
     ctx.fillRect(i * colWidth, drawY, colWidth + 1, wallH);
@@ -444,10 +464,21 @@ function drawScene() {
 
 function drawSprites(zbuffer, colWidth) {
   const pitch = state.player.pitch;
+  const lightRange = currentLightRange();
+
   const sprites =
     CURRENT_MAP === EXTERIOR_MAP
       ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#8a1f1f", isExit: true }]
-      : [...NPCS, { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true }];
+      : [
+          ...NPCS,
+          { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true },
+          ...ITEMS.filter((it) => !state.inventory[it.id]).map((it) => ({
+            x: it.x,
+            y: it.y,
+            color: it.color,
+            isItem: true,
+          })),
+        ];
 
   sprites.forEach((sprite) => {
     const dx = sprite.x - state.player.x;
@@ -463,8 +494,9 @@ function drawSprites(zbuffer, colWidth) {
     const col = Math.max(0, Math.min(NUM_RAYS - 1, Math.floor(screenX / colWidth)));
     if (dist > zbuffer[col]) return; // hidden behind a wall
 
-    const size = Math.min(CH, CH / dist) * (sprite.isExit ? 0.5 : 0.75);
-    const brightness = Math.max(0.15, 1 - dist / MAX_DEPTH);
+    const sizeFactor = sprite.isExit ? 0.5 : sprite.isItem ? 0.35 : 0.75;
+    const size = Math.min(CH, CH / dist) * sizeFactor;
+    const brightness = Math.max(0.05, 1 - dist / lightRange);
     ctx.globalAlpha = brightness;
     ctx.fillStyle = sprite.color;
     ctx.fillRect(screenX - size / 4, (CH - size) / 2 + pitch, size / 2, size);
@@ -491,6 +523,15 @@ function nearestInteractable() {
     if (d < closestDist) {
       closestDist = d;
       closest = { type: "npc", id: npc.id, label: `Talk to the ${capitalize(npc.id)}` };
+    }
+  });
+
+  ITEMS.forEach((item) => {
+    if (state.inventory[item.id]) return; // already collected
+    const d = Math.hypot(item.x - state.player.x, item.y - state.player.y);
+    if (d < closestDist) {
+      closestDist = d;
+      closest = { type: "item", id: item.id, label: `Pick up ${item.name}` };
     }
   });
 
@@ -536,6 +577,12 @@ function handleInteract() {
     state.player.angle = FRONT_DOOR.interiorSpawn.angle;
     state.player.pitch = 0;
     addLog(`${PROTAGONIST.name} steps inside. The door swings shut behind her.`);
+    addLog("It's pitch black in here. She'll need to find some light.");
+  } else if (target.type === "item") {
+    const item = ITEMS.find((it) => it.id === target.id);
+    state.inventory[target.id] = true;
+    addLog(item.pickupText);
+    renderHud();
   } else if (target.type === "npc") {
     openDialogue(target.id);
   } else if (target.type === "exit") {
