@@ -54,7 +54,7 @@ function addLog(entry) {
 // ---- screen switching -----------------------------------------------------
 
 function showScreen(id) {
-  ["screen-title", "screen-settings", "screen-explore"].forEach((s) => {
+  ["screen-title", "screen-settings", "Story-screen", "screen-explore"].forEach((s) => {
     document.getElementById(s).classList.toggle("hidden", s !== id);
   });
 }
@@ -71,15 +71,10 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
-  state.phase = "explore";
-  showScreen("screen-explore");
-  addLog(PROTAGONIST.storyIntro);
-  renderHud();
-  requestAnimationFrame(gameLoop);
-  // This click is itself a user gesture, so requesting the lock here
-  // (rather than waiting for a separate click on the canvas) works in
-  // every browser that supports Pointer Lock.
-  canvas.requestPointerLock();
+  state.phase = "story";
+  showScreen("Story-screen");
+  document.getElementById("Story-screen").classList.add("fade-in");
+  typeStory();
 });
 
 document.getElementById("title-settings-button").addEventListener("click", () => {
@@ -182,6 +177,57 @@ function renderLog() {
     div.textContent = entry;
     list.appendChild(div);
   });
+}
+
+// ---- story screen (UPDATED) -------------------------------------------------
+
+document.getElementById("Story-screen").addEventListener("click", () => {
+  if (state.phase !== "story") return;
+  
+  const textEl = document.getElementById("story-text");
+  const promptEl = document.getElementById("story-prompt");
+  if (textEl.textContent.length < storyString.length) {
+    clearInterval(typeInterval);
+    textEl.textContent = storyString;
+    promptEl.classList.remove("hidden");
+    return;
+  }
+  state.phase = "explore";
+  showScreen("screen-explore");
+  renderHud();
+  requestAnimationFrame(gameLoop);
+  canvas.requestPointerLock();
+});
+
+// ---- typewriter effect ------------------------------------------------------
+
+const storyString = "Something in John's letters stopped making sense a month ago. It has been 2 weeks now with no word from him. I hope he's alright...";
+let typeInterval;
+
+function typeStory() {
+  const textEl = document.getElementById("story-text");
+  const promptEl = document.getElementById("story-prompt");
+  
+  // Reset screen state
+  textEl.textContent = "";
+  promptEl.classList.add("hidden");
+  
+  let i = 0;
+  clearInterval(typeInterval);
+  
+  // Type one character every 40 milliseconds
+  typeInterval = setInterval(() => {
+    textEl.textContent += storyString.charAt(i);
+    i++;
+    
+    if (i >= storyString.length) {
+      clearInterval(typeInterval);
+      // Fade in the prompt 1 second after text finishes
+      setTimeout(() => {
+        promptEl.classList.remove("hidden");
+      }, 1000);
+    }
+  }, 40); 
 }
 
 // ---- collision + movement ---------------------------------------------------
