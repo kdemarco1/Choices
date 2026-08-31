@@ -34,19 +34,10 @@ const PLAYER_START = { x: 5.5, y: 9.0, angle: -Math.PI / 2 };
 
 const NPCS = [
   { id: "caretaker", x: 6.5, y: 3.5, color: "#8c8478", label: "C" },
-  // Was (2.5, 6.5) — row 6 is the interior map's boundary wall, so at that
-  // position the Groundskeeper was embedded inside a wall (invisible, since
-  // sprites behind walls get occluded). Moved to an open tile in the same
-  // corner of the map.
   { id: "groundskeeper", x: 2.5, y: 4.5, color: "#5c6b52", label: "G" },
 ];
 
 const EXIT = { x: 1.5, y: 1.5 };
-
-// Items scattered through the interior. Finding the flashlight AND the
-// batteries is what lets Mara actually see past a few feet — see
-// state.inventory / currentLightRange() in game.js. The camera doesn't do
-// anything yet; it's a placeholder for a future puzzle mechanic.
 const ITEMS = [
   {
     id: "flashlight",

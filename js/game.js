@@ -201,7 +201,7 @@ document.getElementById("Story-screen").addEventListener("click", () => {
 
 // ---- typewriter effect ------------------------------------------------------
 
-const storyString = "Something in John's letters stopped making sense a month ago. It has been 2 weeks now with no word from him. I hope he's alright...";
+const storyString = PROTAGONIST.storyIntro;
 let typeInterval;
 
 function typeStory() {
@@ -227,7 +227,7 @@ function typeStory() {
         promptEl.classList.remove("hidden");
       }, 1000);
     }
-  }, 40); 
+  }, 80); 
 }
 
 // ---- collision + movement ---------------------------------------------------
