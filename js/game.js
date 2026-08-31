@@ -1,27 +1,33 @@
 // ---------------------------------------------------------------------------
 // GAME LOGIC
-// ----------------------------------------------------------------------
+// Plain JS, no build step needed. Three screens:
+//   1. Title screen (Start / Settings)
+//   2. Settings screen
+//   3. Explore screen — a first-person raycaster drawn to <canvas>
+// The player is a fixed, pre-defined protagonist (see PROTAGONIST in
+// data.js) — there is no character creation step.
+// State lives in one object; the render loop reads from it every frame.
+// ---------------------------------------------------------------------------
 
 const state = {
-  phase: "title", 
-  location: "exterior",
+  phase: "title", // "title" | "settings" | "explore"
   stats: null,
-  player: { ...PLAYER_START, pitch: 0 },
+  player: { ...PLAYER_START, pitch: 0 }, // x, y, angle (radians), pitch (px, look up/down)
   flags: {},
   log: [],
-  activeNpc: null, 
+  activeNpc: null, // "caretaker" | "groundskeeper" | null
   dialogueNode: "start",
   settings: { showPrompts: true },
-  settingsReturnTo: "title",
+  settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
 };
 
 const keys = new Set();
+
 // Raycaster tuning
 const FOV = (66 * Math.PI) / 180;
 const MAX_DEPTH = 9;
-const RAY_STEP = 0.02;
 const MOVE_SPEED = 0.045;
-const ROT_SPEED = 0.045;
+const ROT_SPEED = 0.045; // used only for arrow-key fallback rotation
 const MOUSE_SENSITIVITY = 0.0022;
 const PITCH_SENSITIVITY = 0.6;
 const PLAYER_RADIUS = 0.22;
@@ -36,7 +42,7 @@ function addLog(entry) {
 // ---- screen switching -----------------------------------------------------
 
 function showScreen(id) {
-  ["screen-title", "screen-settings", "Story-screen", "screen-explore"].forEach((s) => {
+  ["screen-title", "screen-settings", "screen-explore"].forEach((s) => {
     document.getElementById(s).classList.toggle("hidden", s !== id);
   });
 }
@@ -45,56 +51,21 @@ function showScreen(id) {
 
 document.getElementById("title-start-button").addEventListener("click", () => {
   state.stats = { ...PROTAGONIST.stats };
+  CURRENT_MAP = EXTERIOR_MAP; // always start a fresh run outside the house
   state.player = { ...PLAYER_START, pitch: 0 };
   state.flags = {};
   state.log = [];
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
-  state.phase = "story";
-  showScreen("Story-screen");
-  document.getElementById("Story-screen").classList.add("fade-in");
-  typeStory();
-});
-
-// ---- typewriter effect ------------------------------------------------------
-
-const storyString = PROTAGONIST.storyIntro;
-let typeInterval;
-
-function typeStory() {
-  const textEl = document.getElementById("story-text");
-  const promptEl = document.getElementById("story-prompt");
-  textEl.textContent = "";
-  promptEl.classList.add("hidden");
-  let i = 0;
-  clearInterval(typeInterval);
-  typeInterval = setInterval(() => {
-    textEl.textContent += storyString.charAt(i);
-    i++;
-    if (i >= storyString.length) {
-      clearInterval(typeInterval);
-      setTimeout(() => {
-        promptEl.classList.remove("hidden");
-      }, 1000);
-    }
-  }, 50); 
-}
-
-document.getElementById("Story-screen").addEventListener("click", () => {
-  if (state.phase !== "story") return;
-  const textEl = document.getElementById("story-text");
-  const promptEl = document.getElementById("story-prompt");
-  if (textEl.textContent.length < storyString.length) {
-    clearInterval(typeInterval);
-    textEl.textContent = storyString;
-    promptEl.classList.remove("hidden");
-    return;
-  }
   state.phase = "explore";
   showScreen("screen-explore");
+  addLog(PROTAGONIST.storyIntro);
   renderHud();
   requestAnimationFrame(gameLoop);
+  // This click is itself a user gesture, so requesting the lock here
+  // (rather than waiting for a separate click on the canvas) works in
+  // every browser that supports Pointer Lock.
   canvas.requestPointerLock();
 });
 
@@ -205,17 +176,25 @@ function isWall(x, y) {
 }
 
 function tryMovePlayer() {
-  if (state.activeNpc || state.phase !== "explore") return;
+  if (state.activeNpc) return; // frozen mid-dialogue
+
+  // Arrow left/right still rotate, as a keyboard-only fallback for anyone
+  // not using mouse look (e.g. pointer lock isn't available/granted).
   let rot = 0;
   if (keys.has("arrowleft")) rot -= ROT_SPEED;
   if (keys.has("arrowright")) rot += ROT_SPEED;
   state.player.angle += rot;
+
+  // WASD drives movement relative to facing direction: W/S forward/back,
+  // A/D strafe left/right. Arrow up/down also move forward/back.
   let forward = 0;
   if (keys.has("w") || keys.has("arrowup")) forward += 1;
   if (keys.has("s") || keys.has("arrowdown")) forward -= 1;
+
   let strafe = 0;
   if (keys.has("d")) strafe += 1;
   if (keys.has("a")) strafe -= 1;
+
   if (forward !== 0 || strafe !== 0) {
     const forwardAngle = state.player.angle;
     const strafeAngle = state.player.angle + Math.PI / 2;
@@ -225,6 +204,8 @@ function tryMovePlayer() {
 
     const nx = state.player.x + dx;
     const ny = state.player.y + dy;
+    // Resolve X and Y separately so the player can slide along walls
+    // instead of sticking when moving diagonally into a corner.
     if (!isWall(nx + Math.sign(dx || 1) * PLAYER_RADIUS, state.player.y)) {
       state.player.x = nx;
     }
@@ -233,6 +214,14 @@ function tryMovePlayer() {
     }
   }
 }
+
+// ---- mouse look (pointer lock) -------------------------------------------------
+// Pointer lock gives truly unlimited look-around (no "stuck at the screen
+// edge" problem) since the browser reports relative movement instead of
+// absolute cursor position. The trade-off is a captured, invisible cursor
+// — so we release the lock automatically the instant dialogue opens, and
+// re-request it the instant dialogue closes, so choices are always
+// clickable and looking around always has full range the rest of the time.
 
 function requestLook() {
   if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== canvas) {
@@ -279,17 +268,139 @@ canvas.addEventListener("click", requestLook);
 document.addEventListener("pointerlockchange", onPointerLockChange);
 document.addEventListener("mousemove", onMouseMove);
 
-function castRay(angle) {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  let dist = 0;
-  while (dist < MAX_DEPTH) {
-    dist += RAY_STEP;
-    const testX = state.player.x + cos * dist;
-    const testY = state.player.y + sin * dist;
-    if (isWall(testX, testY)) break;
+// ---- wall texture (procedurally generated, no image files needed) -------------
+// A small offscreen canvas holding a stone-brick pattern with a few random
+// stains and cracks. Drawn once at load; sampled one column at a time when
+// rendering walls, the same way a real raycaster samples a texture image.
+
+const TEXTURE_SIZE = 64;
+
+function createWallTexture() {
+  const tCanvas = document.createElement("canvas");
+  tCanvas.width = TEXTURE_SIZE;
+  tCanvas.height = TEXTURE_SIZE;
+  const tctx = tCanvas.getContext("2d");
+
+  tctx.fillStyle = "#141010";
+  tctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+
+  const brickW = 16;
+  const brickH = 8;
+  for (let y = 0; y < TEXTURE_SIZE; y += brickH) {
+    const rowIndex = Math.floor(y / brickH);
+    const offset = rowIndex % 2 === 0 ? 0 : brickW / 2;
+    for (let x = -brickW; x < TEXTURE_SIZE + brickW; x += brickW) {
+      const shade = 42 + Math.floor(Math.random() * 16);
+      tctx.fillStyle = `rgb(${shade + 16}, ${shade + 9}, ${shade})`;
+      tctx.fillRect(x + offset + 1, y + 1, brickW - 2, brickH - 2);
+    }
   }
-  return Math.min(dist, MAX_DEPTH);
+
+  // Dark stains, like old water or worse.
+  for (let i = 0; i < 7; i++) {
+    const sx = Math.random() * TEXTURE_SIZE;
+    const sy = Math.random() * TEXTURE_SIZE;
+    const r = 4 + Math.random() * 9;
+    tctx.fillStyle = `rgba(15, 10, 10, ${0.15 + Math.random() * 0.25})`;
+    tctx.beginPath();
+    tctx.arc(sx, sy, r, 0, Math.PI * 2);
+    tctx.fill();
+  }
+
+  // Thin cracks.
+  tctx.strokeStyle = "rgba(8, 6, 6, 0.45)";
+  tctx.lineWidth = 1;
+  for (let i = 0; i < 2; i++) {
+    let cx = Math.random() * TEXTURE_SIZE;
+    let cy = 0;
+    tctx.beginPath();
+    tctx.moveTo(cx, cy);
+    for (let s = 0; s < 5; s++) {
+      cx += (Math.random() - 0.5) * 10;
+      cy += TEXTURE_SIZE / 5;
+      tctx.lineTo(cx, cy);
+    }
+    tctx.stroke();
+  }
+
+  return tCanvas;
+}
+
+const wallTexture = createWallTexture();
+
+// ---- raycasting (DDA algorithm) ------------------------------------------------
+// Steps through the grid one cell at a time along the ray's path (rather
+// than marching in small fixed increments) until it hits a wall. This is
+// the standard technique because, unlike simple step-marching, it also
+// tells us exactly *where* on the wall face the ray landed (wallX) and
+// which of the two wall orientations it hit (side) — both needed to sample
+// the right column of a texture and to shade N/S-facing walls differently
+// from E/W-facing ones.
+
+function castRay(angle) {
+  const rayDirX = Math.cos(angle);
+  const rayDirY = Math.sin(angle);
+
+  let mapX = Math.floor(state.player.x);
+  let mapY = Math.floor(state.player.y);
+
+  const deltaDistX = rayDirX === 0 ? Infinity : Math.abs(1 / rayDirX);
+  const deltaDistY = rayDirY === 0 ? Infinity : Math.abs(1 / rayDirY);
+
+  let stepX, sideDistX;
+  if (rayDirX < 0) {
+    stepX = -1;
+    sideDistX = (state.player.x - mapX) * deltaDistX;
+  } else {
+    stepX = 1;
+    sideDistX = (mapX + 1 - state.player.x) * deltaDistX;
+  }
+
+  let stepY, sideDistY;
+  if (rayDirY < 0) {
+    stepY = -1;
+    sideDistY = (state.player.y - mapY) * deltaDistY;
+  } else {
+    stepY = 1;
+    sideDistY = (mapY + 1 - state.player.y) * deltaDistY;
+  }
+
+  let side = 0;
+  const maxSteps = CURRENT_MAP.length + CURRENT_MAP[0].length + 4; // more than enough to cross the map
+  for (let steps = 0; steps < maxSteps; steps++) {
+    if (sideDistX < sideDistY) {
+      sideDistX += deltaDistX;
+      mapX += stepX;
+      side = 0; // hit a vertical (N/S-facing) wall face
+    } else {
+      sideDistY += deltaDistY;
+      mapY += stepY;
+      side = 1; // hit a horizontal (E/W-facing) wall face
+    }
+    if (mapY < 0 || mapY >= CURRENT_MAP.length || mapX < 0 || mapX >= CURRENT_MAP[0].length || CURRENT_MAP[mapY][mapX] === 1) {
+      break;
+    }
+  }
+
+  let perpWallDist;
+  if (side === 0) {
+    perpWallDist = (mapX - state.player.x + (1 - stepX) / 2) / rayDirX;
+  } else {
+    perpWallDist = (mapY - state.player.y + (1 - stepY) / 2) / rayDirY;
+  }
+  perpWallDist = Math.max(0.0001, Math.min(MAX_DEPTH, perpWallDist));
+
+  // Exact fractional position along the wall face (0 to 1) — which column
+  // of the texture to sample.
+  let wallX;
+  if (side === 0) {
+    wallX = state.player.y + perpWallDist * rayDirY;
+  } else {
+    wallX = state.player.x + perpWallDist * rayDirX;
+  }
+  wallX -= Math.floor(wallX);
+
+  return { dist: perpWallDist, side, wallX };
 }
 
 function drawScene() {
@@ -308,15 +419,23 @@ function drawScene() {
 
   for (let i = 0; i < NUM_RAYS; i++) {
     const rayAngle = state.player.angle - FOV / 2 + (i / NUM_RAYS) * FOV;
-    const rawDist = castRay(rayAngle);
-    const correctedDist = rawDist * Math.cos(rayAngle - state.player.angle);
-    zbuffer[i] = correctedDist;
+    const { dist, side, wallX } = castRay(rayAngle);
+    zbuffer[i] = dist;
 
-    const wallH = Math.min(CH, CH / correctedDist);
-    const brightness = Math.max(0, 1 - correctedDist / MAX_DEPTH);
-    const shade = Math.floor(40 + brightness * 70);
-    ctx.fillStyle = `rgb(${shade}, ${Math.floor(shade * 0.9)}, ${Math.floor(shade * 0.85)})`;
-    ctx.fillRect(i * colWidth, (CH - wallH) / 2 + pitch, colWidth + 1, wallH);
+    const wallH = Math.min(CH * 3, CH / dist);
+    const drawY = (CH - wallH) / 2 + pitch;
+
+    // Sample one column of the texture at the wall's exact hit position.
+    const texX = Math.min(TEXTURE_SIZE - 1, Math.floor(wallX * TEXTURE_SIZE));
+    ctx.drawImage(wallTexture, texX, 0, 1, TEXTURE_SIZE, i * colWidth, drawY, colWidth + 1, wallH);
+
+    // Distance fog plus a fixed darkening for one wall orientation — the
+    // classic raycaster trick that makes corners and edges read clearly
+    // even with a flat, single wall texture.
+    const brightness = Math.max(0, 1 - dist / MAX_DEPTH) * (side === 1 ? 0.72 : 1);
+    const fogAlpha = Math.max(0, Math.min(1, 1 - brightness));
+    ctx.fillStyle = `rgba(6, 5, 7, ${fogAlpha})`;
+    ctx.fillRect(i * colWidth, drawY, colWidth + 1, wallH);
   }
 
   drawSprites(zbuffer, colWidth);
@@ -325,7 +444,10 @@ function drawScene() {
 
 function drawSprites(zbuffer, colWidth) {
   const pitch = state.player.pitch;
-  const sprites = [...NPCS, { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true }];
+  const sprites =
+    CURRENT_MAP === EXTERIOR_MAP
+      ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#8a1f1f", isExit: true }]
+      : [...NPCS, { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true }];
 
   sprites.forEach((sprite) => {
     const dx = sprite.x - state.player.x;
@@ -359,10 +481,11 @@ function nearestInteractable() {
   if (CURRENT_MAP === EXTERIOR_MAP) {
     const doorDist = Math.hypot(FRONT_DOOR.x - state.player.x, FRONT_DOOR.y - state.player.y);
     if (doorDist < FRONT_DOOR.interactionDistance) {
-      closestDist = doorDist;
-      closest = { type: "door", id: FRONT_DOOR.id, label: FRONT_DOOR.label };
+      closest = { type: "frontDoor", label: FRONT_DOOR.label };
     }
+    return closest;
   }
+
   NPCS.forEach((npc) => {
     const d = Math.hypot(npc.x - state.player.x, npc.y - state.player.y);
     if (d < closestDist) {
@@ -371,15 +494,14 @@ function nearestInteractable() {
     }
   });
 
-  if (CURRENT_MAP === INTERIOR_MAP) {
-    const exitDist = Math.hypot(EXIT.x - state.player.x, EXIT.y - state.player.y);
-    if (exitDist < closestDist) {
-      closest = {
-        type: "exit",
-        label: state.flags.cellarOpen ? "Descend into the cellar" : "The cellar door is locked",
-      };
-    }
+  const exitDist = Math.hypot(EXIT.x - state.player.x, EXIT.y - state.player.y);
+  if (exitDist < closestDist) {
+    closest = {
+      type: "exit",
+      label: state.flags.cellarOpen ? "Descend into the cellar" : "The cellar door is locked",
+    };
   }
+
   return closest;
 }
 
@@ -389,34 +511,32 @@ function capitalize(s) {
 
 function updateInteractPrompt() {
   const prompt = document.getElementById("interact-prompt");
-  if (state.activeNpc || state.phase !== "explore" || !state.settings.showPrompts) {
+  if (state.activeNpc || !state.settings.showPrompts) {
     prompt.classList.add("hidden");
-    prompt.onclick = null;
     return;
   }
   const target = nearestInteractable();
   if (!target) {
     prompt.classList.add("hidden");
-    prompt.onclick = null;
     return;
   }
   prompt.textContent = `[E] ${target.label}`;
   prompt.classList.remove("hidden");
-  prompt.onclick = (event) => {
-    event.stopPropagation();
-    handleInteract();
-  };
 }
 
 function handleInteract() {
   if (state.activeNpc) return;
   const target = nearestInteractable();
   if (!target) return;
-  if (target.type === "door") {
-    openFrontDoor();
-    return;
-  }
-  if (target.type === "npc") {
+
+  if (target.type === "frontDoor") {
+    CURRENT_MAP = INTERIOR_MAP;
+    state.player.x = FRONT_DOOR.interiorSpawn.x;
+    state.player.y = FRONT_DOOR.interiorSpawn.y;
+    state.player.angle = FRONT_DOOR.interiorSpawn.angle;
+    state.player.pitch = 0;
+    addLog(`${PROTAGONIST.name} steps inside. The door swings shut behind her.`);
+  } else if (target.type === "npc") {
     openDialogue(target.id);
   } else if (target.type === "exit") {
     if (state.flags.cellarOpen) {
@@ -427,25 +547,6 @@ function handleInteract() {
   }
 }
 
-function openFrontDoor() {
-  if (CURRENT_MAP !== EXTERIOR_MAP) return;
-  addLog("The front door is unlocked. I can go inside.");
-  state.phase = "doorOpening";
-  if (document.pointerLockElement === canvas) {
-    document.exitPointerLock();
-  }
-  setTimeout(() => {
-    CURRENT_MAP = INTERIOR_MAP;
-    state.location = "interior";
-    state.player.x = FRONT_DOOR.interiorSpawn.x;
-    state.player.y = FRONT_DOOR.interiorSpawn.y;
-    state.player.angle = FRONT_DOOR.interiorSpawn.angle;
-    state.player.pitch = 0;
-    state.phase = "explore";
-    renderHud();
-    canvas.requestPointerLock();
-  }, 700);
-}
 // ---- keyboard input -----------------------------------------------------------
 
 window.addEventListener("keydown", (e) => {

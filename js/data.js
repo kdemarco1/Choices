@@ -30,7 +30,6 @@ let CURRENT_MAP = EXTERIOR_MAP;
 const MAP_ROWS = CURRENT_MAP.length;
 const MAP_COLS = CURRENT_MAP[0].length;
 
-
 const PLAYER_START = { x: 5.5, y: 9.0, angle: -Math.PI / 2 };
 
 const NPCS = [
@@ -106,9 +105,15 @@ const DIALOGUES = {
   },
 };
 
-const FRONT_DOOR = {id: "frontDoor", x: 5.5, y: 6.0, interactionDistance: 1.4, label: "Open Front Door", interiorSpawn: {
+const FRONT_DOOR = {
+  id: "frontDoor",
+  x: 5.5,
+  y: 6.0,
+  interactionDistance: 1.4,
+  label: "Open Front Door",
+  interiorSpawn: {
     x: 4.5,
     y: 5.5,
-    angle: -Math.PI / 2
-  }
+    angle: -Math.PI / 2,
+  },
 };
