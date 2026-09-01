@@ -68,7 +68,6 @@ const ITEMS = [
 const PROTAGONIST = {
   name: "Maria Voss",
   color: "#6b6259",
-  stats: { nerve: 3, insight: 4, resolve: 3 },
   storyIntro: "Something in John's letters stopped making sense months ago. I haven't heard from him in weeks. I better go check on him...I hope he's alright.",
 };
 
@@ -79,7 +78,7 @@ const DIALOGUES = {
       text: "You shouldn't have come here. The house doesn't like visitors — and it's not fond of the ones who stay, either.",
       choices: [
         { label: "I'm looking for someone who went missing.", next: "missing" },
-        { label: "[Insight] Your hands are shaking. What happened to them?", check: { stat: "insight", min: 4 }, next: "insight_hands" },
+        { label: "Your hands are shaking. What happened to them?", next: "insight_hands" },
         { label: "I'll leave you be.", next: "passing" },
       ],
     },
@@ -108,8 +107,8 @@ const DIALOGUES = {
       speaker: "The Groundskeeper",
       text: "That door stays shut. Some things are better left where they fell.",
       choices: [
-        { label: "[Nerve] Push past him — you're going down there regardless.", check: { stat: "nerve", min: 4 }, next: "nerve_pass" },
-        { label: "[Resolve] I'm not afraid of what's down there. Not anymore.", check: { stat: "resolve", min: 4 }, next: "resolve_pass", requiresFlag: "hasCaretakerLead" },
+        { label: "Push past him — you're going down there regardless.", next: "nerve_pass" },
+        { label: "I'm not afraid of what's down there. Not anymore.", next: "resolve_pass", requiresFlag: "hasCaretakerLead" },
         { label: "I'll respect that, for now.", next: "neutral" },
       ],
     },

@@ -11,7 +11,6 @@
 
 const state = {
   phase: "title", // "title" | "settings" | "explore"
-  stats: null,
   player: { ...PLAYER_START, pitch: 0 }, // x, y, angle (radians), pitch (px, look up/down)
   flags: {},
   log: [],
@@ -20,6 +19,7 @@ const state = {
   settings: { showPrompts: true },
   settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
   inventory: {}, // itemId -> true, once picked up
+  flashlightOn: false,
 };
 
 const keys = new Set();
@@ -40,9 +40,27 @@ const INTERACT_DIST = 1.15;
 // cheap and doesn't affect collision or performance.
 const LIT_RANGE = MAX_DEPTH;
 const DARK_RANGE = 2.4;
+const MOON_RANGE = MAX_DEPTH * 0.65; // ambient moonlight — dim, but not pitch black
+
+// True only once the flashlight AND batteries are both in the inventory
+// AND the player has actually switched it on with F.
+function hasFlashlightOn() {
+  return !!(state.inventory.flashlight && state.inventory.batteries && state.flashlightOn);
+}
 
 function currentLightRange() {
-  return state.inventory.flashlight && state.inventory.batteries ? LIT_RANGE : DARK_RANGE;
+  if (CURRENT_MAP === EXTERIOR_MAP) return MOON_RANGE;
+  return hasFlashlightOn() ? LIT_RANGE : DARK_RANGE;
+}
+
+function toggleFlashlight() {
+  if (!(state.inventory.flashlight && state.inventory.batteries)) {
+    addLog("She doesn't have a working flashlight yet.");
+    return;
+  }
+  state.flashlightOn = !state.flashlightOn;
+  addLog(state.flashlightOn ? "Flashlight on." : "Flashlight off.");
+  renderHud();
 }
 
 function addLog(entry) {
@@ -62,7 +80,6 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 document.getElementById("title-start-button").addEventListener("click", () => {
-  state.stats = { ...PROTAGONIST.stats };
   CURRENT_MAP = EXTERIOR_MAP; // always start a fresh run outside the house
   state.player = { ...PLAYER_START, pitch: 0 };
   state.flags = {};
@@ -151,12 +168,14 @@ function renderHud() {
   const carriedNames = carried
     .map((id) => (ITEMS.find((it) => it.id === id) || {}).name || id)
     .join(" · ");
+  const hasBoth = state.inventory.flashlight && state.inventory.batteries;
+  const flashlightStatus = hasFlashlightOn() ? "ON" : hasBoth ? "OFF (press F)" : "none";
   hud.innerHTML = `
     <div class="portrait" style="background:${PROTAGONIST.color}">${PROTAGONIST.name.charAt(0)}</div>
     <div>
       <div class="hud-name">${PROTAGONIST.name}</div>
-      <div class="stat-line">NRV ${state.stats.nerve} · INS ${state.stats.insight} · RES ${state.stats.resolve}</div>
       <div class="stat-line">Carrying: ${carriedNames || "nothing"}</div>
+      <div class="stat-line">Flashlight: ${flashlightStatus}</div>
     </div>
   `;
 }
@@ -179,11 +198,11 @@ function renderLog() {
   });
 }
 
-// ---- story screen (UPDATED) -------------------------------------------------
+// ---- story screen -------------------------------------------------
 
 document.getElementById("Story-screen").addEventListener("click", () => {
   if (state.phase !== "story") return;
-  
+
   const textEl = document.getElementById("story-text");
   const promptEl = document.getElementById("story-prompt");
   if (textEl.textContent.length < storyString.length) {
@@ -207,19 +226,19 @@ let typeInterval;
 function typeStory() {
   const textEl = document.getElementById("story-text");
   const promptEl = document.getElementById("story-prompt");
-  
+
   // Reset screen state
   textEl.textContent = "";
   promptEl.classList.add("hidden");
-  
+
   let i = 0;
   clearInterval(typeInterval);
-  
+
   // Type one character every 40 milliseconds
   typeInterval = setInterval(() => {
     textEl.textContent += storyString.charAt(i);
     i++;
-    
+
     if (i >= storyString.length) {
       clearInterval(typeInterval);
       // Fade in the prompt 1 second after text finishes
@@ -227,7 +246,7 @@ function typeStory() {
         promptEl.classList.remove("hidden");
       }, 1000);
     }
-  }, 80); 
+  }, 80);
 }
 
 // ---- collision + movement ---------------------------------------------------
@@ -392,6 +411,55 @@ function createWallTexture() {
 
 const wallTexture = createWallTexture();
 
+// A second texture for the exterior house walls — cooler grey stone with
+// mossy green patches instead of the interior's warm brick and dark
+// stains, so stepping outside reads visually distinct from being inside.
+function createExteriorWallTexture() {
+  const tCanvas = document.createElement("canvas");
+  tCanvas.width = TEXTURE_SIZE;
+  tCanvas.height = TEXTURE_SIZE;
+  const tctx = tCanvas.getContext("2d");
+
+  tctx.fillStyle = "#111312";
+  tctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+
+  const blockW = 20;
+  const blockH = 10;
+  for (let y = 0; y < TEXTURE_SIZE; y += blockH) {
+    const rowIndex = Math.floor(y / blockH);
+    const offset = rowIndex % 2 === 0 ? 0 : blockW / 2;
+    for (let x = -blockW; x < TEXTURE_SIZE + blockW; x += blockW) {
+      const shade = 30 + Math.floor(Math.random() * 14);
+      tctx.fillStyle = `rgb(${shade + 6}, ${shade + 8}, ${shade + 6})`;
+      tctx.fillRect(x + offset + 1, y + 1, blockW - 2, blockH - 2);
+    }
+  }
+
+  // Moss patches instead of dark stains.
+  for (let i = 0; i < 8; i++) {
+    const sx = Math.random() * TEXTURE_SIZE;
+    const sy = Math.random() * TEXTURE_SIZE;
+    const r = 5 + Math.random() * 10;
+    tctx.fillStyle = `rgba(35, 55, 32, ${0.2 + Math.random() * 0.25})`;
+    tctx.beginPath();
+    tctx.arc(sx, sy, r, 0, Math.PI * 2);
+    tctx.fill();
+  }
+
+  return tCanvas;
+}
+
+const exteriorWallTexture = createExteriorWallTexture();
+
+// A fixed scatter of stars for the exterior sky, stored as fractions of
+// the canvas so it holds up across resizes. Biased toward the upper half
+// since that's roughly where the sky sits before accounting for pitch.
+const STAR_COUNT = 90;
+const stars = Array.from({ length: STAR_COUNT }, () => ({
+  x: Math.random(),
+  y: Math.random() * 0.5,
+}));
+
 // ---- raycasting (DDA algorithm) ------------------------------------------------
 // Steps through the grid one cell at a time along the ray's path (rather
 // than marching in small fixed increments) until it hits a wall. This is
@@ -470,14 +538,41 @@ function castRay(angle) {
 function drawScene() {
   const pitch = state.player.pitch;
   const horizon = CH / 2 + pitch;
+  const outside = CURRENT_MAP === EXTERIOR_MAP;
 
-  // Ceiling and floor — the horizon line shifts with pitch so looking up
-  // reveals more ceiling and looking down reveals more floor.
-  ctx.fillStyle = "#0b0a0d";
-  ctx.fillRect(0, 0, CW, horizon);
-  ctx.fillStyle = "#171310";
-  ctx.fillRect(0, horizon, CW, CH - horizon);
+  if (outside) {
+    // Night sky with a scatter of stars, fading toward the horizon.
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, horizon);
+    skyGrad.addColorStop(0, "#0a0918");
+    skyGrad.addColorStop(1, "#1c1830");
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, CW, horizon);
 
+    ctx.fillStyle = "rgba(216, 211, 196, 0.85)";
+    stars.forEach((s) => {
+      const sx = s.x * CW;
+      const sy = s.y * CH;
+      if (sy < horizon) {
+        ctx.fillRect(sx, sy, 1.5, 1.5);
+      }
+    });
+
+    // Muddy, uneven yard.
+    const groundGrad = ctx.createLinearGradient(0, horizon, 0, CH);
+    groundGrad.addColorStop(0, "#141810");
+    groundGrad.addColorStop(1, "#0b0d08");
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, horizon, CW, CH - horizon);
+  } else {
+    // Ceiling and floor — the horizon line shifts with pitch so looking up
+    // reveals more ceiling and looking down reveals more floor.
+    ctx.fillStyle = "#0b0a0d";
+    ctx.fillRect(0, 0, CW, horizon);
+    ctx.fillStyle = "#171310";
+    ctx.fillRect(0, horizon, CW, CH - horizon);
+  }
+
+  const activeTexture = outside ? exteriorWallTexture : wallTexture;
   const colWidth = CW / NUM_RAYS;
   const zbuffer = new Array(NUM_RAYS);
 
@@ -491,7 +586,7 @@ function drawScene() {
 
     // Sample one column of the texture at the wall's exact hit position.
     const texX = Math.min(TEXTURE_SIZE - 1, Math.floor(wallX * TEXTURE_SIZE));
-    ctx.drawImage(wallTexture, texX, 0, 1, TEXTURE_SIZE, i * colWidth, drawY, colWidth + 1, wallH);
+    ctx.drawImage(activeTexture, texX, 0, 1, TEXTURE_SIZE, i * colWidth, drawY, colWidth + 1, wallH);
 
     // Distance fog plus a fixed darkening for one wall orientation — the
     // classic raycaster trick that makes corners and edges read clearly
@@ -505,6 +600,20 @@ function drawScene() {
   }
 
   drawSprites(zbuffer, colWidth);
+
+  // The flashlight's beam: a circle of clear visibility around the center
+  // of the screen (where the player is looking), fading to darkness at the
+  // edges. This sits on top of everything else already drawn.
+  if (hasFlashlightOn()) {
+    const beamRadius = Math.min(CW, CH) * 0.42;
+    const beamGrad = ctx.createRadialGradient(CW / 2, CH / 2, 0, CW / 2, CH / 2, beamRadius);
+    beamGrad.addColorStop(0, "rgba(0, 0, 0, 0)");
+    beamGrad.addColorStop(0.5, "rgba(0, 0, 0, 0)");
+    beamGrad.addColorStop(1, "rgba(4, 3, 5, 0.7)");
+    ctx.fillStyle = beamGrad;
+    ctx.fillRect(0, 0, CW, CH);
+  }
+
   updateInteractPrompt();
 }
 
@@ -514,7 +623,7 @@ function drawSprites(zbuffer, colWidth) {
 
   const sprites =
     CURRENT_MAP === EXTERIOR_MAP
-      ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#8a1f1f", isExit: true }]
+      ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#6b4326", isDoor: true }]
       : [
           ...NPCS,
           { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true },
@@ -540,9 +649,22 @@ function drawSprites(zbuffer, colWidth) {
     const col = Math.max(0, Math.min(NUM_RAYS - 1, Math.floor(screenX / colWidth)));
     if (dist > zbuffer[col]) return; // hidden behind a wall
 
-    const sizeFactor = sprite.isExit ? 0.5 : sprite.isItem ? 0.35 : 0.75;
+    const sizeFactor = sprite.isDoor ? 0.85 : sprite.isExit ? 0.5 : sprite.isItem ? 0.35 : 0.75;
     const size = Math.min(CH, CH / dist) * sizeFactor;
     const brightness = Math.max(0.05, 1 - dist / lightRange);
+    const centerY = (CH - size) / 2 + pitch + size / 2;
+
+    // A warm porch-light halo behind the door — the one bright, inviting
+    // spot in an otherwise dim, moonlit yard, so it's obvious where to go.
+    if (sprite.isDoor) {
+      const glowRadius = size * 1.1;
+      const glow = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, glowRadius);
+      glow.addColorStop(0, `rgba(255, 200, 120, ${0.4 * brightness})`);
+      glow.addColorStop(1, "rgba(255, 200, 120, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(screenX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2);
+    }
+
     ctx.globalAlpha = brightness;
     ctx.fillStyle = sprite.color;
     ctx.fillRect(screenX - size / 4, (CH - size) / 2 + pitch, size / 2, size);
@@ -628,6 +750,13 @@ function handleInteract() {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
     addLog(item.pickupText);
+    if (
+      (target.id === "flashlight" || target.id === "batteries") &&
+      state.inventory.flashlight &&
+      state.inventory.batteries
+    ) {
+      addLog("She has a working flashlight now. Press F to turn it on.");
+    }
     renderHud();
   } else if (target.type === "npc") {
     openDialogue(target.id);
@@ -662,6 +791,7 @@ window.addEventListener("keydown", (e) => {
     keys.add(key);
   }
   if (key === "e") handleInteract();
+  if (key === "f") toggleFlashlight();
 });
 
 window.addEventListener("keyup", (e) => {
@@ -689,11 +819,6 @@ function closeDialogue() {
   canvas.requestPointerLock();
 }
 
-function passesCheck(choice) {
-  if (!choice.check) return true;
-  return state.stats[choice.check.stat] >= choice.check.min;
-}
-
 function passesFlagReq(choice) {
   if (!choice.requiresFlag) return true;
   return !!state.flags[choice.requiresFlag];
@@ -710,17 +835,10 @@ function renderDialogue() {
   choicesEl.innerHTML = "";
 
   node.choices.filter(passesFlagReq).forEach((choice) => {
-    const ok = passesCheck(choice);
     const btn = document.createElement("button");
     btn.className = "choice-button";
-    btn.disabled = !ok;
-    btn.innerHTML = choice.label + (choice.check && !ok
-      ? ` <span class="check-fail">— needs ${choice.check.stat} ${choice.check.min}+</span>`
-      : "");
-    btn.addEventListener("click", () => {
-      if (!ok) return;
-      chooseDialogueOption(choice);
-    });
+    btn.textContent = choice.label;
+    btn.addEventListener("click", () => chooseDialogueOption(choice));
     choicesEl.appendChild(btn);
   });
 }
@@ -729,7 +847,7 @@ function chooseDialogueOption(choice) {
   if (choice.setFlags) {
     state.flags = { ...state.flags, ...choice.setFlags };
   }
-  addLog(`You: "${choice.label.replace(/^\[[^\]]+\]\s*/, "")}"`);
+  addLog(`You: "${choice.label}"`);
 
   if (!choice.next) {
     closeDialogue();
