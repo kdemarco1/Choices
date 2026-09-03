@@ -420,31 +420,52 @@ function createExteriorWallTexture() {
   tCanvas.height = TEXTURE_SIZE;
   const tctx = tCanvas.getContext("2d");
 
-  tctx.fillStyle = "#111312";
+  // Flat concrete-grey base rather than warm brick — panelka buildings are
+  // precast concrete panels, not masonry.
+  tctx.fillStyle = "#26302a";
   tctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
 
-  const blockW = 20;
-  const blockH = 10;
-  for (let y = 0; y < TEXTURE_SIZE; y += blockH) {
-    const rowIndex = Math.floor(y / blockH);
-    const offset = rowIndex % 2 === 0 ? 0 : blockW / 2;
-    for (let x = -blockW; x < TEXTURE_SIZE + blockW; x += blockW) {
-      const shade = 30 + Math.floor(Math.random() * 14);
-      tctx.fillStyle = `rgb(${shade + 6}, ${shade + 8}, ${shade + 6})`;
-      tctx.fillRect(x + offset + 1, y + 1, blockW - 2, blockH - 2);
+  // Large square panel seams, not small bricks — precast concrete panels
+  // are big, so the "unit" here is much bigger than the interior's brick.
+  const panelSize = 32;
+  for (let y = 0; y < TEXTURE_SIZE; y += panelSize) {
+    for (let x = 0; x < TEXTURE_SIZE; x += panelSize) {
+      const shade = 28 + Math.floor(Math.random() * 10);
+      tctx.fillStyle = `rgb(${shade + 8}, ${shade + 12}, ${shade + 9})`;
+      tctx.fillRect(x + 1, y + 1, panelSize - 2, panelSize - 2);
     }
   }
 
-  // Moss patches instead of dark stains.
-  for (let i = 0; i < 8; i++) {
+  // Faint grime streaks instead of moss — concrete weathers with dark
+  // vertical runoff stains, not organic growth.
+  for (let i = 0; i < 5; i++) {
     const sx = Math.random() * TEXTURE_SIZE;
-    const sy = Math.random() * TEXTURE_SIZE;
-    const r = 5 + Math.random() * 10;
-    tctx.fillStyle = `rgba(35, 55, 32, ${0.2 + Math.random() * 0.25})`;
-    tctx.beginPath();
-    tctx.arc(sx, sy, r, 0, Math.PI * 2);
-    tctx.fill();
+    tctx.fillStyle = `rgba(10, 14, 11, ${0.15 + Math.random() * 0.2})`;
+    tctx.fillRect(sx, 0, 2 + Math.random() * 3, TEXTURE_SIZE);
   }
+
+  // A 2x2 grid of windows per texture tile — since every wall cell repeats
+  // this same texture, this reads as a dense, regular grid of apartment
+  // windows running the length and height of the building, like a real
+  // panel block rather than one house with one window.
+  const windowW = 11;
+  const windowH = 9;
+  const cols = [10, 38];
+  const rows = [6, 34];
+  rows.forEach((windowY) => {
+    cols.forEach((windowX) => {
+      const lit = Math.random() < 0.4;
+      tctx.fillStyle = lit ? "rgba(255, 195, 110, 0.65)" : "rgba(8, 10, 10, 0.8)";
+      tctx.fillRect(windowX, windowY, windowW, windowH);
+      tctx.strokeStyle = "rgba(15, 18, 15, 0.7)";
+      tctx.lineWidth = 1;
+      tctx.strokeRect(windowX, windowY, windowW, windowH);
+      // A short ledge beneath each window — a cheap stand-in for the
+      // balcony slabs panelka buildings are covered in.
+      tctx.fillStyle = "rgba(18, 22, 19, 0.8)";
+      tctx.fillRect(windowX - 2, windowY + windowH + 1, windowW + 4, 2);
+    });
+  });
 
   return tCanvas;
 }
@@ -458,6 +479,17 @@ const STAR_COUNT = 90;
 const stars = Array.from({ length: STAR_COUNT }, () => ({
   x: Math.random(),
   y: Math.random() * 0.5,
+}));
+
+// Falling snow — drawn across the whole exterior screen (not just the
+// sky), updated a little every frame for a slow downward drift, and
+// wrapped back to the top once a flake passes the bottom of the view.
+const SNOW_COUNT = 70;
+const snowflakes = Array.from({ length: SNOW_COUNT }, () => ({
+  x: Math.random(),
+  y: Math.random(),
+  speed: 0.0012 + Math.random() * 0.0018,
+  drift: (Math.random() - 0.5) * 0.0006,
 }));
 
 // ---- raycasting (DDA algorithm) ------------------------------------------------
@@ -557,10 +589,10 @@ function drawScene() {
       }
     });
 
-    // Muddy, uneven yard.
+    // Snowy, cold-toned ground rather than muddy grass.
     const groundGrad = ctx.createLinearGradient(0, horizon, 0, CH);
-    groundGrad.addColorStop(0, "#141810");
-    groundGrad.addColorStop(1, "#0b0d08");
+    groundGrad.addColorStop(0, "#3d453e");
+    groundGrad.addColorStop(1, "#15190f");
     ctx.fillStyle = groundGrad;
     ctx.fillRect(0, horizon, CW, CH - horizon);
   } else {
@@ -573,6 +605,9 @@ function drawScene() {
   }
 
   const activeTexture = outside ? exteriorWallTexture : wallTexture;
+  // The panelka block looms much taller than the interior's ceiling
+  // height, implying many floors rather than a single-story house.
+  const heightScale = outside ? 2.1 : 1;
   const colWidth = CW / NUM_RAYS;
   const zbuffer = new Array(NUM_RAYS);
 
@@ -581,7 +616,7 @@ function drawScene() {
     const { dist, side, wallX } = castRay(rayAngle);
     zbuffer[i] = dist;
 
-    const wallH = Math.min(CH * 3, CH / dist);
+    const wallH = Math.min(CH * 3, (CH / dist) * heightScale);
     const drawY = (CH - wallH) / 2 + pitch;
 
     // Sample one column of the texture at the wall's exact hit position.
@@ -600,6 +635,24 @@ function drawScene() {
   }
 
   drawSprites(zbuffer, colWidth);
+
+  // Falling snow sits in front of everything else outdoors — walls,
+  // sprites, all of it — the same way real snow reads as closer than the
+  // building behind it.
+  if (outside) {
+    ctx.fillStyle = "rgba(215, 224, 226, 0.75)";
+    snowflakes.forEach((flake) => {
+      flake.y += flake.speed;
+      flake.x += flake.drift;
+      if (flake.y > 1) {
+        flake.y = 0;
+        flake.x = Math.random();
+      }
+      if (flake.x > 1) flake.x -= 1;
+      if (flake.x < 0) flake.x += 1;
+      ctx.fillRect(flake.x * CW, flake.y * CH, 2, 2);
+    });
+  }
 
   // The flashlight's beam: a circle of clear visibility around the center
   // of the screen (where the player is looking), fading to darkness at the
@@ -623,7 +676,7 @@ function drawSprites(zbuffer, colWidth) {
 
   const sprites =
     CURRENT_MAP === EXTERIOR_MAP
-      ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#6b4326", isDoor: true }]
+      ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#2e2b20", isDoor: true, signText: FRONT_DOOR.signText }]
       : [
           ...NPCS,
           { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true },
@@ -654,13 +707,14 @@ function drawSprites(zbuffer, colWidth) {
     const brightness = Math.max(0.05, 1 - dist / lightRange);
     const centerY = (CH - size) / 2 + pitch + size / 2;
 
-    // A warm porch-light halo behind the door — the one bright, inviting
-    // spot in an otherwise dim, moonlit yard, so it's obvious where to go.
+    // A sickly green-yellow floodlight halo behind the door — the kind of
+    // sodium/mercury-vapor glow that washes a whole building entrance in
+    // one eerie color, the way it does over old apartment block entryways.
     if (sprite.isDoor) {
       const glowRadius = size * 1.1;
       const glow = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, glowRadius);
-      glow.addColorStop(0, `rgba(255, 200, 120, ${0.4 * brightness})`);
-      glow.addColorStop(1, "rgba(255, 200, 120, 0)");
+      glow.addColorStop(0, `rgba(195, 225, 130, ${0.4 * brightness})`);
+      glow.addColorStop(1, "rgba(195, 225, 130, 0)");
       ctx.fillStyle = glow;
       ctx.fillRect(screenX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2);
     }
@@ -669,6 +723,31 @@ function drawSprites(zbuffer, colWidth) {
     ctx.fillStyle = sprite.color;
     ctx.fillRect(screenX - size / 4, (CH - size) / 2 + pitch, size / 2, size);
     ctx.globalAlpha = 1;
+
+    // A backlit sign box above the entrance — a solid glowing panel with
+    // dark text on it, like an illuminated plastic shop/entrance sign,
+    // rather than just floating text. Sized and faded by the same
+    // distance math as everything else.
+    if (sprite.signText) {
+      const fontSize = Math.max(7, Math.min(22, (CH / dist) * 0.09));
+      ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+      ctx.textAlign = "center";
+      const textWidth =
+        typeof ctx.measureText === "function"
+          ? ctx.measureText(sprite.signText).width
+          : sprite.signText.length * fontSize * 0.6;
+      const padX = fontSize * 0.7;
+      const padY = fontSize * 0.5;
+      const boxW = Math.max(1, textWidth + padX * 2);
+      const boxH = Math.max(1, fontSize + padY * 2);
+      const signCenterY = centerY - size / 2 - fontSize * 1.3;
+
+      ctx.fillStyle = `rgba(200, 230, 140, ${Math.min(0.92, brightness + 0.25)})`;
+      ctx.fillRect(screenX - boxW / 2, signCenterY - boxH / 2, boxW, boxH);
+
+      ctx.fillStyle = `rgba(20, 22, 12, ${Math.min(1, brightness + 0.35)})`;
+      ctx.fillText(sprite.signText, screenX, signCenterY + fontSize * 0.35);
+    }
   });
 }
 

@@ -135,7 +135,8 @@ const FRONT_DOOR = {
   x: 5.5,
   y: 6.0,
   interactionDistance: 1.4,
-  label: "Open Front Door",
+  label: "Enter the Building",
+  signText: "ENTRANCE",
   interiorSpawn: {
     x: 4.5,
     y: 5.5,
