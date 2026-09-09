@@ -8,7 +8,7 @@ const EXTERIOR_MAP = [
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1], // col 5 (row 6) is the front door — now a real wall cell, textured as a door by the raycaster
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
@@ -137,6 +137,7 @@ const FRONT_DOOR = {
   interactionDistance: 1.4,
   label: "Enter the Building",
   signText: "ENTRANCE",
+  plateNumber: "60406",
   interiorSpawn: {
     x: 4.5,
     y: 5.5,

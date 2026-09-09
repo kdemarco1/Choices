@@ -472,6 +472,94 @@ function createExteriorWallTexture() {
 
 const exteriorWallTexture = createExteriorWallTexture();
 
+// The front door, baked as its own wall texture — a weathered plank door
+// with a windowed top, a divider, a wrought-iron scroll medallion, and a
+// handle. Because it's just another texture sampled by the same per-column
+// raycasting loop as any other wall, it gets correct perspective as you
+// approach and pass it at an angle, rather than a flat sprite pasted on.
+function createDoorTexture() {
+  const tCanvas = document.createElement("canvas");
+  tCanvas.width = TEXTURE_SIZE;
+  tCanvas.height = TEXTURE_SIZE;
+  const tctx = tCanvas.getContext("2d");
+  const S = TEXTURE_SIZE;
+
+  // Weathered pale grey-green plank base.
+  tctx.fillStyle = "#7c847a";
+  tctx.fillRect(0, 0, S, S);
+
+  // Unit number, baked in near the top edge.
+  if (FRONT_DOOR.plateNumber) {
+    tctx.fillStyle = "rgba(20, 20, 16, 0.85)";
+    tctx.font = `${Math.max(5, S * 0.06)}px "Courier New", monospace`;
+    tctx.textAlign = "center";
+    tctx.textBaseline = "top";
+    tctx.fillText(FRONT_DOOR.plateNumber, S / 2, S * 0.02);
+  }
+
+  // Window near the top, 2x3 panes with a soft pale glow behind the glass.
+  const winX = S * 0.16;
+  const winY = S * 0.08;
+  const winW = S * 0.68;
+  const winH = S * 0.26;
+  tctx.fillStyle = "rgba(195, 210, 200, 0.6)";
+  tctx.fillRect(winX, winY, winW, winH);
+  tctx.strokeStyle = "rgba(35, 38, 33, 0.9)";
+  tctx.lineWidth = 1.5;
+  tctx.strokeRect(winX, winY, winW, winH);
+  tctx.beginPath();
+  tctx.moveTo(winX + winW / 2, winY);
+  tctx.lineTo(winX + winW / 2, winY + winH);
+  tctx.moveTo(winX, winY + winH / 3);
+  tctx.lineTo(winX + winW, winY + winH / 3);
+  tctx.moveTo(winX, winY + (winH * 2) / 3);
+  tctx.lineTo(winX + winW, winY + (winH * 2) / 3);
+  tctx.stroke();
+
+  // Divider bar below the window.
+  const dividerY = S * 0.4;
+  tctx.fillStyle = "rgba(40, 42, 36, 0.65)";
+  tctx.fillRect(0, dividerY, S, S * 0.02);
+
+  // Wrought-iron scroll medallion, lower-middle.
+  const medX = S / 2;
+  const medY = S * 0.66;
+  const medR = S * 0.14;
+  tctx.strokeStyle = "rgba(20, 20, 18, 0.9)";
+  tctx.lineWidth = 1.5;
+  tctx.beginPath();
+  tctx.arc(medX, medY, medR, 0, Math.PI * 2);
+  tctx.stroke();
+  [0, 1, 2, 3].forEach((i) => {
+    const angle = (Math.PI / 2) * i + Math.PI / 4;
+    const cx = medX + Math.cos(angle) * medR * 1.3;
+    const cy = medY + Math.sin(angle) * medR * 1.3;
+    tctx.beginPath();
+    tctx.arc(cx, cy, medR * 0.35, 0, Math.PI * 1.5);
+    tctx.stroke();
+  });
+
+  // Faint plank lines.
+  tctx.strokeStyle = "rgba(30, 32, 27, 0.3)";
+  tctx.lineWidth = 1;
+  [0.3, 0.7].forEach((frac) => {
+    tctx.beginPath();
+    tctx.moveTo(S * frac, dividerY + S * 0.02);
+    tctx.lineTo(S * frac, S * 0.96);
+    tctx.stroke();
+  });
+
+  // Handle.
+  const handleX = S * 0.62;
+  const handleY = S * 0.58;
+  tctx.fillStyle = "#9a9484";
+  tctx.fillRect(handleX, handleY, S * 0.05, S * 0.09);
+
+  return tCanvas;
+}
+
+const doorTexture = createDoorTexture();
+
 // A fixed scatter of stars for the exterior sky, stored as fractions of
 // the canvas so it holds up across resizes. Biased toward the upper half
 // since that's roughly where the sky sits before accounting for pitch.
@@ -564,7 +652,14 @@ function castRay(angle) {
   }
   wallX -= Math.floor(wallX);
 
-  return { dist: perpWallDist, side, wallX };
+  // Flag whether this exact cell is the front door, so the caller can
+  // sample the door texture instead of the regular wall texture — the
+  // door is just a specially-textured wall cell, the same way real
+  // raycasters render doors.
+  const isDoorCell =
+    CURRENT_MAP === EXTERIOR_MAP && mapX === Math.floor(FRONT_DOOR.x) && mapY === Math.floor(FRONT_DOOR.y);
+
+  return { dist: perpWallDist, side, wallX, isDoorCell };
 }
 
 function drawScene() {
@@ -613,15 +708,18 @@ function drawScene() {
 
   for (let i = 0; i < NUM_RAYS; i++) {
     const rayAngle = state.player.angle - FOV / 2 + (i / NUM_RAYS) * FOV;
-    const { dist, side, wallX } = castRay(rayAngle);
+    const { dist, side, wallX, isDoorCell } = castRay(rayAngle);
     zbuffer[i] = dist;
 
     const wallH = Math.min(CH * 3, (CH / dist) * heightScale);
     const drawY = (CH - wallH) / 2 + pitch;
 
-    // Sample one column of the texture at the wall's exact hit position.
+    // Sample one column of the texture at the wall's exact hit position —
+    // the door texture if this column hit the door's cell, otherwise the
+    // regular wall texture for whichever map we're in.
+    const texture = isDoorCell ? doorTexture : activeTexture;
     const texX = Math.min(TEXTURE_SIZE - 1, Math.floor(wallX * TEXTURE_SIZE));
-    ctx.drawImage(activeTexture, texX, 0, 1, TEXTURE_SIZE, i * colWidth, drawY, colWidth + 1, wallH);
+    ctx.drawImage(texture, texX, 0, 1, TEXTURE_SIZE, i * colWidth, drawY, colWidth + 1, wallH);
 
     // Distance fog plus a fixed darkening for one wall orientation — the
     // classic raycaster trick that makes corners and edges read clearly
@@ -669,14 +767,13 @@ function drawScene() {
 
   updateInteractPrompt();
 }
-
 function drawSprites(zbuffer, colWidth) {
   const pitch = state.player.pitch;
   const lightRange = currentLightRange();
 
   const sprites =
     CURRENT_MAP === EXTERIOR_MAP
-      ? [{ x: FRONT_DOOR.x, y: FRONT_DOOR.y, color: "#2e2b20", isDoor: true, signText: FRONT_DOOR.signText }]
+      ? []
       : [
           ...NPCS,
           { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true },
@@ -702,53 +799,73 @@ function drawSprites(zbuffer, colWidth) {
     const col = Math.max(0, Math.min(NUM_RAYS - 1, Math.floor(screenX / colWidth)));
     if (dist > zbuffer[col]) return; // hidden behind a wall
 
-    const sizeFactor = sprite.isDoor ? 0.85 : sprite.isExit ? 0.5 : sprite.isItem ? 0.35 : 0.75;
+    const sizeFactor = sprite.isExit ? 0.5 : sprite.isItem ? 0.35 : 0.75;
     const size = Math.min(CH, CH / dist) * sizeFactor;
     const brightness = Math.max(0.05, 1 - dist / lightRange);
-    const centerY = (CH - size) / 2 + pitch + size / 2;
-
-    // A sickly green-yellow floodlight halo behind the door — the kind of
-    // sodium/mercury-vapor glow that washes a whole building entrance in
-    // one eerie color, the way it does over old apartment block entryways.
-    if (sprite.isDoor) {
-      const glowRadius = size * 1.1;
-      const glow = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, glowRadius);
-      glow.addColorStop(0, `rgba(195, 225, 130, ${0.4 * brightness})`);
-      glow.addColorStop(1, "rgba(195, 225, 130, 0)");
-      ctx.fillStyle = glow;
-      ctx.fillRect(screenX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2);
-    }
-
     ctx.globalAlpha = brightness;
     ctx.fillStyle = sprite.color;
     ctx.fillRect(screenX - size / 4, (CH - size) / 2 + pitch, size / 2, size);
     ctx.globalAlpha = 1;
-
-    // A backlit sign box above the entrance — a solid glowing panel with
-    // dark text on it, like an illuminated plastic shop/entrance sign,
-    // rather than just floating text. Sized and faded by the same
-    // distance math as everything else.
-    if (sprite.signText) {
-      const fontSize = Math.max(7, Math.min(22, (CH / dist) * 0.09));
-      ctx.font = `bold ${fontSize}px "Courier New", monospace`;
-      ctx.textAlign = "center";
-      const textWidth =
-        typeof ctx.measureText === "function"
-          ? ctx.measureText(sprite.signText).width
-          : sprite.signText.length * fontSize * 0.6;
-      const padX = fontSize * 0.7;
-      const padY = fontSize * 0.5;
-      const boxW = Math.max(1, textWidth + padX * 2);
-      const boxH = Math.max(1, fontSize + padY * 2);
-      const signCenterY = centerY - size / 2 - fontSize * 1.3;
-
-      ctx.fillStyle = `rgba(200, 230, 140, ${Math.min(0.92, brightness + 0.25)})`;
-      ctx.fillRect(screenX - boxW / 2, signCenterY - boxH / 2, boxW, boxH);
-
-      ctx.fillStyle = `rgba(20, 22, 12, ${Math.min(1, brightness + 0.35)})`;
-      ctx.fillText(sprite.signText, screenX, signCenterY + fontSize * 0.35);
-    }
   });
+
+  if (CURRENT_MAP === EXTERIOR_MAP) {
+    drawDoorSignage();
+  }
+}
+
+// The door itself is now baked into the wall texture (see createDoorTexture
+// / castRay's isDoorCell flag), so this only draws the things that sit in
+// front of the wall rather than on it: the floodlight glow and the
+// illuminated sign above the entrance. Deliberately skips the zbuffer
+// occlusion check other sprites use, since a light glow spilling in front
+// of a wall shouldn't be culled by float-precision comparisons against the
+// very wall it's mounted on.
+function drawDoorSignage() {
+  const pitch = state.player.pitch;
+  const lightRange = currentLightRange();
+
+  const dx = FRONT_DOOR.x - state.player.x;
+  const dy = FRONT_DOOR.y - state.player.y;
+  const dist = Math.hypot(dx, dy);
+  let angleToSprite = Math.atan2(dy, dx) - state.player.angle;
+  angleToSprite = Math.atan2(Math.sin(angleToSprite), Math.cos(angleToSprite));
+  if (Math.abs(angleToSprite) > FOV / 2 + 0.2) return;
+
+  const screenX = (0.5 + angleToSprite / FOV) * CW;
+  const size = Math.min(CH, CH / dist) * 0.85;
+  const brightness = Math.max(0.05, 1 - dist / lightRange);
+  const centerY = (CH - size) / 2 + pitch + size / 2;
+
+  // Sickly green-yellow floodlight halo, the sodium/mercury-vapor glow
+  // that washes a building entrance in one eerie color.
+  const glowRadius = size * 1.1;
+  const glow = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, glowRadius);
+  glow.addColorStop(0, `rgba(195, 225, 130, ${0.4 * brightness})`);
+  glow.addColorStop(1, "rgba(195, 225, 130, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(screenX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2);
+
+  // Backlit sign box above the entrance.
+  if (FRONT_DOOR.signText) {
+    const fontSize = Math.max(7, Math.min(22, (CH / dist) * 0.09));
+    ctx.font = `bold ${fontSize}px "Courier New", monospace`;
+    ctx.textAlign = "center";
+    const textWidth =
+      typeof ctx.measureText === "function"
+        ? ctx.measureText(FRONT_DOOR.signText).width
+        : FRONT_DOOR.signText.length * fontSize * 0.6;
+    const padX = fontSize * 0.7;
+    const padY = fontSize * 0.5;
+    const boxW = Math.max(1, textWidth + padX * 2);
+    const boxH = Math.max(1, fontSize + padY * 2);
+    const signCenterY = centerY - size / 2 - fontSize * 1.3;
+
+    ctx.fillStyle = `rgba(200, 230, 140, ${Math.min(0.92, brightness + 0.25)})`;
+    ctx.fillRect(screenX - boxW / 2, signCenterY - boxH / 2, boxW, boxH);
+
+    ctx.fillStyle = `rgba(20, 22, 12, ${Math.min(1, brightness + 0.35)})`;
+    ctx.fillText(FRONT_DOOR.signText, screenX, signCenterY + fontSize * 0.35);
+  }
 }
 
 // ---- interaction (proximity + "E") -------------------------------------------
