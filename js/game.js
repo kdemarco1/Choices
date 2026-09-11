@@ -1,17 +1,14 @@
 // ---------------------------------------------------------------------------
-// GAME LOGIC
-// Plain JS, no build step needed. Three screens:
-//   1. Title screen (Start / Settings)
-//   2. Settings screen
-//   3. Explore screen — a first-person raycaster drawn to <canvas>
-// The player is a fixed, pre-defined protagonist (see PROTAGONIST in
-// data.js) — there is no character creation step.
-// State lives in one object; the render loop reads from it every frame.
+// GAME LOGIC — now a real 3D scene via Three.js instead of a 2D raycaster.
+// Screens: title -> story -> explore (with an optional detour to settings
+// or the pause menu). All game *content* (maps, dialogue, items) lives in
+// data.js, untouched by this rewrite — only the rendering/movement/camera
+// layer changed. World coordinates: grid (x, y) maps directly to world
+// (X, Z); Y is vertical (up).
 // ---------------------------------------------------------------------------
 
 const state = {
-  phase: "title", // "title" | "settings" | "explore"
-  player: { ...PLAYER_START, pitch: 0 }, // x, y, angle (radians), pitch (px, look up/down)
+  phase: "title", // "title" | "story" | "settings" | "explore" | "paused"
   flags: {},
   log: [],
   activeNpc: null, // "caretaker" | "groundskeeper" | null
@@ -24,26 +21,22 @@ const state = {
 
 const keys = new Set();
 
-// Raycaster tuning
-const FOV = (66 * Math.PI) / 180;
-const MAX_DEPTH = 9;
-const MOVE_SPEED = 0.045;
-const ROT_SPEED = 0.045; // used only for arrow-key fallback rotation
+const MOVE_SPEED = 2.6; // world units per second
 const MOUSE_SENSITIVITY = 0.0022;
-const PITCH_SENSITIVITY = 0.6;
-const PLAYER_RADIUS = 0.22;
+const PITCH_LIMIT = 1.3; // radians, keeps the camera from flipping past vertical
+const PLAYER_RADIUS = 0.24;
 const INTERACT_DIST = 1.15;
+const EYE_HEIGHT = 1.5;
+const WALL_HEIGHT = 3;
 
-// Vision range: full range once both the flashlight and batteries are in
-// the inventory, a short oppressive range otherwise. Only the brightness
-// falloff changes — walls are still raycast at full MAX_DEPTH — so this is
-// cheap and doesn't affect collision or performance.
-const LIT_RANGE = MAX_DEPTH;
-const DARK_RANGE = 2.4;
-const MOON_RANGE = MAX_DEPTH * 0.65; // ambient moonlight — dim, but not pitch black
+// Vision "range": full range once the flashlight + batteries are both in
+// the inventory and switched on, a short oppressive range otherwise. This
+// now drives real Three.js fog distance instead of a manual brightness
+// falloff, so it's genuinely how far you can see, not a fake vignette.
+const LIT_RANGE = 12;
+const DARK_RANGE = 2.6;
+const MOON_RANGE = 8;
 
-// True only once the flashlight AND batteries are both in the inventory
-// AND the player has actually switched it on with F.
 function hasFlashlightOn() {
   return !!(state.inventory.flashlight && state.inventory.batteries && state.flashlightOn);
 }
@@ -81,10 +74,10 @@ function showScreen(id) {
 
 document.getElementById("title-start-button").addEventListener("click", () => {
   CURRENT_MAP = EXTERIOR_MAP; // always start a fresh run outside the house
-  state.player = { ...PLAYER_START, pitch: 0 };
   state.flags = {};
   state.log = [];
   state.inventory = {};
+  state.flashlightOn = false;
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
@@ -104,7 +97,7 @@ document.getElementById("title-settings-button").addEventListener("click", () =>
 document.getElementById("settings-back-button").addEventListener("click", () => {
   if (state.settingsReturnTo === "paused") {
     state.phase = "paused";
-    showScreen("screen-explore"); // pause overlay is still showing underneath
+    showScreen("screen-explore");
   } else {
     state.phase = "title";
     showScreen("screen-title");
@@ -117,7 +110,7 @@ function openPauseMenu() {
   state.phase = "paused";
   keys.clear();
   document.getElementById("pause-overlay").classList.remove("hidden");
-  if (document.pointerLockElement === canvas) {
+  if (document.pointerLockElement === renderer.domElement) {
     document.exitPointerLock();
   }
 }
@@ -125,9 +118,7 @@ function openPauseMenu() {
 function closePauseMenu() {
   document.getElementById("pause-overlay").classList.add("hidden");
   state.phase = "explore";
-  requestAnimationFrame(gameLoop); // the render loop stopped while paused
-  // Called from a button click, so this is a valid user gesture.
-  canvas.requestPointerLock();
+  renderer.domElement.requestPointerLock();
 }
 
 document.getElementById("pause-resume-button").addEventListener("click", closePauseMenu);
@@ -139,7 +130,7 @@ document.getElementById("pause-settings-button").addEventListener("click", () =>
 });
 
 document.getElementById("pause-leave-button").addEventListener("click", () => {
-  if (document.pointerLockElement === canvas) {
+  if (document.pointerLockElement === renderer.domElement) {
     document.exitPointerLock();
   }
   document.getElementById("pause-overlay").classList.add("hidden");
@@ -213,9 +204,11 @@ document.getElementById("Story-screen").addEventListener("click", () => {
   }
   state.phase = "explore";
   showScreen("screen-explore");
+  spawnAt(PLAYER_START, EXTERIOR_MAP);
   renderHud();
-  requestAnimationFrame(gameLoop);
-  canvas.requestPointerLock();
+  clock.start();
+  renderer.setAnimationLoop(gameLoop);
+  renderer.domElement.requestPointerLock();
 });
 
 // ---- typewriter effect ------------------------------------------------------
@@ -226,27 +219,294 @@ let typeInterval;
 function typeStory() {
   const textEl = document.getElementById("story-text");
   const promptEl = document.getElementById("story-prompt");
-
-  // Reset screen state
   textEl.textContent = "";
   promptEl.classList.add("hidden");
-
   let i = 0;
   clearInterval(typeInterval);
-
-  // Type one character every 40 milliseconds
   typeInterval = setInterval(() => {
     textEl.textContent += storyString.charAt(i);
     i++;
-
     if (i >= storyString.length) {
       clearInterval(typeInterval);
-      // Fade in the prompt 1 second after text finishes
-      setTimeout(() => {
-        promptEl.classList.remove("hidden");
-      }, 1000);
+      setTimeout(() => promptEl.classList.remove("hidden"), 1000);
     }
   }, 80);
+}
+
+// ---- Three.js scene setup -----------------------------------------------------
+
+const canvas = document.getElementById("viewport");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x000000, 0.1, DARK_RANGE);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 100);
+const yawObject = new THREE.Object3D();
+yawObject.add(camera);
+scene.add(yawObject);
+
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+scene.add(ambientLight);
+
+const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.5, 0.5, 1.1);
+flashlightLight.position.set(0, 0, 0);
+camera.add(flashlightLight);
+camera.add(flashlightLight.target);
+flashlightLight.target.position.set(0, 0, -1);
+
+const worldGroup = new THREE.Group();
+scene.add(worldGroup);
+
+function resizeRenderer() {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+}
+resizeRenderer();
+window.addEventListener("resize", resizeRenderer);
+
+// ---- textures (procedurally generated, no image files needed) -----------------
+// These draw onto small offscreen 2D canvases, exactly like the previous
+// raycaster's textures — the only difference is they're now wrapped as
+// THREE.CanvasTexture and applied to real 3D geometry instead of being
+// sampled column-by-column by hand.
+
+const TEXTURE_SIZE = 128;
+
+function makeThreeTexture(canvasEl) {
+  const tex = new THREE.CanvasTexture(canvasEl);
+  tex.magFilter = THREE.NearestFilter; // crisp, no blur
+  tex.minFilter = THREE.NearestFilter;
+  return tex;
+}
+
+function createInteriorWallTexture() {
+  const c = document.createElement("canvas");
+  c.width = TEXTURE_SIZE;
+  c.height = TEXTURE_SIZE;
+  const t = c.getContext("2d");
+  t.fillStyle = "#141010";
+  t.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  const brickW = 32;
+  const brickH = 16;
+  for (let y = 0; y < TEXTURE_SIZE; y += brickH) {
+    const offset = (y / brickH) % 2 === 0 ? 0 : brickW / 2;
+    for (let x = -brickW; x < TEXTURE_SIZE + brickW; x += brickW) {
+      const shade = 42 + Math.floor(Math.random() * 16);
+      t.fillStyle = `rgb(${shade + 16}, ${shade + 9}, ${shade})`;
+      t.fillRect(x + offset + 1, y + 1, brickW - 2, brickH - 2);
+    }
+  }
+  for (let i = 0; i < 7; i++) {
+    t.fillStyle = `rgba(15, 10, 10, ${0.15 + Math.random() * 0.25})`;
+    t.beginPath();
+    t.arc(Math.random() * TEXTURE_SIZE, Math.random() * TEXTURE_SIZE, 8 + Math.random() * 18, 0, Math.PI * 2);
+    t.fill();
+  }
+  return c;
+}
+
+function createExteriorWallTexture() {
+  const c = document.createElement("canvas");
+  c.width = TEXTURE_SIZE;
+  c.height = TEXTURE_SIZE;
+  const t = c.getContext("2d");
+  t.fillStyle = "#26302a";
+  t.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
+  const panel = 64;
+  for (let y = 0; y < TEXTURE_SIZE; y += panel) {
+    for (let x = 0; x < TEXTURE_SIZE; x += panel) {
+      const shade = 28 + Math.floor(Math.random() * 10);
+      t.fillStyle = `rgb(${shade + 8}, ${shade + 12}, ${shade + 9})`;
+      t.fillRect(x + 2, y + 2, panel - 4, panel - 4);
+    }
+  }
+  for (let i = 0; i < 5; i++) {
+    t.fillStyle = `rgba(10, 14, 11, ${0.15 + Math.random() * 0.2})`;
+    t.fillRect(Math.random() * TEXTURE_SIZE, 0, 4 + Math.random() * 6, TEXTURE_SIZE);
+  }
+  const winW = 22;
+  const winH = 18;
+  [[20, 12], [76, 12], [20, 68], [76, 68]].forEach(([wx, wy]) => {
+    const lit = Math.random() < 0.4;
+    t.fillStyle = lit ? "rgba(255, 195, 110, 0.65)" : "rgba(8, 10, 10, 0.8)";
+    t.fillRect(wx, wy, winW, winH);
+    t.strokeStyle = "rgba(15, 18, 15, 0.7)";
+    t.lineWidth = 2;
+    t.strokeRect(wx, wy, winW, winH);
+  });
+  return c;
+}
+
+function createDoorTexture() {
+  const c = document.createElement("canvas");
+  c.width = TEXTURE_SIZE;
+  c.height = TEXTURE_SIZE;
+  const t = c.getContext("2d");
+  const S = TEXTURE_SIZE;
+  t.fillStyle = "#7c847a";
+  t.fillRect(0, 0, S, S);
+  if (FRONT_DOOR.plateNumber) {
+    t.fillStyle = "rgba(20, 20, 16, 0.85)";
+    t.font = `${Math.max(6, S * 0.06)}px "Courier New", monospace`;
+    t.textAlign = "center";
+    t.textBaseline = "top";
+    t.fillText(FRONT_DOOR.plateNumber, S / 2, S * 0.02);
+  }
+  const winX = S * 0.16;
+  const winY = S * 0.08;
+  const winW = S * 0.68;
+  const winH = S * 0.26;
+  t.fillStyle = "rgba(195, 210, 200, 0.6)";
+  t.fillRect(winX, winY, winW, winH);
+  t.strokeStyle = "rgba(35, 38, 33, 0.9)";
+  t.lineWidth = 2;
+  t.strokeRect(winX, winY, winW, winH);
+  t.beginPath();
+  t.moveTo(winX + winW / 2, winY);
+  t.lineTo(winX + winW / 2, winY + winH);
+  t.moveTo(winX, winY + winH / 3);
+  t.lineTo(winX + winW, winY + winH / 3);
+  t.moveTo(winX, winY + (winH * 2) / 3);
+  t.lineTo(winX + winW, winY + (winH * 2) / 3);
+  t.stroke();
+  const dividerY = S * 0.4;
+  t.fillStyle = "rgba(40, 42, 36, 0.65)";
+  t.fillRect(0, dividerY, S, S * 0.02);
+  const medX = S / 2;
+  const medY = S * 0.66;
+  const medR = S * 0.14;
+  t.strokeStyle = "rgba(20, 20, 18, 0.9)";
+  t.lineWidth = 2;
+  t.beginPath();
+  t.arc(medX, medY, medR, 0, Math.PI * 2);
+  t.stroke();
+  [0, 1, 2, 3].forEach((i) => {
+    const angle = (Math.PI / 2) * i + Math.PI / 4;
+    const cx = medX + Math.cos(angle) * medR * 1.3;
+    const cy = medY + Math.sin(angle) * medR * 1.3;
+    t.beginPath();
+    t.arc(cx, cy, medR * 0.35, 0, Math.PI * 1.5);
+    t.stroke();
+  });
+  t.fillStyle = "#9a9484";
+  t.fillRect(S * 0.62, S * 0.58, S * 0.05, S * 0.09);
+  return c;
+}
+
+const interiorWallTexture = makeThreeTexture(createInteriorWallTexture());
+const exteriorWallTexture = makeThreeTexture(createExteriorWallTexture());
+const doorTexture = makeThreeTexture(createDoorTexture());
+
+function makeColorTexture(hex) {
+  const c = document.createElement("canvas");
+  c.width = 8;
+  c.height = 8;
+  const t = c.getContext("2d");
+  t.fillStyle = hex;
+  t.fillRect(0, 0, 8, 8);
+  return makeThreeTexture(c);
+}
+
+// ---- world building -------------------------------------------------------
+
+function disposeWorld() {
+  worldGroup.children.slice().forEach((obj) => {
+    worldGroup.remove(obj);
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material && obj.userData.disposeMaterial) {
+      if (obj.material.map) obj.material.map.dispose();
+      obj.material.dispose();
+    }
+  });
+}
+
+function buildWorld() {
+  disposeWorld();
+  const outside = CURRENT_MAP === EXTERIOR_MAP;
+  const rows = CURRENT_MAP.length;
+  const cols = CURRENT_MAP[0].length;
+  const wallTex = outside ? exteriorWallTexture : interiorWallTexture;
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95 });
+  const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
+
+  const doorCol = Math.floor(FRONT_DOOR.x);
+  const doorRow = Math.floor(FRONT_DOOR.y);
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (CURRENT_MAP[row][col] !== 1) continue;
+      if (outside && col === doorCol && row === doorRow) continue; // door drawn separately below
+      const mesh = new THREE.Mesh(wallGeo, wallMat);
+      mesh.position.set(col + 0.5, WALL_HEIGHT / 2, row + 0.5);
+      worldGroup.add(mesh);
+    }
+  }
+
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: outside ? 0x232c1f : 0x18140f,
+    roughness: 1,
+  });
+  const planeGeo = new THREE.PlaneGeometry(cols, rows);
+  const floor = new THREE.Mesh(planeGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(cols / 2, 0, rows / 2);
+  worldGroup.add(floor);
+
+  const ceilMat = new THREE.MeshStandardMaterial({
+    color: outside ? 0x0a0a14 : 0x0b0a0d,
+    side: THREE.BackSide,
+  });
+  const ceiling = new THREE.Mesh(planeGeo, ceilMat);
+  ceiling.rotation.x = Math.PI / 2;
+  ceiling.position.set(cols / 2, WALL_HEIGHT, rows / 2);
+  worldGroup.add(ceiling);
+
+  if (outside) {
+    const doorMat = new THREE.MeshStandardMaterial({ map: doorTexture, roughness: 0.85 });
+    const doorGeo = new THREE.BoxGeometry(0.85, WALL_HEIGHT * 0.85, 0.14);
+    const doorMesh = new THREE.Mesh(doorGeo, doorMat);
+    doorMesh.position.set(FRONT_DOOR.x, (WALL_HEIGHT * 0.85) / 2, FRONT_DOOR.y);
+    worldGroup.add(doorMesh);
+
+    const glow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
+    glow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
+    worldGroup.add(glow);
+
+    scene.background = new THREE.Color(0x0a0918);
+  } else {
+    NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
+    ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => addMarkerSprite(it.x, it.y, it.color, 0.4));
+    addMarkerSprite(EXIT.x, EXIT.y, "#8a1f1f", 0.6);
+    scene.background = new THREE.Color(0x0b0a0d);
+  }
+
+  scene.fog.color.set(outside ? 0x0a0918 : 0x0b0a0d);
+}
+
+function addMarkerSprite(x, y, colorHex, scale) {
+  const mat = new THREE.SpriteMaterial({ map: makeColorTexture(colorHex) });
+  const sprite = new THREE.Sprite(mat);
+  sprite.userData.disposeMaterial = true;
+  sprite.scale.set(scale, scale, 1);
+  sprite.position.set(x, EYE_HEIGHT * 0.55, y);
+  worldGroup.add(sprite);
+}
+
+// ---- spawning ---------------------------------------------------------------
+// All of the current data's spawn angles happen to be -PI/2 ("facing
+// north"), which lines up exactly with a Three.js camera's default facing
+// direction (-Z) when yaw is 0 — so resetting yaw/pitch to 0 on spawn
+// matches every spawn point currently defined in data.js.
+
+function spawnAt(spawn, map) {
+  CURRENT_MAP = map;
+  yawObject.position.set(spawn.x, EYE_HEIGHT, spawn.y);
+  yawObject.rotation.y = 0;
+  camera.rotation.x = 0;
+  buildWorld();
 }
 
 // ---- collision + movement ---------------------------------------------------
@@ -258,632 +518,86 @@ function isWall(x, y) {
   return CURRENT_MAP[row][col] === 1;
 }
 
-function tryMovePlayer() {
+const _forward = new THREE.Vector3();
+const _right = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+
+function tryMovePlayer(dt) {
   if (state.activeNpc) return; // frozen mid-dialogue
 
+  let forwardInput = 0;
+  if (keys.has("w") || keys.has("arrowup")) forwardInput += 1;
+  if (keys.has("s") || keys.has("arrowdown")) forwardInput -= 1;
+  let strafeInput = 0;
+  if (keys.has("d")) strafeInput += 1;
+  if (keys.has("a")) strafeInput -= 1;
   // Arrow left/right still rotate, as a keyboard-only fallback for anyone
-  // not using mouse look (e.g. pointer lock isn't available/granted).
-  let rot = 0;
-  if (keys.has("arrowleft")) rot -= ROT_SPEED;
-  if (keys.has("arrowright")) rot += ROT_SPEED;
-  state.player.angle += rot;
+  // not using mouse look.
+  if (keys.has("arrowleft")) yawObject.rotation.y += 1.6 * dt;
+  if (keys.has("arrowright")) yawObject.rotation.y -= 1.6 * dt;
 
-  // WASD drives movement relative to facing direction: W/S forward/back,
-  // A/D strafe left/right. Arrow up/down also move forward/back.
-  let forward = 0;
-  if (keys.has("w") || keys.has("arrowup")) forward += 1;
-  if (keys.has("s") || keys.has("arrowdown")) forward -= 1;
+  if (forwardInput === 0 && strafeInput === 0) return;
 
-  let strafe = 0;
-  if (keys.has("d")) strafe += 1;
-  if (keys.has("a")) strafe -= 1;
+  camera.getWorldDirection(_forward);
+  _forward.y = 0;
+  _forward.normalize();
+  _right.crossVectors(_forward, _up).normalize();
 
-  if (forward !== 0 || strafe !== 0) {
-    const forwardAngle = state.player.angle;
-    const strafeAngle = state.player.angle + Math.PI / 2;
+  const moveX = (_forward.x * forwardInput + _right.x * strafeInput) * MOVE_SPEED * dt;
+  const moveZ = (_forward.z * forwardInput + _right.z * strafeInput) * MOVE_SPEED * dt;
 
-    const dx = (Math.cos(forwardAngle) * forward + Math.cos(strafeAngle) * strafe) * MOVE_SPEED;
-    const dy = (Math.sin(forwardAngle) * forward + Math.sin(strafeAngle) * strafe) * MOVE_SPEED;
-
-    const nx = state.player.x + dx;
-    const ny = state.player.y + dy;
-    // Resolve X and Y separately so the player can slide along walls
-    // instead of sticking when moving diagonally into a corner.
-    if (!isWall(nx + Math.sign(dx || 1) * PLAYER_RADIUS, state.player.y)) {
-      state.player.x = nx;
-    }
-    if (!isWall(state.player.x, ny + Math.sign(dy || 1) * PLAYER_RADIUS)) {
-      state.player.y = ny;
-    }
+  const nx = yawObject.position.x + moveX;
+  const nz = yawObject.position.z + moveZ;
+  if (!isWall(nx + Math.sign(moveX || 1) * PLAYER_RADIUS, yawObject.position.z)) {
+    yawObject.position.x = nx;
+  }
+  if (!isWall(yawObject.position.x, nz + Math.sign(moveZ || 1) * PLAYER_RADIUS)) {
+    yawObject.position.z = nz;
   }
 }
 
 // ---- mouse look (pointer lock) -------------------------------------------------
-// Pointer lock gives truly unlimited look-around (no "stuck at the screen
-// edge" problem) since the browser reports relative movement instead of
-// absolute cursor position. The trade-off is a captured, invisible cursor
-// — so we release the lock automatically the instant dialogue opens, and
-// re-request it the instant dialogue closes, so choices are always
-// clickable and looking around always has full range the rest of the time.
-
-function requestLook() {
-  if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== canvas) {
-    canvas.requestPointerLock();
-  }
-}
 
 function onPointerLockChange() {
   const hint = document.getElementById("pointer-lock-hint");
-  const locked = document.pointerLockElement === canvas;
+  const locked = document.pointerLockElement === renderer.domElement;
   const shouldShowHint = state.phase === "explore" && !state.activeNpc && !locked;
   hint.classList.toggle("hidden", !shouldShowHint);
 }
 
 function onMouseMove(e) {
-  if (document.pointerLockElement !== canvas || state.activeNpc) return;
-  state.player.angle += e.movementX * MOUSE_SENSITIVITY;
-  state.player.pitch -= e.movementY * PITCH_SENSITIVITY;
-  state.player.pitch = Math.max(-MAX_PITCH, Math.min(MAX_PITCH, state.player.pitch));
+  if (document.pointerLockElement !== renderer.domElement || state.activeNpc) return;
+  yawObject.rotation.y -= e.movementX * MOUSE_SENSITIVITY;
+  camera.rotation.x -= e.movementY * MOUSE_SENSITIVITY;
+  camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x));
 }
 
-// ---- raycasting render --------------------------------------------------------
-
-const canvas = document.getElementById("viewport");
-const ctx = canvas.getContext("2d");
-let CW = 0;
-let CH = 0;
-let NUM_RAYS = 220;
-let MAX_PITCH = 90;
-
-function resizeCanvas() {
-  CW = canvas.width = window.innerWidth;
-  CH = canvas.height = window.innerHeight;
-  // More screen width earns more rays (sharper columns), capped for perf.
-  NUM_RAYS = Math.max(160, Math.min(480, Math.floor(CW / 3)));
-  // Keep the look-up/down range proportional to the taller/shorter window.
-  MAX_PITCH = CH * 0.35;
-}
-
-resizeCanvas();
-window.addEventListener("resize", resizeCanvas);
-
-canvas.addEventListener("click", requestLook);
 document.addEventListener("pointerlockchange", onPointerLockChange);
 document.addEventListener("mousemove", onMouseMove);
-
-// ---- wall texture (procedurally generated, no image files needed) -------------
-// A small offscreen canvas holding a stone-brick pattern with a few random
-// stains and cracks. Drawn once at load; sampled one column at a time when
-// rendering walls, the same way a real raycaster samples a texture image.
-
-const TEXTURE_SIZE = 64;
-
-function createWallTexture() {
-  const tCanvas = document.createElement("canvas");
-  tCanvas.width = TEXTURE_SIZE;
-  tCanvas.height = TEXTURE_SIZE;
-  const tctx = tCanvas.getContext("2d");
-
-  tctx.fillStyle = "#141010";
-  tctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
-
-  const brickW = 16;
-  const brickH = 8;
-  for (let y = 0; y < TEXTURE_SIZE; y += brickH) {
-    const rowIndex = Math.floor(y / brickH);
-    const offset = rowIndex % 2 === 0 ? 0 : brickW / 2;
-    for (let x = -brickW; x < TEXTURE_SIZE + brickW; x += brickW) {
-      const shade = 42 + Math.floor(Math.random() * 16);
-      tctx.fillStyle = `rgb(${shade + 16}, ${shade + 9}, ${shade})`;
-      tctx.fillRect(x + offset + 1, y + 1, brickW - 2, brickH - 2);
-    }
+canvas.addEventListener("click", () => {
+  if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== renderer.domElement) {
+    renderer.domElement.requestPointerLock();
   }
-
-  // Dark stains, like old water or worse.
-  for (let i = 0; i < 7; i++) {
-    const sx = Math.random() * TEXTURE_SIZE;
-    const sy = Math.random() * TEXTURE_SIZE;
-    const r = 4 + Math.random() * 9;
-    tctx.fillStyle = `rgba(15, 10, 10, ${0.15 + Math.random() * 0.25})`;
-    tctx.beginPath();
-    tctx.arc(sx, sy, r, 0, Math.PI * 2);
-    tctx.fill();
-  }
-
-  // Thin cracks.
-  tctx.strokeStyle = "rgba(8, 6, 6, 0.45)";
-  tctx.lineWidth = 1;
-  for (let i = 0; i < 2; i++) {
-    let cx = Math.random() * TEXTURE_SIZE;
-    let cy = 0;
-    tctx.beginPath();
-    tctx.moveTo(cx, cy);
-    for (let s = 0; s < 5; s++) {
-      cx += (Math.random() - 0.5) * 10;
-      cy += TEXTURE_SIZE / 5;
-      tctx.lineTo(cx, cy);
-    }
-    tctx.stroke();
-  }
-
-  return tCanvas;
-}
-
-const wallTexture = createWallTexture();
-
-// A second texture for the exterior house walls — cooler grey stone with
-// mossy green patches instead of the interior's warm brick and dark
-// stains, so stepping outside reads visually distinct from being inside.
-function createExteriorWallTexture() {
-  const tCanvas = document.createElement("canvas");
-  tCanvas.width = TEXTURE_SIZE;
-  tCanvas.height = TEXTURE_SIZE;
-  const tctx = tCanvas.getContext("2d");
-
-  // Flat concrete-grey base rather than warm brick — panelka buildings are
-  // precast concrete panels, not masonry.
-  tctx.fillStyle = "#26302a";
-  tctx.fillRect(0, 0, TEXTURE_SIZE, TEXTURE_SIZE);
-
-  // Large square panel seams, not small bricks — precast concrete panels
-  // are big, so the "unit" here is much bigger than the interior's brick.
-  const panelSize = 32;
-  for (let y = 0; y < TEXTURE_SIZE; y += panelSize) {
-    for (let x = 0; x < TEXTURE_SIZE; x += panelSize) {
-      const shade = 28 + Math.floor(Math.random() * 10);
-      tctx.fillStyle = `rgb(${shade + 8}, ${shade + 12}, ${shade + 9})`;
-      tctx.fillRect(x + 1, y + 1, panelSize - 2, panelSize - 2);
-    }
-  }
-
-  // Faint grime streaks instead of moss — concrete weathers with dark
-  // vertical runoff stains, not organic growth.
-  for (let i = 0; i < 5; i++) {
-    const sx = Math.random() * TEXTURE_SIZE;
-    tctx.fillStyle = `rgba(10, 14, 11, ${0.15 + Math.random() * 0.2})`;
-    tctx.fillRect(sx, 0, 2 + Math.random() * 3, TEXTURE_SIZE);
-  }
-
-  // A 2x2 grid of windows per texture tile — since every wall cell repeats
-  // this same texture, this reads as a dense, regular grid of apartment
-  // windows running the length and height of the building, like a real
-  // panel block rather than one house with one window.
-  const windowW = 11;
-  const windowH = 9;
-  const cols = [10, 38];
-  const rows = [6, 34];
-  rows.forEach((windowY) => {
-    cols.forEach((windowX) => {
-      const lit = Math.random() < 0.4;
-      tctx.fillStyle = lit ? "rgba(255, 195, 110, 0.65)" : "rgba(8, 10, 10, 0.8)";
-      tctx.fillRect(windowX, windowY, windowW, windowH);
-      tctx.strokeStyle = "rgba(15, 18, 15, 0.7)";
-      tctx.lineWidth = 1;
-      tctx.strokeRect(windowX, windowY, windowW, windowH);
-      // A short ledge beneath each window — a cheap stand-in for the
-      // balcony slabs panelka buildings are covered in.
-      tctx.fillStyle = "rgba(18, 22, 19, 0.8)";
-      tctx.fillRect(windowX - 2, windowY + windowH + 1, windowW + 4, 2);
-    });
-  });
-
-  return tCanvas;
-}
-
-const exteriorWallTexture = createExteriorWallTexture();
-
-// The front door, baked as its own wall texture — a weathered plank door
-// with a windowed top, a divider, a wrought-iron scroll medallion, and a
-// handle. Because it's just another texture sampled by the same per-column
-// raycasting loop as any other wall, it gets correct perspective as you
-// approach and pass it at an angle, rather than a flat sprite pasted on.
-function createDoorTexture() {
-  const tCanvas = document.createElement("canvas");
-  tCanvas.width = TEXTURE_SIZE;
-  tCanvas.height = TEXTURE_SIZE;
-  const tctx = tCanvas.getContext("2d");
-  const S = TEXTURE_SIZE;
-
-  // Weathered pale grey-green plank base.
-  tctx.fillStyle = "#7c847a";
-  tctx.fillRect(0, 0, S, S);
-
-  // Unit number, baked in near the top edge.
-  if (FRONT_DOOR.plateNumber) {
-    tctx.fillStyle = "rgba(20, 20, 16, 0.85)";
-    tctx.font = `${Math.max(5, S * 0.06)}px "Courier New", monospace`;
-    tctx.textAlign = "center";
-    tctx.textBaseline = "top";
-    tctx.fillText(FRONT_DOOR.plateNumber, S / 2, S * 0.02);
-  }
-
-  // Window near the top, 2x3 panes with a soft pale glow behind the glass.
-  const winX = S * 0.16;
-  const winY = S * 0.08;
-  const winW = S * 0.68;
-  const winH = S * 0.26;
-  tctx.fillStyle = "rgba(195, 210, 200, 0.6)";
-  tctx.fillRect(winX, winY, winW, winH);
-  tctx.strokeStyle = "rgba(35, 38, 33, 0.9)";
-  tctx.lineWidth = 1.5;
-  tctx.strokeRect(winX, winY, winW, winH);
-  tctx.beginPath();
-  tctx.moveTo(winX + winW / 2, winY);
-  tctx.lineTo(winX + winW / 2, winY + winH);
-  tctx.moveTo(winX, winY + winH / 3);
-  tctx.lineTo(winX + winW, winY + winH / 3);
-  tctx.moveTo(winX, winY + (winH * 2) / 3);
-  tctx.lineTo(winX + winW, winY + (winH * 2) / 3);
-  tctx.stroke();
-
-  // Divider bar below the window.
-  const dividerY = S * 0.4;
-  tctx.fillStyle = "rgba(40, 42, 36, 0.65)";
-  tctx.fillRect(0, dividerY, S, S * 0.02);
-
-  // Wrought-iron scroll medallion, lower-middle.
-  const medX = S / 2;
-  const medY = S * 0.66;
-  const medR = S * 0.14;
-  tctx.strokeStyle = "rgba(20, 20, 18, 0.9)";
-  tctx.lineWidth = 1.5;
-  tctx.beginPath();
-  tctx.arc(medX, medY, medR, 0, Math.PI * 2);
-  tctx.stroke();
-  [0, 1, 2, 3].forEach((i) => {
-    const angle = (Math.PI / 2) * i + Math.PI / 4;
-    const cx = medX + Math.cos(angle) * medR * 1.3;
-    const cy = medY + Math.sin(angle) * medR * 1.3;
-    tctx.beginPath();
-    tctx.arc(cx, cy, medR * 0.35, 0, Math.PI * 1.5);
-    tctx.stroke();
-  });
-
-  // Faint plank lines.
-  tctx.strokeStyle = "rgba(30, 32, 27, 0.3)";
-  tctx.lineWidth = 1;
-  [0.3, 0.7].forEach((frac) => {
-    tctx.beginPath();
-    tctx.moveTo(S * frac, dividerY + S * 0.02);
-    tctx.lineTo(S * frac, S * 0.96);
-    tctx.stroke();
-  });
-
-  // Handle.
-  const handleX = S * 0.62;
-  const handleY = S * 0.58;
-  tctx.fillStyle = "#9a9484";
-  tctx.fillRect(handleX, handleY, S * 0.05, S * 0.09);
-
-  return tCanvas;
-}
-
-const doorTexture = createDoorTexture();
-
-// A fixed scatter of stars for the exterior sky, stored as fractions of
-// the canvas so it holds up across resizes. Biased toward the upper half
-// since that's roughly where the sky sits before accounting for pitch.
-const STAR_COUNT = 90;
-const stars = Array.from({ length: STAR_COUNT }, () => ({
-  x: Math.random(),
-  y: Math.random() * 0.5,
-}));
-
-// Falling snow — drawn across the whole exterior screen (not just the
-// sky), updated a little every frame for a slow downward drift, and
-// wrapped back to the top once a flake passes the bottom of the view.
-const SNOW_COUNT = 70;
-const snowflakes = Array.from({ length: SNOW_COUNT }, () => ({
-  x: Math.random(),
-  y: Math.random(),
-  speed: 0.0012 + Math.random() * 0.0018,
-  drift: (Math.random() - 0.5) * 0.0006,
-}));
-
-// ---- raycasting (DDA algorithm) ------------------------------------------------
-// Steps through the grid one cell at a time along the ray's path (rather
-// than marching in small fixed increments) until it hits a wall. This is
-// the standard technique because, unlike simple step-marching, it also
-// tells us exactly *where* on the wall face the ray landed (wallX) and
-// which of the two wall orientations it hit (side) — both needed to sample
-// the right column of a texture and to shade N/S-facing walls differently
-// from E/W-facing ones.
-
-function castRay(angle) {
-  const rayDirX = Math.cos(angle);
-  const rayDirY = Math.sin(angle);
-
-  let mapX = Math.floor(state.player.x);
-  let mapY = Math.floor(state.player.y);
-
-  const deltaDistX = rayDirX === 0 ? Infinity : Math.abs(1 / rayDirX);
-  const deltaDistY = rayDirY === 0 ? Infinity : Math.abs(1 / rayDirY);
-
-  let stepX, sideDistX;
-  if (rayDirX < 0) {
-    stepX = -1;
-    sideDistX = (state.player.x - mapX) * deltaDistX;
-  } else {
-    stepX = 1;
-    sideDistX = (mapX + 1 - state.player.x) * deltaDistX;
-  }
-
-  let stepY, sideDistY;
-  if (rayDirY < 0) {
-    stepY = -1;
-    sideDistY = (state.player.y - mapY) * deltaDistY;
-  } else {
-    stepY = 1;
-    sideDistY = (mapY + 1 - state.player.y) * deltaDistY;
-  }
-
-  let side = 0;
-  const maxSteps = CURRENT_MAP.length + CURRENT_MAP[0].length + 4; // more than enough to cross the map
-  for (let steps = 0; steps < maxSteps; steps++) {
-    if (sideDistX < sideDistY) {
-      sideDistX += deltaDistX;
-      mapX += stepX;
-      side = 0; // hit a vertical (N/S-facing) wall face
-    } else {
-      sideDistY += deltaDistY;
-      mapY += stepY;
-      side = 1; // hit a horizontal (E/W-facing) wall face
-    }
-    if (mapY < 0 || mapY >= CURRENT_MAP.length || mapX < 0 || mapX >= CURRENT_MAP[0].length || CURRENT_MAP[mapY][mapX] === 1) {
-      break;
-    }
-  }
-
-  let perpWallDist;
-  if (side === 0) {
-    perpWallDist = (mapX - state.player.x + (1 - stepX) / 2) / rayDirX;
-  } else {
-    perpWallDist = (mapY - state.player.y + (1 - stepY) / 2) / rayDirY;
-  }
-  perpWallDist = Math.max(0.0001, Math.min(MAX_DEPTH, perpWallDist));
-
-  // Exact fractional position along the wall face (0 to 1) — which column
-  // of the texture to sample.
-  let wallX;
-  if (side === 0) {
-    wallX = state.player.y + perpWallDist * rayDirY;
-  } else {
-    wallX = state.player.x + perpWallDist * rayDirX;
-  }
-  wallX -= Math.floor(wallX);
-
-  // Flag whether this exact cell is the front door, so the caller can
-  // sample the door texture instead of the regular wall texture — the
-  // door is just a specially-textured wall cell, the same way real
-  // raycasters render doors.
-  const isDoorCell =
-    CURRENT_MAP === EXTERIOR_MAP && mapX === Math.floor(FRONT_DOOR.x) && mapY === Math.floor(FRONT_DOOR.y);
-
-  return { dist: perpWallDist, side, wallX, isDoorCell };
-}
-
-function drawScene() {
-  const pitch = state.player.pitch;
-  const horizon = CH / 2 + pitch;
-  const outside = CURRENT_MAP === EXTERIOR_MAP;
-
-  if (outside) {
-    // Night sky with a scatter of stars, fading toward the horizon.
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, horizon);
-    skyGrad.addColorStop(0, "#0a0918");
-    skyGrad.addColorStop(1, "#1c1830");
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, CW, horizon);
-
-    ctx.fillStyle = "rgba(216, 211, 196, 0.85)";
-    stars.forEach((s) => {
-      const sx = s.x * CW;
-      const sy = s.y * CH;
-      if (sy < horizon) {
-        ctx.fillRect(sx, sy, 1.5, 1.5);
-      }
-    });
-
-    // Snowy, cold-toned ground rather than muddy grass.
-    const groundGrad = ctx.createLinearGradient(0, horizon, 0, CH);
-    groundGrad.addColorStop(0, "#3d453e");
-    groundGrad.addColorStop(1, "#15190f");
-    ctx.fillStyle = groundGrad;
-    ctx.fillRect(0, horizon, CW, CH - horizon);
-  } else {
-    // Ceiling and floor — the horizon line shifts with pitch so looking up
-    // reveals more ceiling and looking down reveals more floor.
-    ctx.fillStyle = "#0b0a0d";
-    ctx.fillRect(0, 0, CW, horizon);
-    ctx.fillStyle = "#171310";
-    ctx.fillRect(0, horizon, CW, CH - horizon);
-  }
-
-  const activeTexture = outside ? exteriorWallTexture : wallTexture;
-  // The panelka block looms much taller than the interior's ceiling
-  // height, implying many floors rather than a single-story house.
-  const heightScale = outside ? 2.1 : 1;
-  const colWidth = CW / NUM_RAYS;
-  const zbuffer = new Array(NUM_RAYS);
-
-  for (let i = 0; i < NUM_RAYS; i++) {
-    const rayAngle = state.player.angle - FOV / 2 + (i / NUM_RAYS) * FOV;
-    const { dist, side, wallX, isDoorCell } = castRay(rayAngle);
-    zbuffer[i] = dist;
-
-    const wallH = Math.min(CH * 3, (CH / dist) * heightScale);
-    const drawY = (CH - wallH) / 2 + pitch;
-
-    // Sample one column of the texture at the wall's exact hit position —
-    // the door texture if this column hit the door's cell, otherwise the
-    // regular wall texture for whichever map we're in.
-    const texture = isDoorCell ? doorTexture : activeTexture;
-    const texX = Math.min(TEXTURE_SIZE - 1, Math.floor(wallX * TEXTURE_SIZE));
-    ctx.drawImage(texture, texX, 0, 1, TEXTURE_SIZE, i * colWidth, drawY, colWidth + 1, wallH);
-
-    // Distance fog plus a fixed darkening for one wall orientation — the
-    // classic raycaster trick that makes corners and edges read clearly
-    // even with a flat, single wall texture. Falls off much faster without
-    // a working flashlight, which is what makes the dark actually dark.
-    const lightRange = currentLightRange();
-    const brightness = Math.max(0, 1 - dist / lightRange) * (side === 1 ? 0.72 : 1);
-    const fogAlpha = Math.max(0, Math.min(1, 1 - brightness));
-    ctx.fillStyle = `rgba(6, 5, 7, ${fogAlpha})`;
-    ctx.fillRect(i * colWidth, drawY, colWidth + 1, wallH);
-  }
-
-  drawSprites(zbuffer, colWidth);
-
-  // Falling snow sits in front of everything else outdoors — walls,
-  // sprites, all of it — the same way real snow reads as closer than the
-  // building behind it.
-  if (outside) {
-    ctx.fillStyle = "rgba(215, 224, 226, 0.75)";
-    snowflakes.forEach((flake) => {
-      flake.y += flake.speed;
-      flake.x += flake.drift;
-      if (flake.y > 1) {
-        flake.y = 0;
-        flake.x = Math.random();
-      }
-      if (flake.x > 1) flake.x -= 1;
-      if (flake.x < 0) flake.x += 1;
-      ctx.fillRect(flake.x * CW, flake.y * CH, 2, 2);
-    });
-  }
-
-  // The flashlight's beam: a circle of clear visibility around the center
-  // of the screen (where the player is looking), fading to darkness at the
-  // edges. This sits on top of everything else already drawn.
-  if (hasFlashlightOn()) {
-    const beamRadius = Math.min(CW, CH) * 0.42;
-    const beamGrad = ctx.createRadialGradient(CW / 2, CH / 2, 0, CW / 2, CH / 2, beamRadius);
-    beamGrad.addColorStop(0, "rgba(0, 0, 0, 0)");
-    beamGrad.addColorStop(0.5, "rgba(0, 0, 0, 0)");
-    beamGrad.addColorStop(1, "rgba(4, 3, 5, 0.7)");
-    ctx.fillStyle = beamGrad;
-    ctx.fillRect(0, 0, CW, CH);
-  }
-
-  updateInteractPrompt();
-}
-function drawSprites(zbuffer, colWidth) {
-  const pitch = state.player.pitch;
-  const lightRange = currentLightRange();
-
-  const sprites =
-    CURRENT_MAP === EXTERIOR_MAP
-      ? []
-      : [
-          ...NPCS,
-          { x: EXIT.x, y: EXIT.y, color: "#8a1f1f", isExit: true },
-          ...ITEMS.filter((it) => !state.inventory[it.id]).map((it) => ({
-            x: it.x,
-            y: it.y,
-            color: it.color,
-            isItem: true,
-          })),
-        ];
-
-  sprites.forEach((sprite) => {
-    const dx = sprite.x - state.player.x;
-    const dy = sprite.y - state.player.y;
-    const dist = Math.hypot(dx, dy);
-    let angleToSprite = Math.atan2(dy, dx) - state.player.angle;
-    // normalize to [-PI, PI]
-    angleToSprite = Math.atan2(Math.sin(angleToSprite), Math.cos(angleToSprite));
-
-    if (Math.abs(angleToSprite) > FOV / 2 + 0.2) return; // outside view cone
-
-    const screenX = (0.5 + angleToSprite / FOV) * CW;
-    const col = Math.max(0, Math.min(NUM_RAYS - 1, Math.floor(screenX / colWidth)));
-    if (dist > zbuffer[col]) return; // hidden behind a wall
-
-    const sizeFactor = sprite.isExit ? 0.5 : sprite.isItem ? 0.35 : 0.75;
-    const size = Math.min(CH, CH / dist) * sizeFactor;
-    const brightness = Math.max(0.05, 1 - dist / lightRange);
-    ctx.globalAlpha = brightness;
-    ctx.fillStyle = sprite.color;
-    ctx.fillRect(screenX - size / 4, (CH - size) / 2 + pitch, size / 2, size);
-    ctx.globalAlpha = 1;
-  });
-
-  if (CURRENT_MAP === EXTERIOR_MAP) {
-    drawDoorSignage();
-  }
-}
-
-// The door itself is now baked into the wall texture (see createDoorTexture
-// / castRay's isDoorCell flag), so this only draws the things that sit in
-// front of the wall rather than on it: the floodlight glow and the
-// illuminated sign above the entrance. Deliberately skips the zbuffer
-// occlusion check other sprites use, since a light glow spilling in front
-// of a wall shouldn't be culled by float-precision comparisons against the
-// very wall it's mounted on.
-function drawDoorSignage() {
-  const pitch = state.player.pitch;
-  const lightRange = currentLightRange();
-
-  const dx = FRONT_DOOR.x - state.player.x;
-  const dy = FRONT_DOOR.y - state.player.y;
-  const dist = Math.hypot(dx, dy);
-  let angleToSprite = Math.atan2(dy, dx) - state.player.angle;
-  angleToSprite = Math.atan2(Math.sin(angleToSprite), Math.cos(angleToSprite));
-  if (Math.abs(angleToSprite) > FOV / 2 + 0.2) return;
-
-  const screenX = (0.5 + angleToSprite / FOV) * CW;
-  const size = Math.min(CH, CH / dist) * 0.85;
-  const brightness = Math.max(0.05, 1 - dist / lightRange);
-  const centerY = (CH - size) / 2 + pitch + size / 2;
-
-  // Sickly green-yellow floodlight halo, the sodium/mercury-vapor glow
-  // that washes a building entrance in one eerie color.
-  const glowRadius = size * 1.1;
-  const glow = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, glowRadius);
-  glow.addColorStop(0, `rgba(195, 225, 130, ${0.4 * brightness})`);
-  glow.addColorStop(1, "rgba(195, 225, 130, 0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(screenX - glowRadius, centerY - glowRadius, glowRadius * 2, glowRadius * 2);
-
-  // Backlit sign box above the entrance.
-  if (FRONT_DOOR.signText) {
-    const fontSize = Math.max(7, Math.min(22, (CH / dist) * 0.09));
-    ctx.font = `bold ${fontSize}px "Courier New", monospace`;
-    ctx.textAlign = "center";
-    const textWidth =
-      typeof ctx.measureText === "function"
-        ? ctx.measureText(FRONT_DOOR.signText).width
-        : FRONT_DOOR.signText.length * fontSize * 0.6;
-    const padX = fontSize * 0.7;
-    const padY = fontSize * 0.5;
-    const boxW = Math.max(1, textWidth + padX * 2);
-    const boxH = Math.max(1, fontSize + padY * 2);
-    const signCenterY = centerY - size / 2 - fontSize * 1.3;
-
-    ctx.fillStyle = `rgba(200, 230, 140, ${Math.min(0.92, brightness + 0.25)})`;
-    ctx.fillRect(screenX - boxW / 2, signCenterY - boxH / 2, boxW, boxH);
-
-    ctx.fillStyle = `rgba(20, 22, 12, ${Math.min(1, brightness + 0.35)})`;
-    ctx.fillText(FRONT_DOOR.signText, screenX, signCenterY + fontSize * 0.35);
-  }
-}
+});
 
 // ---- interaction (proximity + "E") -------------------------------------------
 
 function nearestInteractable() {
+  const px = yawObject.position.x;
+  const py = yawObject.position.z; // grid "y" is world Z
   let closest = null;
   let closestDist = INTERACT_DIST;
 
   if (CURRENT_MAP === EXTERIOR_MAP) {
-    const doorDist = Math.hypot(FRONT_DOOR.x - state.player.x, FRONT_DOOR.y - state.player.y);
+    const doorDist = Math.hypot(FRONT_DOOR.x - px, FRONT_DOOR.y - py);
     if (doorDist < FRONT_DOOR.interactionDistance) {
-      closest = { type: "frontDoor", label: FRONT_DOOR.label };
+      return { type: "frontDoor", label: FRONT_DOOR.label };
     }
-    return closest;
+    return null;
   }
 
   NPCS.forEach((npc) => {
-    const d = Math.hypot(npc.x - state.player.x, npc.y - state.player.y);
+    const d = Math.hypot(npc.x - px, npc.y - py);
     if (d < closestDist) {
       closestDist = d;
       closest = { type: "npc", id: npc.id, label: `Talk to the ${capitalize(npc.id)}` };
@@ -891,15 +605,15 @@ function nearestInteractable() {
   });
 
   ITEMS.forEach((item) => {
-    if (state.inventory[item.id]) return; // already collected
-    const d = Math.hypot(item.x - state.player.x, item.y - state.player.y);
+    if (state.inventory[item.id]) return;
+    const d = Math.hypot(item.x - px, item.y - py);
     if (d < closestDist) {
       closestDist = d;
       closest = { type: "item", id: item.id, label: `Pick up ${item.name}` };
     }
   });
 
-  const exitDist = Math.hypot(EXIT.x - state.player.x, EXIT.y - state.player.y);
+  const exitDist = Math.hypot(EXIT.x - px, EXIT.y - py);
   if (exitDist < closestDist) {
     closest = {
       type: "exit",
@@ -935,11 +649,7 @@ function handleInteract() {
   if (!target) return;
 
   if (target.type === "frontDoor") {
-    CURRENT_MAP = INTERIOR_MAP;
-    state.player.x = FRONT_DOOR.interiorSpawn.x;
-    state.player.y = FRONT_DOOR.interiorSpawn.y;
-    state.player.angle = FRONT_DOOR.interiorSpawn.angle;
-    state.player.pitch = 0;
+    spawnAt(FRONT_DOOR.interiorSpawn, INTERIOR_MAP);
     addLog(`${PROTAGONIST.name} steps inside. The door swings shut behind her.`);
     addLog("It's pitch black in here. She'll need to find some light.");
   } else if (target.type === "item") {
@@ -954,6 +664,7 @@ function handleInteract() {
       addLog("She has a working flashlight now. Press F to turn it on.");
     }
     renderHud();
+    buildWorld(); // remove the collected item's marker from the scene
   } else if (target.type === "npc") {
     openDialogue(target.id);
   } else if (target.type === "exit") {
@@ -1001,8 +712,7 @@ function openDialogue(npcId) {
   state.dialogueNode = "start";
   document.getElementById("dialogue-overlay").classList.remove("hidden");
   renderDialogue();
-  // Release the lock so the cursor reappears and choices are clickable.
-  if (document.pointerLockElement === canvas) {
+  if (document.pointerLockElement === renderer.domElement) {
     document.exitPointerLock();
   }
 }
@@ -1010,9 +720,7 @@ function openDialogue(npcId) {
 function closeDialogue() {
   state.activeNpc = null;
   document.getElementById("dialogue-overlay").classList.add("hidden");
-  // This is called from a click handler (a choice or the exit button), so
-  // it's a valid user gesture and re-locking here is allowed.
-  canvas.requestPointerLock();
+  renderer.domElement.requestPointerLock();
 }
 
 function passesFlagReq(choice) {
@@ -1023,13 +731,10 @@ function passesFlagReq(choice) {
 function renderDialogue() {
   const tree = DIALOGUES[state.activeNpc];
   const node = tree[state.dialogueNode];
-
   document.getElementById("dialogue-speaker").textContent = node.speaker;
   document.getElementById("dialogue-text").textContent = node.text;
-
   const choicesEl = document.getElementById("dialogue-choices");
   choicesEl.innerHTML = "";
-
   node.choices.filter(passesFlagReq).forEach((choice) => {
     const btn = document.createElement("button");
     btn.className = "choice-button";
@@ -1044,7 +749,6 @@ function chooseDialogueOption(choice) {
     state.flags = { ...state.flags, ...choice.setFlags };
   }
   addLog(`You: "${choice.label}"`);
-
   if (!choice.next) {
     closeDialogue();
     return;
@@ -1057,12 +761,18 @@ document.getElementById("dialogue-exit").addEventListener("click", closeDialogue
 
 // ---- main loop -----------------------------------------------------------------
 
+const clock = new THREE.Clock();
+
 function gameLoop() {
-  tryMovePlayer();
-  drawScene();
-  if (state.phase === "explore") {
-    requestAnimationFrame(gameLoop);
-  }
+  const dt = Math.min(0.1, clock.getDelta());
+  tryMovePlayer(dt);
+
+  scene.fog.far = currentLightRange();
+  flashlightLight.intensity = hasFlashlightOn() ? 2.4 : 0;
+  ambientLight.intensity = CURRENT_MAP === EXTERIOR_MAP ? 0.35 : hasFlashlightOn() ? 0.22 : 0.06;
+
+  updateInteractPrompt();
+  renderer.render(scene, camera);
 }
 
 // ---- boot --------------------------------------------------------------------
