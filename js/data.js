@@ -8,7 +8,7 @@ const EXTERIOR_MAP = [
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1], // col 5 (row 6) is the front door — now a real wall cell, textured as a door by the raycaster
+  [1, 0, 0, 0, 1, 0, 1, 1, 1, 1, 1], // col 5 (row 6) is the front door — a real 3D door object, not a wall; its solidity is governed by state.frontDoorOpen in game.js
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
   [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],

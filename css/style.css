@@ -422,3 +422,17 @@ h1 {
   margin-top: 0;
   text-align: center;
 }
+
+.transition-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+  z-index: 50;
+}
+
+.transition-fade.active {
+  opacity: 1;
+}

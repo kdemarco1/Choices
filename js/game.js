@@ -17,6 +17,7 @@ const state = {
   settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
   inventory: {}, // itemId -> true, once picked up
   flashlightOn: false,
+  frontDoorOpen: false,
 };
 
 const keys = new Set();
@@ -28,6 +29,8 @@ const PLAYER_RADIUS = 0.24;
 const INTERACT_DIST = 1.15;
 const EYE_HEIGHT = 1.5;
 const WALL_HEIGHT = 3;
+const DOOR_OPEN_ANGLE = -Math.PI * 0.62; // swings inward, like a real hinge
+const DOOR_OPEN_SPEED = 2.4; // radians/second
 
 // Vision "range": full range once the flashlight + batteries are both in
 // the inventory and switched on, a short oppressive range otherwise. This
@@ -78,6 +81,7 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   state.log = [];
   state.inventory = {};
   state.flashlightOn = false;
+  state.frontDoorOpen = false;
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
@@ -257,6 +261,7 @@ camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
 const worldGroup = new THREE.Group();
+let doorPivot = null; // set in buildWorld() when outside; drives the hinge-swing animation
 scene.add(worldGroup);
 
 function resizeRenderer() {
@@ -425,6 +430,7 @@ function disposeWorld() {
 
 function buildWorld() {
   disposeWorld();
+  doorPivot = null;
   const outside = CURRENT_MAP === EXTERIOR_MAP;
   const rows = CURRENT_MAP.length;
   const cols = CURRENT_MAP[0].length;
@@ -465,11 +471,21 @@ function buildWorld() {
   worldGroup.add(ceiling);
 
   if (outside) {
+    // A real hinged door: a pivot Group positioned at the hinge edge, with
+    // the door mesh offset so it swings around that edge instead of its
+    // own center — the same trick real 3D engines use for doors.
     const doorMat = new THREE.MeshStandardMaterial({ map: doorTexture, roughness: 0.85 });
-    const doorGeo = new THREE.BoxGeometry(0.85, WALL_HEIGHT * 0.85, 0.14);
+    const doorW = 0.85;
+    const doorH = WALL_HEIGHT * 0.85;
+    const doorGeo = new THREE.BoxGeometry(doorW, doorH, 0.14);
     const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-    doorMesh.position.set(FRONT_DOOR.x, (WALL_HEIGHT * 0.85) / 2, FRONT_DOOR.y);
-    worldGroup.add(doorMesh);
+    doorMesh.position.set(doorW / 2, 0, 0); // offset so the pivot sits at the door's edge, not its center
+
+    doorPivot = new THREE.Group();
+    doorPivot.position.set(FRONT_DOOR.x - doorW / 2, doorH / 2, FRONT_DOOR.y);
+    doorPivot.rotation.y = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
+    doorPivot.add(doorMesh);
+    worldGroup.add(doorPivot);
 
     const glow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
     glow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
@@ -515,7 +531,58 @@ function isWall(x, y) {
   const col = Math.floor(x);
   const row = Math.floor(y);
   if (row < 0 || row >= CURRENT_MAP.length || col < 0 || col >= CURRENT_MAP[0].length) return true;
+  // The front door's cell is solid until it's been opened — the map's own
+  // value there doesn't matter, this always takes precedence.
+  if (CURRENT_MAP === EXTERIOR_MAP && col === Math.floor(FRONT_DOOR.x) && row === Math.floor(FRONT_DOOR.y)) {
+    return !state.frontDoorOpen;
+  }
   return CURRENT_MAP[row][col] === 1;
+}
+
+// ---- door animation + walking through it -------------------------------------
+
+function updateDoorAnimation(dt) {
+  if (!doorPivot) return;
+  const target = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
+  const current = doorPivot.rotation.y;
+  if (Math.abs(target - current) < 0.001) {
+    doorPivot.rotation.y = target;
+    return;
+  }
+  const step = DOOR_OPEN_SPEED * dt;
+  doorPivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
+}
+
+let transitioning = false;
+
+// Once the door is open, walking into its exact cell (rather than pressing
+// E again) is what actually moves you inside — the same way stepping
+// through a real doorway works, rather than an instant teleport the moment
+// you interact with the door.
+function checkDoorCrossing() {
+  if (transitioning || CURRENT_MAP !== EXTERIOR_MAP || !state.frontDoorOpen) return;
+  const col = Math.floor(yawObject.position.x);
+  const row = Math.floor(yawObject.position.z);
+  if (col === Math.floor(FRONT_DOOR.x) && row === Math.floor(FRONT_DOOR.y)) {
+    triggerDoorTransition();
+  }
+}
+
+function triggerDoorTransition() {
+  transitioning = true;
+  const fade = document.getElementById("transition-fade");
+  fade.classList.remove("hidden");
+  requestAnimationFrame(() => fade.classList.add("active"));
+  setTimeout(() => {
+    spawnAt(FRONT_DOOR.interiorSpawn, INTERIOR_MAP);
+    addLog(`${PROTAGONIST.name} steps inside. The door swings shut behind her.`);
+    addLog("It's pitch black in here. She'll need to find some light.");
+    fade.classList.remove("active");
+    setTimeout(() => {
+      fade.classList.add("hidden");
+      transitioning = false;
+    }, 300);
+  }, 260);
 }
 
 const _forward = new THREE.Vector3();
@@ -523,7 +590,7 @@ const _right = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
 function tryMovePlayer(dt) {
-  if (state.activeNpc) return; // frozen mid-dialogue
+  if (state.activeNpc || transitioning) return; // frozen mid-dialogue or mid-transition
 
   let forwardInput = 0;
   if (keys.has("w") || keys.has("arrowup")) forwardInput += 1;
@@ -589,6 +656,7 @@ function nearestInteractable() {
   let closestDist = INTERACT_DIST;
 
   if (CURRENT_MAP === EXTERIOR_MAP) {
+    if (state.frontDoorOpen) return null; // already open — just walk in
     const doorDist = Math.hypot(FRONT_DOOR.x - px, FRONT_DOOR.y - py);
     if (doorDist < FRONT_DOOR.interactionDistance) {
       return { type: "frontDoor", label: FRONT_DOOR.label };
@@ -649,9 +717,8 @@ function handleInteract() {
   if (!target) return;
 
   if (target.type === "frontDoor") {
-    spawnAt(FRONT_DOOR.interiorSpawn, INTERIOR_MAP);
-    addLog(`${PROTAGONIST.name} steps inside. The door swings shut behind her.`);
-    addLog("It's pitch black in here. She'll need to find some light.");
+    state.frontDoorOpen = true;
+    addLog("The door creaks open.");
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
@@ -766,6 +833,8 @@ const clock = new THREE.Clock();
 function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
   tryMovePlayer(dt);
+  updateDoorAnimation(dt);
+  checkDoorCrossing();
 
   scene.fog.far = currentLightRange();
   flashlightLight.intensity = hasFlashlightOn() ? 2.4 : 0;
