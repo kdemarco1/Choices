@@ -38,7 +38,7 @@ const DOOR_OPEN_SPEED = 2.4; // radians/second
 // falloff, so it's genuinely how far you can see, not a fake vignette.
 const LIT_RANGE = 12;
 const DARK_RANGE = 2.6;
-const MOON_RANGE = 8;
+const MOON_RANGE = 6; // shorter than before — an empty street should feel a little swallowed by the dark, not evenly lit
 
 function hasFlashlightOn() {
   return !!(state.inventory.flashlight && state.inventory.batteries && state.flashlightOn);
@@ -491,6 +491,11 @@ function buildWorld() {
     glow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
     worldGroup.add(glow);
 
+    // The only other light on an otherwise empty, dark street: a single
+    // lamp post, off to one side, well away from the door's glow so the
+    // two pools of light stay distinct rather than blending together.
+    addStreetLight(3, 7.5);
+
     scene.background = new THREE.Color(0x0a0918);
   } else {
     NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
@@ -500,6 +505,29 @@ function buildWorld() {
   }
 
   scene.fog.color.set(outside ? 0x0a0918 : 0x0b0a0d);
+}
+
+// A single street lamp: a dark pole, a lamp head, and a real warm light
+// source. This and the door's glow are meant to be the only two things
+// visible on an otherwise empty, dark street.
+function addStreetLight(x, z) {
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1a, roughness: 0.8 });
+  const pole = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.6, 0.08), poleMat);
+  pole.position.set(x, 1.3, z);
+  worldGroup.add(pole);
+
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0x2a2a26,
+    emissive: 0x554422,
+    emissiveIntensity: 0.5,
+  });
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), headMat);
+  head.position.set(x, 2.62, z);
+  worldGroup.add(head);
+
+  const lamp = new THREE.PointLight(0xffdca0, 1.9, 7, 2);
+  lamp.position.set(x, 2.55, z);
+  worldGroup.add(lamp);
 }
 
 function addMarkerSprite(x, y, colorHex, scale) {
@@ -838,7 +866,7 @@ function gameLoop() {
 
   scene.fog.far = currentLightRange();
   flashlightLight.intensity = hasFlashlightOn() ? 2.4 : 0;
-  ambientLight.intensity = CURRENT_MAP === EXTERIOR_MAP ? 0.35 : hasFlashlightOn() ? 0.22 : 0.06;
+  ambientLight.intensity = CURRENT_MAP === EXTERIOR_MAP ? 0.045 : hasFlashlightOn() ? 0.22 : 0.06;
 
   updateInteractPrompt();
   renderer.render(scene, camera);
