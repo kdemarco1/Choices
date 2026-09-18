@@ -1,10 +1,10 @@
 // ---------------------------------------------------------------------------
-// GAME LOGIC — now a real 3D scene via Three.js instead of a 2D raycaster.
+// GAME LOGIC — a real 3D scene via Three.js, one continuous map (no more
+// separate exterior/interior spaces or teleport-style transitions). Walking
+// through the open front door just continues into the same physical world.
 // Screens: title -> story -> explore (with an optional detour to settings
-// or the pause menu). All game *content* (maps, dialogue, items) lives in
-// data.js, untouched by this rewrite — only the rendering/movement/camera
-// layer changed. World coordinates: grid (x, y) maps directly to world
-// (X, Z); Y is vertical (up).
+// or the pause menu). World coordinates: grid (x, y) maps directly to
+// world (X, Z); Y is vertical (up).
 // ---------------------------------------------------------------------------
 
 const state = {
@@ -31,22 +31,26 @@ const EYE_HEIGHT = 1.5;
 const WALL_HEIGHT = 3;
 const DOOR_OPEN_ANGLE = -Math.PI * 0.62; // swings inward, like a real hinge
 const DOOR_OPEN_SPEED = 2.4; // radians/second
+const DOOR_ROW = Math.floor(FRONT_DOOR.y); // row 6 — everything south of this is "the street"
 
-// Vision "range": full range once the flashlight + batteries are both in
-// the inventory and switched on, a short oppressive range otherwise. This
-// now drives real Three.js fog distance instead of a manual brightness
-// falloff, so it's genuinely how far you can see, not a fake vignette.
+// Vision range indoors: full range once the flashlight + batteries are both
+// in the inventory and switched on, a short oppressive range otherwise —
+// drives real Three.js fog distance. Outdoors always uses the dimmer,
+// moonlit street range regardless of the flashlight.
 const LIT_RANGE = 12;
 const DARK_RANGE = 2.6;
-const MOON_RANGE = 6; // shorter than before — an empty street should feel a little swallowed by the dark, not evenly lit
+const MOON_RANGE = 6;
 
 function hasFlashlightOn() {
   return !!(state.inventory.flashlight && state.inventory.batteries && state.flashlightOn);
 }
 
 function currentLightRange() {
-  if (CURRENT_MAP === EXTERIOR_MAP) return MOON_RANGE;
   return hasFlashlightOn() ? LIT_RANGE : DARK_RANGE;
+}
+
+function isOutside() {
+  return yawObject.position.z >= DOOR_ROW;
 }
 
 function toggleFlashlight() {
@@ -76,7 +80,6 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 document.getElementById("title-start-button").addEventListener("click", () => {
-  CURRENT_MAP = EXTERIOR_MAP; // always start a fresh run outside the house
   state.flags = {};
   state.log = [];
   state.inventory = {};
@@ -208,7 +211,10 @@ document.getElementById("Story-screen").addEventListener("click", () => {
   }
   state.phase = "explore";
   showScreen("screen-explore");
-  spawnAt(PLAYER_START, EXTERIOR_MAP);
+  yawObject.position.set(PLAYER_START.x, EYE_HEIGHT, PLAYER_START.y);
+  yawObject.rotation.y = 0;
+  camera.rotation.x = 0;
+  buildWorld();
   renderHud();
   clock.start();
   renderer.setAnimationLoop(gameLoop);
@@ -245,13 +251,14 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x000000, 0.1, DARK_RANGE);
+scene.background = new THREE.Color(0x0b0a0d);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 100);
 const yawObject = new THREE.Object3D();
 yawObject.add(camera);
 scene.add(yawObject);
 
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
 const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.5, 0.5, 1.1);
@@ -261,8 +268,10 @@ camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
 const worldGroup = new THREE.Group();
-let doorPivot = null; // set in buildWorld() when outside; drives the hinge-swing animation
 scene.add(worldGroup);
+let doorPivot = null; // set in buildWorld(); drives the hinge-swing animation
+let deskLamp = null; // set in buildWorld(); flickers in the game loop
+let deskLampFlickerTimer = 0;
 
 function resizeRenderer() {
   renderer.setSize(window.innerWidth, window.innerHeight, false);
@@ -273,10 +282,6 @@ resizeRenderer();
 window.addEventListener("resize", resizeRenderer);
 
 // ---- textures (procedurally generated, no image files needed) -----------------
-// These draw onto small offscreen 2D canvases, exactly like the previous
-// raycaster's textures — the only difference is they're now wrapped as
-// THREE.CanvasTexture and applied to real 3D geometry instead of being
-// sampled column-by-column by hand.
 
 const TEXTURE_SIZE = 128;
 
@@ -431,11 +436,12 @@ function disposeWorld() {
 function buildWorld() {
   disposeWorld();
   doorPivot = null;
-  const outside = CURRENT_MAP === EXTERIOR_MAP;
-  const rows = CURRENT_MAP.length;
-  const cols = CURRENT_MAP[0].length;
-  const wallTex = outside ? exteriorWallTexture : interiorWallTexture;
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.95 });
+  deskLamp = null;
+
+  const rows = MAP.length;
+  const cols = MAP[0].length;
+  const interiorMat = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
+  const exteriorMat = new THREE.MeshStandardMaterial({ map: exteriorWallTexture, roughness: 0.95 });
   const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
 
   const doorCol = Math.floor(FRONT_DOOR.x);
@@ -443,73 +449,74 @@ function buildWorld() {
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
-      if (CURRENT_MAP[row][col] !== 1) continue;
-      if (outside && col === doorCol && row === doorRow) continue; // door drawn separately below
-      const mesh = new THREE.Mesh(wallGeo, wallMat);
+      if (MAP[row][col] !== 1) continue;
+      if (col === doorCol && row === doorRow) continue; // the door itself, drawn separately below
+      const mat = row >= doorRow ? exteriorMat : interiorMat;
+      const mesh = new THREE.Mesh(wallGeo, mat);
       mesh.position.set(col + 0.5, WALL_HEIGHT / 2, row + 0.5);
       worldGroup.add(mesh);
     }
   }
 
-  const floorMat = new THREE.MeshStandardMaterial({
-    color: outside ? 0x232c1f : 0x18140f,
-    roughness: 1,
-  });
-  const planeGeo = new THREE.PlaneGeometry(cols, rows);
-  const floor = new THREE.Mesh(planeGeo, floorMat);
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(cols / 2, 0, rows / 2);
-  worldGroup.add(floor);
+  // Two floor strips — dark interior floor north of the door, cold street
+  // ground south of it — plus one continuous ceiling.
+  const interiorRows = doorRow + 1;
+  const interiorFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(cols, interiorRows),
+    new THREE.MeshStandardMaterial({ color: 0x18140f, roughness: 1 })
+  );
+  interiorFloor.rotation.x = -Math.PI / 2;
+  interiorFloor.position.set(cols / 2, 0, interiorRows / 2);
+  worldGroup.add(interiorFloor);
 
-  const ceilMat = new THREE.MeshStandardMaterial({
-    color: outside ? 0x0a0a14 : 0x0b0a0d,
-    side: THREE.BackSide,
-  });
-  const ceiling = new THREE.Mesh(planeGeo, ceilMat);
+  const streetRows = rows - doorRow;
+  const streetFloor = new THREE.Mesh(
+    new THREE.PlaneGeometry(cols, streetRows),
+    new THREE.MeshStandardMaterial({ color: 0x232c1f, roughness: 1 })
+  );
+  streetFloor.rotation.x = -Math.PI / 2;
+  streetFloor.position.set(cols / 2, 0, doorRow + streetRows / 2);
+  worldGroup.add(streetFloor);
+
+  const ceiling = new THREE.Mesh(
+    new THREE.PlaneGeometry(cols, rows),
+    new THREE.MeshStandardMaterial({ color: 0x0a0a10, side: THREE.BackSide })
+  );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(cols / 2, WALL_HEIGHT, rows / 2);
   worldGroup.add(ceiling);
 
-  if (outside) {
-    // A real hinged door: a pivot Group positioned at the hinge edge, with
-    // the door mesh offset so it swings around that edge instead of its
-    // own center — the same trick real 3D engines use for doors.
-    const doorMat = new THREE.MeshStandardMaterial({ map: doorTexture, roughness: 0.85 });
-    const doorW = 0.85;
-    const doorH = WALL_HEIGHT * 0.85;
-    const doorGeo = new THREE.BoxGeometry(doorW, doorH, 0.14);
-    const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-    doorMesh.position.set(doorW / 2, 0, 0); // offset so the pivot sits at the door's edge, not its center
+  // The front door — a real hinged pivot, not a texture trick.
+  const doorMat = new THREE.MeshStandardMaterial({ map: doorTexture, roughness: 0.85 });
+  const doorW = 0.85;
+  const doorH = WALL_HEIGHT * 0.85;
+  const doorGeo = new THREE.BoxGeometry(doorW, doorH, 0.14);
+  const doorMesh = new THREE.Mesh(doorGeo, doorMat);
+  doorMesh.position.set(doorW / 2, 0, 0);
+  doorPivot = new THREE.Group();
+  doorPivot.position.set(FRONT_DOOR.x - doorW / 2, doorH / 2, FRONT_DOOR.y);
+  doorPivot.rotation.y = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
+  doorPivot.add(doorMesh);
+  worldGroup.add(doorPivot);
 
-    doorPivot = new THREE.Group();
-    doorPivot.position.set(FRONT_DOOR.x - doorW / 2, doorH / 2, FRONT_DOOR.y);
-    doorPivot.rotation.y = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
-    doorPivot.add(doorMesh);
-    worldGroup.add(doorPivot);
+  const doorGlow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
+  doorGlow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
+  worldGroup.add(doorGlow);
 
-    const glow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
-    glow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
-    worldGroup.add(glow);
+  // The only other light outside: one street lamp, off to the side.
+  addStreetLight(3, 7.5);
 
-    // The only other light on an otherwise empty, dark street: a single
-    // lamp post, off to one side, well away from the door's glow so the
-    // two pools of light stay distinct rather than blending together.
-    addStreetLight(3, 7.5);
+  // The first thing you see on the left, just past the door.
+  addReceptionDesk(3.2, 4.6);
 
-    scene.background = new THREE.Color(0x0a0918);
-  } else {
-    NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
-    ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => addMarkerSprite(it.x, it.y, it.color, 0.4));
-    addMarkerSprite(EXIT.x, EXIT.y, "#8a1f1f", 0.6);
-    scene.background = new THREE.Color(0x0b0a0d);
-  }
-
-  scene.fog.color.set(outside ? 0x0a0918 : 0x0b0a0d);
+  NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
+  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => addMarkerSprite(it.x, it.y, it.color, 0.4));
+  addMarkerSprite(EXIT.x, EXIT.y, "#8a1f1f", 0.6);
 }
 
 // A single street lamp: a dark pole, a lamp head, and a real warm light
-// source. This and the door's glow are meant to be the only two things
-// visible on an otherwise empty, dark street.
+// source — meant to be one of only two visible light sources on an
+// otherwise empty, dark street (the other being the door's glow).
 function addStreetLight(x, z) {
   const poleMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1a, roughness: 0.8 });
   const pole = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.6, 0.08), poleMat);
@@ -530,6 +537,34 @@ function addStreetLight(x, z) {
   worldGroup.add(lamp);
 }
 
+// A creepy old reception desk: a dark, worn desk with a single dim,
+// flickering lamp — barely enough light to see the desk itself, let alone
+// the room around it.
+function addReceptionDesk(x, z) {
+  const deskMat = new THREE.MeshStandardMaterial({ color: 0x241f18, roughness: 0.9 });
+  const desk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.75, 0.6), deskMat);
+  desk.position.set(x, 0.375, z);
+  worldGroup.add(desk);
+
+  const lampBaseMat = new THREE.MeshStandardMaterial({ color: 0x171512 });
+  const lampBase = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), lampBaseMat);
+  lampBase.position.set(x + 0.4, 0.75 + 0.16, z - 0.15);
+  worldGroup.add(lampBase);
+
+  const bulbMat = new THREE.MeshStandardMaterial({
+    color: 0x332211,
+    emissive: 0xffbb55,
+    emissiveIntensity: 1.3,
+  });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), bulbMat);
+  bulb.position.set(x + 0.4, 0.75 + 0.34, z - 0.15);
+  worldGroup.add(bulb);
+
+  deskLamp = new THREE.PointLight(0xffbb55, 0.8, 3, 2.4);
+  deskLamp.position.set(x + 0.4, 0.75 + 0.38, z - 0.15);
+  worldGroup.add(deskLamp);
+}
+
 function addMarkerSprite(x, y, colorHex, scale) {
   const mat = new THREE.SpriteMaterial({ map: makeColorTexture(colorHex) });
   const sprite = new THREE.Sprite(mat);
@@ -539,78 +574,18 @@ function addMarkerSprite(x, y, colorHex, scale) {
   worldGroup.add(sprite);
 }
 
-// ---- spawning ---------------------------------------------------------------
-// All of the current data's spawn angles happen to be -PI/2 ("facing
-// north"), which lines up exactly with a Three.js camera's default facing
-// direction (-Z) when yaw is 0 — so resetting yaw/pitch to 0 on spawn
-// matches every spawn point currently defined in data.js.
-
-function spawnAt(spawn, map) {
-  CURRENT_MAP = map;
-  yawObject.position.set(spawn.x, EYE_HEIGHT, spawn.y);
-  yawObject.rotation.y = 0;
-  camera.rotation.x = 0;
-  buildWorld();
-}
-
 // ---- collision + movement ---------------------------------------------------
 
 function isWall(x, y) {
   const col = Math.floor(x);
   const row = Math.floor(y);
-  if (row < 0 || row >= CURRENT_MAP.length || col < 0 || col >= CURRENT_MAP[0].length) return true;
-  // The front door's cell is solid until it's been opened — the map's own
-  // value there doesn't matter, this always takes precedence.
-  if (CURRENT_MAP === EXTERIOR_MAP && col === Math.floor(FRONT_DOOR.x) && row === Math.floor(FRONT_DOOR.y)) {
+  if (row < 0 || row >= MAP.length || col < 0 || col >= MAP[0].length) return true;
+  // The front door's cell is solid until it's been opened — this always
+  // takes precedence over the map's own value there.
+  if (col === Math.floor(FRONT_DOOR.x) && row === Math.floor(FRONT_DOOR.y)) {
     return !state.frontDoorOpen;
   }
-  return CURRENT_MAP[row][col] === 1;
-}
-
-// ---- door animation + walking through it -------------------------------------
-
-function updateDoorAnimation(dt) {
-  if (!doorPivot) return;
-  const target = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
-  const current = doorPivot.rotation.y;
-  if (Math.abs(target - current) < 0.001) {
-    doorPivot.rotation.y = target;
-    return;
-  }
-  const step = DOOR_OPEN_SPEED * dt;
-  doorPivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
-}
-
-let transitioning = false;
-
-// Once the door is open, walking into its exact cell (rather than pressing
-// E again) is what actually moves you inside — the same way stepping
-// through a real doorway works, rather than an instant teleport the moment
-// you interact with the door.
-function checkDoorCrossing() {
-  if (transitioning || CURRENT_MAP !== EXTERIOR_MAP || !state.frontDoorOpen) return;
-  const col = Math.floor(yawObject.position.x);
-  const row = Math.floor(yawObject.position.z);
-  if (col === Math.floor(FRONT_DOOR.x) && row === Math.floor(FRONT_DOOR.y)) {
-    triggerDoorTransition();
-  }
-}
-
-function triggerDoorTransition() {
-  transitioning = true;
-  const fade = document.getElementById("transition-fade");
-  fade.classList.remove("hidden");
-  requestAnimationFrame(() => fade.classList.add("active"));
-  setTimeout(() => {
-    spawnAt(FRONT_DOOR.interiorSpawn, INTERIOR_MAP);
-    addLog(`${PROTAGONIST.name} steps inside. The door swings shut behind her.`);
-    addLog("It's pitch black in here. She'll need to find some light.");
-    fade.classList.remove("active");
-    setTimeout(() => {
-      fade.classList.add("hidden");
-      transitioning = false;
-    }, 300);
-  }, 260);
+  return MAP[row][col] === 1;
 }
 
 const _forward = new THREE.Vector3();
@@ -618,7 +593,7 @@ const _right = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
 function tryMovePlayer(dt) {
-  if (state.activeNpc || transitioning) return; // frozen mid-dialogue or mid-transition
+  if (state.activeNpc) return; // frozen mid-dialogue
 
   let forwardInput = 0;
   if (keys.has("w") || keys.has("arrowup")) forwardInput += 1;
@@ -626,8 +601,6 @@ function tryMovePlayer(dt) {
   let strafeInput = 0;
   if (keys.has("d")) strafeInput += 1;
   if (keys.has("a")) strafeInput -= 1;
-  // Arrow left/right still rotate, as a keyboard-only fallback for anyone
-  // not using mouse look.
   if (keys.has("arrowleft")) yawObject.rotation.y += 1.6 * dt;
   if (keys.has("arrowright")) yawObject.rotation.y -= 1.6 * dt;
 
@@ -648,6 +621,27 @@ function tryMovePlayer(dt) {
   }
   if (!isWall(yawObject.position.x, nz + Math.sign(moveZ || 1) * PLAYER_RADIUS)) {
     yawObject.position.z = nz;
+  }
+}
+
+function updateDoorAnimation(dt) {
+  if (!doorPivot) return;
+  const target = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
+  const current = doorPivot.rotation.y;
+  if (Math.abs(target - current) < 0.001) {
+    doorPivot.rotation.y = target;
+    return;
+  }
+  const step = DOOR_OPEN_SPEED * dt;
+  doorPivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
+}
+
+function updateDeskLampFlicker(dt) {
+  if (!deskLamp) return;
+  deskLampFlickerTimer += dt;
+  if (deskLampFlickerTimer > 0.13) {
+    deskLampFlickerTimer = 0;
+    deskLamp.intensity = 0.5 + Math.random() * 0.55;
   }
 }
 
@@ -683,13 +677,11 @@ function nearestInteractable() {
   let closest = null;
   let closestDist = INTERACT_DIST;
 
-  if (CURRENT_MAP === EXTERIOR_MAP) {
-    if (state.frontDoorOpen) return null; // already open — just walk in
+  if (!state.frontDoorOpen) {
     const doorDist = Math.hypot(FRONT_DOOR.x - px, FRONT_DOOR.y - py);
     if (doorDist < FRONT_DOOR.interactionDistance) {
       return { type: "frontDoor", label: FRONT_DOOR.label };
     }
-    return null;
   }
 
   NPCS.forEach((npc) => {
@@ -746,7 +738,7 @@ function handleInteract() {
 
   if (target.type === "frontDoor") {
     state.frontDoorOpen = true;
-    addLog("The door creaks open.");
+    addLog("The door creaks open. It's dark inside — she'll need to find some light.");
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
@@ -862,11 +854,15 @@ function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
   tryMovePlayer(dt);
   updateDoorAnimation(dt);
-  checkDoorCrossing();
+  updateDeskLampFlicker(dt);
 
-  scene.fog.far = currentLightRange();
+  const outside = isOutside();
+  scene.fog.far = outside ? MOON_RANGE : currentLightRange();
+  const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
+  scene.background.set(bgColor);
+  scene.fog.color.set(bgColor);
   flashlightLight.intensity = hasFlashlightOn() ? 2.4 : 0;
-  ambientLight.intensity = CURRENT_MAP === EXTERIOR_MAP ? 0.045 : hasFlashlightOn() ? 0.22 : 0.06;
+  ambientLight.intensity = outside ? 0.045 : hasFlashlightOn() ? 0.22 : 0.06;
 
   updateInteractPrompt();
   renderer.render(scene, camera);
