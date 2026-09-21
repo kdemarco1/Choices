@@ -48,6 +48,15 @@
         <canvas id="viewport"></canvas>
 
         <div id="hud" class="hud hud-overlay"></div>
+        <div id="battery-hud" class="battery-hud hidden">
+          <div class="battery-icon">
+            <div class="battery-body">
+              <div id="battery-fill" class="battery-fill"></div>
+            </div>
+            <div class="battery-nub"></div>
+          </div>
+          <span id="battery-pct" class="battery-pct">100%</span>
+        </div>
         <div id="interact-prompt" class="interact-prompt hidden"></div>
         <div id="pointer-lock-hint" class="pointer-lock-hint hidden">Click to look around</div>
         <p class="hint hint-overlay">W/A/S/D to move and strafe. Mouse to look around, any direction. Press E to interact. Press F to toggle the flashlight.</p>

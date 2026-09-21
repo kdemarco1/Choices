@@ -11,12 +11,13 @@ const state = {
   phase: "title", // "title" | "story" | "settings" | "explore" | "paused"
   flags: {},
   log: [],
-  activeNpc: null, // "caretaker" | "groundskeeper" | null
+  activeNpc: null,
   dialogueNode: "start",
   settings: { showPrompts: true },
   settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
   inventory: {}, // itemId -> true, once picked up
   flashlightOn: false,
+  batteryLevel: 100, // 0-100, drains while the flashlight is on
   frontDoorOpen: false,
 };
 
@@ -33,16 +34,19 @@ const DOOR_OPEN_ANGLE = -Math.PI * 0.62; // swings inward, like a real hinge
 const DOOR_OPEN_SPEED = 2.4; // radians/second
 const DOOR_ROW = Math.floor(FRONT_DOOR.y); // row 6 — everything south of this is "the street"
 
-// Vision range indoors: full range once the flashlight + batteries are both
-// in the inventory and switched on, a short oppressive range otherwise —
-// drives real Three.js fog distance. Outdoors always uses the dimmer,
-// moonlit street range regardless of the flashlight.
+// Vision range indoors: full range while the flashlight is on and has
+// charge, a short oppressive range otherwise — drives real Three.js fog
+// distance. Outdoors always uses the dimmer, moonlit street range.
 const LIT_RANGE = 12;
 const DARK_RANGE = 2.6;
 const MOON_RANGE = 6;
 
+// Battery drains fully after this many seconds of continuous use.
+const BATTERY_LIFE_SECONDS = 130;
+const BATTERY_DRAIN_RATE = 100 / BATTERY_LIFE_SECONDS;
+
 function hasFlashlightOn() {
-  return !!(state.inventory.flashlight && state.inventory.batteries && state.flashlightOn);
+  return !!(state.inventory.flashlight && state.batteryLevel > 0 && state.flashlightOn);
 }
 
 function currentLightRange() {
@@ -54,8 +58,12 @@ function isOutside() {
 }
 
 function toggleFlashlight() {
-  if (!(state.inventory.flashlight && state.inventory.batteries)) {
-    addLog("She doesn't have a working flashlight yet.");
+  if (!state.inventory.flashlight) {
+    addLog("She doesn't have a flashlight yet.");
+    return;
+  }
+  if (state.batteryLevel <= 0) {
+    addLog("The flashlight is dead. No charge left.");
     return;
   }
   state.flashlightOn = !state.flashlightOn;
@@ -84,7 +92,10 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   state.log = [];
   state.inventory = {};
   state.flashlightOn = false;
+  state.batteryLevel = 100;
   state.frontDoorOpen = false;
+  flashlightCurrentIntensity = 0;
+  flashlightFlickerTimer = 0;
   state.activeNpc = null;
   state.dialogueNode = "start";
   keys.clear();
@@ -166,8 +177,13 @@ function renderHud() {
   const carriedNames = carried
     .map((id) => (ITEMS.find((it) => it.id === id) || {}).name || id)
     .join(" · ");
-  const hasBoth = state.inventory.flashlight && state.inventory.batteries;
-  const flashlightStatus = hasFlashlightOn() ? "ON" : hasBoth ? "OFF (press F)" : "none";
+  const flashlightStatus = hasFlashlightOn()
+    ? "ON"
+    : state.inventory.flashlight
+    ? state.batteryLevel <= 0
+      ? "dead"
+      : "OFF (press F)"
+    : "none";
   hud.innerHTML = `
     <div class="portrait" style="background:${PROTAGONIST.color}">${PROTAGONIST.name.charAt(0)}</div>
     <div>
@@ -266,6 +282,11 @@ flashlightLight.position.set(0, 0, 0);
 camera.add(flashlightLight);
 camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
+
+const FLASHLIGHT_MAX_INTENSITY = 2.4;
+const FLASHLIGHT_RAMP_SPEED = 7; // intensity/second — fast but not an instant snap
+let flashlightCurrentIntensity = 0;
+let flashlightFlickerTimer = 0;
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
@@ -510,8 +531,9 @@ function buildWorld() {
   addReceptionDesk(3.2, 4.6);
 
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
-  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => addMarkerSprite(it.x, it.y, it.color, 0.4));
-  addMarkerSprite(EXIT.x, EXIT.y, "#8a1f1f", 0.6);
+  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) =>
+    addMarkerSprite(it.x, it.y, it.color, 0.4, it.id === "flashlight" ? 0.85 : undefined)
+  );
 }
 
 // A single street lamp: a dark pole, a lamp head, and a real warm light
@@ -565,12 +587,12 @@ function addReceptionDesk(x, z) {
   worldGroup.add(deskLamp);
 }
 
-function addMarkerSprite(x, y, colorHex, scale) {
+function addMarkerSprite(x, y, colorHex, scale, height) {
   const mat = new THREE.SpriteMaterial({ map: makeColorTexture(colorHex) });
   const sprite = new THREE.Sprite(mat);
   sprite.userData.disposeMaterial = true;
   sprite.scale.set(scale, scale, 1);
-  sprite.position.set(x, EYE_HEIGHT * 0.55, y);
+  sprite.position.set(x, height !== undefined ? height : EYE_HEIGHT * 0.55, y);
   worldGroup.add(sprite);
 }
 
@@ -645,6 +667,60 @@ function updateDeskLampFlicker(dt) {
   }
 }
 
+// Drains the battery while genuinely on, smoothly ramps the light's actual
+// intensity toward its target instead of snapping instantly (a real
+// flashlight has a beat of inertia switching on/off), and adds an erratic
+// flicker once the charge is nearly gone — the visual cue that it's about
+// to die, before it actually does.
+function updateFlashlight(dt) {
+  const wantsOn = hasFlashlightOn();
+
+  if (wantsOn) {
+    state.batteryLevel = Math.max(0, state.batteryLevel - BATTERY_DRAIN_RATE * dt);
+    if (state.batteryLevel <= 0) {
+      state.batteryLevel = 0;
+      state.flashlightOn = false;
+      addLog("The flashlight flickers and dies.");
+      renderHud();
+    }
+  }
+
+  let targetIntensity = hasFlashlightOn() ? FLASHLIGHT_MAX_INTENSITY : 0;
+
+  if (hasFlashlightOn() && state.batteryLevel < 20) {
+    flashlightFlickerTimer += dt;
+    if (flashlightFlickerTimer > 0.07) {
+      flashlightFlickerTimer = 0;
+      const flickerChance = (20 - state.batteryLevel) / 20;
+      if (Math.random() < flickerChance * 0.65) {
+        targetIntensity *= 0.1 + Math.random() * 0.3;
+      }
+    }
+  }
+
+  const diff = targetIntensity - flashlightCurrentIntensity;
+  const step = FLASHLIGHT_RAMP_SPEED * dt;
+  flashlightCurrentIntensity =
+    Math.abs(diff) <= step ? targetIntensity : flashlightCurrentIntensity + Math.sign(diff) * step;
+  flashlightLight.intensity = flashlightCurrentIntensity;
+
+  updateBatteryHud();
+}
+
+function updateBatteryHud() {
+  const hud = document.getElementById("battery-hud");
+  if (!state.inventory.flashlight) {
+    hud.classList.add("hidden");
+    return;
+  }
+  hud.classList.remove("hidden");
+  const pct = Math.round(state.batteryLevel);
+  const fill = document.getElementById("battery-fill");
+  fill.style.width = pct + "%";
+  fill.style.background = pct < 20 ? "#8a1f1f" : pct < 50 ? "#c9a15c" : "#5c8a52";
+  document.getElementById("battery-pct").textContent = pct + "%";
+}
+
 // ---- mouse look (pointer lock) -------------------------------------------------
 
 function onPointerLockChange() {
@@ -701,14 +777,6 @@ function nearestInteractable() {
     }
   });
 
-  const exitDist = Math.hypot(EXIT.x - px, EXIT.y - py);
-  if (exitDist < closestDist) {
-    closest = {
-      type: "exit",
-      label: state.flags.cellarOpen ? "Descend into the cellar" : "The cellar door is locked",
-    };
-  }
-
   return closest;
 }
 
@@ -743,23 +811,13 @@ function handleInteract() {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
     addLog(item.pickupText);
-    if (
-      (target.id === "flashlight" || target.id === "batteries") &&
-      state.inventory.flashlight &&
-      state.inventory.batteries
-    ) {
-      addLog("She has a working flashlight now. Press F to turn it on.");
+    if (target.id === "flashlight") {
+      addLog("She can turn it on now. Press F.");
     }
     renderHud();
     buildWorld(); // remove the collected item's marker from the scene
   } else if (target.type === "npc") {
     openDialogue(target.id);
-  } else if (target.type === "exit") {
-    if (state.flags.cellarOpen) {
-      addLog("The cellar door creaks open onto darkness — more to explore beyond this prototype.");
-    } else {
-      addLog("The cellar door is locked tight. Someone here must have a key, or a reason to open it.");
-    }
   }
 }
 
@@ -855,13 +913,13 @@ function gameLoop() {
   tryMovePlayer(dt);
   updateDoorAnimation(dt);
   updateDeskLampFlicker(dt);
+  updateFlashlight(dt);
 
   const outside = isOutside();
   scene.fog.far = outside ? MOON_RANGE : currentLightRange();
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  flashlightLight.intensity = hasFlashlightOn() ? 2.4 : 0;
   ambientLight.intensity = outside ? 0.045 : hasFlashlightOn() ? 0.22 : 0.06;
 
   updateInteractPrompt();

@@ -227,7 +227,7 @@ h1 {
 
 .hint-overlay {
   position: absolute;
-  top: 16px;
+  top: 66px;
   right: 16px;
   max-width: 220px;
   margin: 0;
@@ -240,6 +240,55 @@ h1 {
   line-height: 1.5;
   font-style: italic;
   text-align: right;
+}
+
+.battery-hud {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(11, 10, 13, 0.65);
+  border: 1px solid #2c2528;
+  border-radius: 3px;
+  padding: 8px 12px;
+}
+
+.battery-icon {
+  display: flex;
+  align-items: center;
+}
+
+.battery-body {
+  width: 34px;
+  height: 16px;
+  border: 2px solid #8f8873;
+  border-radius: 2px;
+  padding: 2px;
+  display: flex;
+  align-items: stretch;
+}
+
+.battery-fill {
+  width: 100%;
+  background: #5c8a52;
+  border-radius: 1px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.battery-nub {
+  width: 3px;
+  height: 8px;
+  background: #8f8873;
+  border-radius: 0 2px 2px 0;
+}
+
+.battery-pct {
+  color: #d8d3c4;
+  font-size: 12px;
+  font-family: "Courier New", monospace;
+  min-width: 34px;
 }
 
 .log-overlay {
