@@ -525,10 +525,10 @@ function buildWorld() {
   worldGroup.add(doorGlow);
 
   // The only other light outside: one street lamp, off to the side.
-  addStreetLight(3, 7.5);
+  addStreetLight(4.5, 9);
 
   // The first thing you see on the left, just past the door.
-  addReceptionDesk(3.2, 4.6);
+  addReceptionDesk(3.5, 5.0);
 
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) =>
