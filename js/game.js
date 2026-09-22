@@ -548,7 +548,7 @@ function addStreetLight(x, z) {
   const headMat = new THREE.MeshStandardMaterial({
     color: 0x2a2a26,
     emissive: 0x554422,
-    emissiveIntensity: 0.5,
+    emissiveIntensity: 5.5,
   });
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), headMat);
   head.position.set(x, 2.62, z);
