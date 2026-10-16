@@ -13,12 +13,13 @@ const state = {
   log: [],
   activeNpc: null,
   dialogueNode: "start",
-  settings: { showPrompts: true },
+  settings: { showPrompts: true, soundOn: true },
   settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
   inventory: {}, // itemId -> true, once picked up
   flashlightOn: false,
   batteryLevel: 100, // 0-100, drains while the flashlight is on
   frontDoorOpen: false,
+  doorsOpen: {},
 };
 
 const keys = new Set();
@@ -57,6 +58,92 @@ function isOutside() {
   return yawObject.position.z >= DOOR_ROW;
 }
 
+// ---- audio (procedural, Web Audio) --------------------------------------------
+
+let audioCtx = null;
+let ambientGains = [];
+let footstepTimer = 0;
+let noiseBuf = null;
+
+function initAudio() {
+  if (audioCtx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  audioCtx = new AC();
+  noiseBuf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.1), audioCtx.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  [54, 55.7].forEach((f) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.value = f;
+    g.gain.value = state.settings.soundOn ? 0.03 : 0;
+    o.connect(g).connect(audioCtx.destination);
+    o.start();
+    ambientGains.push(g);
+  });
+}
+
+function setSoundEnabled(on) {
+  state.settings.soundOn = on;
+  ambientGains.forEach((g) => (g.gain.value = on ? 0.03 : 0));
+}
+
+function audioReady() {
+  if (!audioCtx || !state.settings.soundOn) return false;
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return true;
+}
+
+function playFootstep(quiet) {
+  if (!audioReady()) return;
+  const src = audioCtx.createBufferSource();
+  src.buffer = noiseBuf;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 260 + Math.random() * 140;
+  const g = audioCtx.createGain();
+  g.gain.value = quiet ? 0.07 : 0.12;
+  src.connect(lp).connect(g).connect(audioCtx.destination);
+  src.start();
+}
+
+function playDoorCreak() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(180, t);
+  o.frequency.linearRampToValueAtTime(85, t + 1.1);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.05, t + 0.3);
+  g.gain.linearRampToValueAtTime(0.0001, t + 1.1);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 1.15);
+}
+
+function playClick() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "square";
+  o.frequency.value = 900;
+  g.gain.setValueAtTime(0.05, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.05);
+}
+
+function playKnock() {
+  playFootstep(false);
+  setTimeout(() => playFootstep(false), 140);
+}
+
 function toggleFlashlight() {
   if (!state.inventory.flashlight) {
     addLog("She doesn't have a flashlight yet.");
@@ -67,6 +154,7 @@ function toggleFlashlight() {
     return;
   }
   state.flashlightOn = !state.flashlightOn;
+  playClick();
   addLog(state.flashlightOn ? "Flashlight on." : "Flashlight off.");
   renderHud();
 }
@@ -88,12 +176,14 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 document.getElementById("title-start-button").addEventListener("click", () => {
+  initAudio();
   state.flags = {};
   state.log = [];
   state.inventory = {};
   state.flashlightOn = false;
   state.batteryLevel = 100;
   state.frontDoorOpen = false;
+  state.doorsOpen = {};
   flashlightCurrentIntensity = 0;
   flashlightFlickerTimer = 0;
   state.activeNpc = null;
@@ -162,7 +252,16 @@ function renderSettings() {
   const btn = document.getElementById("toggle-prompts");
   btn.textContent = state.settings.showPrompts ? "On" : "Off";
   btn.className = "toggle-button " + (state.settings.showPrompts ? "on" : "off");
+  const sb = document.getElementById("toggle-sound");
+  sb.textContent = state.settings.soundOn ? "On" : "Off";
+  sb.className = "toggle-button " + (state.settings.soundOn ? "on" : "off");
 }
+
+document.getElementById("toggle-sound").addEventListener("click", () => {
+  initAudio();
+  setSoundEnabled(!state.settings.soundOn);
+  renderSettings();
+});
 
 document.getElementById("toggle-prompts").addEventListener("click", () => {
   state.settings.showPrompts = !state.settings.showPrompts;
@@ -200,7 +299,7 @@ function renderLog() {
   if (state.log.length === 0) {
     const empty = document.createElement("div");
     empty.className = "log-empty";
-    empty.textContent = "Nothing yet — go talk to someone.";
+    empty.textContent = "Nothing yet.";
     list.appendChild(empty);
     return;
   }
@@ -290,7 +389,7 @@ let flashlightFlickerTimer = 0;
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
-let doorPivot = null; // set in buildWorld(); drives the hinge-swing animation
+let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
 
@@ -371,20 +470,31 @@ function createExteriorWallTexture() {
   return c;
 }
 
-function createDoorTexture() {
+// Every door in the building: the front door plus the interior doors.
+function doorList() {
+  return [Object.assign({ isFront: true }, FRONT_DOOR)].concat(DOORS);
+}
+function isDoorOpen(door) {
+  return door.isFront ? state.frontDoorOpen : !!state.doorsOpen[door.id];
+}
+function doorAtCell(col, row) {
+  return doorList().find((d) => Math.floor(d.x) === col && Math.floor(d.y) === row) || null;
+}
+
+function createDoorTexture(plate = FRONT_DOOR.plateNumber, base = "#7c847a") {
   const c = document.createElement("canvas");
   c.width = TEXTURE_SIZE;
   c.height = TEXTURE_SIZE;
   const t = c.getContext("2d");
   const S = TEXTURE_SIZE;
-  t.fillStyle = "#7c847a";
+  t.fillStyle = base;
   t.fillRect(0, 0, S, S);
-  if (FRONT_DOOR.plateNumber) {
+  if (plate) {
     t.fillStyle = "rgba(20, 20, 16, 0.85)";
     t.font = `${Math.max(6, S * 0.06)}px "Courier New", monospace`;
     t.textAlign = "center";
     t.textBaseline = "top";
-    t.fillText(FRONT_DOOR.plateNumber, S / 2, S * 0.02);
+    t.fillText(plate, S / 2, S * 0.02);
   }
   const winX = S * 0.16;
   const winY = S * 0.08;
@@ -430,6 +540,10 @@ function createDoorTexture() {
 const interiorWallTexture = makeThreeTexture(createInteriorWallTexture());
 const exteriorWallTexture = makeThreeTexture(createExteriorWallTexture());
 const doorTexture = makeThreeTexture(createDoorTexture());
+const doorTextures = { frontDoor: doorTexture };
+DOORS.forEach((d) => {
+  doorTextures[d.id] = makeThreeTexture(createDoorTexture(d.plate, d.baseColor));
+});
 
 function makeColorTexture(hex) {
   const c = document.createElement("canvas");
@@ -456,7 +570,7 @@ function disposeWorld() {
 
 function buildWorld() {
   disposeWorld();
-  doorPivot = null;
+  doorPivots = {};
   deskLamp = null;
 
   const rows = MAP.length;
@@ -471,7 +585,7 @@ function buildWorld() {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       if (MAP[row][col] !== 1) continue;
-      if (col === doorCol && row === doorRow) continue; // the door itself, drawn separately below
+      if (doorAtCell(col, row)) continue; // door cells are drawn separately below
       const mat = row >= doorRow ? exteriorMat : interiorMat;
       const mesh = new THREE.Mesh(wallGeo, mat);
       mesh.position.set(col + 0.5, WALL_HEIGHT / 2, row + 0.5);
@@ -507,32 +621,36 @@ function buildWorld() {
   ceiling.position.set(cols / 2, WALL_HEIGHT, rows / 2);
   worldGroup.add(ceiling);
 
-  // The front door — a real hinged pivot, not a texture trick.
-  const doorMat = new THREE.MeshStandardMaterial({ map: doorTexture, roughness: 0.85 });
+  // Every door is a real hinged pivot, not a texture trick.
   const doorW = 0.85;
   const doorH = WALL_HEIGHT * 0.85;
   const doorGeo = new THREE.BoxGeometry(doorW, doorH, 0.14);
-  const doorMesh = new THREE.Mesh(doorGeo, doorMat);
-  doorMesh.position.set(doorW / 2, 0, 0);
-  doorPivot = new THREE.Group();
-  doorPivot.position.set(FRONT_DOOR.x - doorW / 2, doorH / 2, FRONT_DOOR.y);
-  doorPivot.rotation.y = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
-  doorPivot.add(doorMesh);
-  worldGroup.add(doorPivot);
+  doorList().forEach((door) => {
+    const mat = new THREE.MeshStandardMaterial({ map: doorTextures[door.id], roughness: 0.85 });
+    const mesh = new THREE.Mesh(doorGeo, mat);
+    mesh.position.set(doorW / 2, 0, 0);
+    const pivot = new THREE.Group();
+    pivot.position.set(door.x - doorW / 2, doorH / 2, door.y);
+    pivot.rotation.y = isDoorOpen(door) ? DOOR_OPEN_ANGLE : 0;
+    pivot.add(mesh);
+    worldGroup.add(pivot);
+    doorPivots[door.id] = pivot;
+  });
 
   const doorGlow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
   doorGlow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
   worldGroup.add(doorGlow);
 
   // The only other light outside: one street lamp, off to the side.
-  addStreetLight(4.5, 9);
+  addStreetLight(4.5, 16);
 
   // The first thing you see on the left, just past the door.
-  addReceptionDesk(3.5, 5.0);
+  addReceptionDesk(3.5, 12.0);
+  addBed(10.5, 1.5);
 
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) =>
-    addMarkerSprite(it.x, it.y, it.color, 0.4, it.id === "flashlight" ? 0.85 : undefined)
+    addMarkerSprite(it.x, it.y, it.color, 0.4, it.height)
   );
 }
 
@@ -548,7 +666,7 @@ function addStreetLight(x, z) {
   const headMat = new THREE.MeshStandardMaterial({
     color: 0x2a2a26,
     emissive: 0x554422,
-    emissiveIntensity: 5.5,
+    emissiveIntensity: 0.5,
   });
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), headMat);
   head.position.set(x, 2.62, z);
@@ -587,6 +705,22 @@ function addReceptionDesk(x, z) {
   worldGroup.add(deskLamp);
 }
 
+// A plain, unmade bed in John's room.
+function addBed(x, z) {
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(1.7, 0.4, 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 1 })
+  );
+  frame.position.set(x, 0.2, z);
+  worldGroup.add(frame);
+  const sheet = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 0.12, 0.8),
+    new THREE.MeshStandardMaterial({ color: 0x59544a, roughness: 1 })
+  );
+  sheet.position.set(x, 0.46, z);
+  worldGroup.add(sheet);
+}
+
 function addMarkerSprite(x, y, colorHex, scale, height) {
   const mat = new THREE.SpriteMaterial({ map: makeColorTexture(colorHex) });
   const sprite = new THREE.Sprite(mat);
@@ -604,9 +738,8 @@ function isWall(x, y) {
   if (row < 0 || row >= MAP.length || col < 0 || col >= MAP[0].length) return true;
   // The front door's cell is solid until it's been opened — this always
   // takes precedence over the map's own value there.
-  if (col === Math.floor(FRONT_DOOR.x) && row === Math.floor(FRONT_DOOR.y)) {
-    return !state.frontDoorOpen;
-  }
+  const door = doorAtCell(col, row);
+  if (door) return !isDoorOpen(door);
   return MAP[row][col] === 1;
 }
 
@@ -626,7 +759,15 @@ function tryMovePlayer(dt) {
   if (keys.has("arrowleft")) yawObject.rotation.y += 1.6 * dt;
   if (keys.has("arrowright")) yawObject.rotation.y -= 1.6 * dt;
 
-  if (forwardInput === 0 && strafeInput === 0) return;
+  if (forwardInput === 0 && strafeInput === 0) {
+    footstepTimer = 0.3; // first step lands quickly after starting to walk
+    return;
+  }
+  footstepTimer += dt;
+  if (footstepTimer >= 0.45) {
+    footstepTimer = 0;
+    playFootstep(isOutside());
+  }
 
   camera.getWorldDirection(_forward);
   _forward.y = 0;
@@ -646,16 +787,28 @@ function tryMovePlayer(dt) {
   }
 }
 
-function updateDoorAnimation(dt) {
-  if (!doorPivot) return;
-  const target = state.frontDoorOpen ? DOOR_OPEN_ANGLE : 0;
-  const current = doorPivot.rotation.y;
-  if (Math.abs(target - current) < 0.001) {
-    doorPivot.rotation.y = target;
-    return;
+function checkJohnRoom() {
+  if (state.flags.enteredJohnRoom) return;
+  const p = yawObject.position;
+  if (p.x > JOHN_ROOM.minX && p.x < JOHN_ROOM.maxX && p.z > JOHN_ROOM.minY && p.z < JOHN_ROOM.maxY) {
+    state.flags.enteredJohnRoom = true;
+    addLog("The bed is unmade. John's coat is still on the hook. John isn't here.");
   }
-  const step = DOOR_OPEN_SPEED * dt;
-  doorPivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
+}
+
+function updateDoorAnimation(dt) {
+  doorList().forEach((door) => {
+    const pivot = doorPivots[door.id];
+    if (!pivot) return;
+    const target = isDoorOpen(door) ? DOOR_OPEN_ANGLE : 0;
+    const current = pivot.rotation.y;
+    if (Math.abs(target - current) < 0.001) {
+      pivot.rotation.y = target;
+      return;
+    }
+    const step = DOOR_OPEN_SPEED * dt;
+    pivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
+  });
 }
 
 function updateDeskLampFlicker(dt) {
@@ -753,13 +906,6 @@ function nearestInteractable() {
   let closest = null;
   let closestDist = INTERACT_DIST;
 
-  if (!state.frontDoorOpen) {
-    const doorDist = Math.hypot(FRONT_DOOR.x - px, FRONT_DOOR.y - py);
-    if (doorDist < FRONT_DOOR.interactionDistance) {
-      return { type: "frontDoor", label: FRONT_DOOR.label };
-    }
-  }
-
   NPCS.forEach((npc) => {
     const d = Math.hypot(npc.x - px, npc.y - py);
     if (d < closestDist) {
@@ -777,7 +923,25 @@ function nearestInteractable() {
     }
   });
 
-  return closest;
+  if (closest) return closest;
+
+  // No item in reach — fall back to the nearest closed door.
+  let doorTarget = null;
+  let doorDist = Infinity;
+  doorList().forEach((door) => {
+    if (isDoorOpen(door)) return;
+    const d = Math.hypot(door.x - px, door.y - py);
+    if (d < (door.interactionDistance || 1.4) && d < doorDist) {
+      doorDist = d;
+      const canUnlock = door.keyId && state.inventory[door.keyId];
+      doorTarget = {
+        type: "door",
+        id: door.id,
+        label: canUnlock ? door.unlockLabel || "Unlock Door" : door.label,
+      };
+    }
+  });
+  return doorTarget;
 }
 
 function capitalize(s) {
@@ -804,9 +968,21 @@ function handleInteract() {
   const target = nearestInteractable();
   if (!target) return;
 
-  if (target.type === "frontDoor") {
-    state.frontDoorOpen = true;
-    addLog("The door creaks open. It's dark inside — she'll need to find some light.");
+  if (target.type === "door") {
+    const door = doorList().find((d) => d.id === target.id);
+    if (door.isFront) {
+      state.frontDoorOpen = true;
+      playDoorCreak();
+      addLog("The door creaks open. It's dark inside — she'll need to find some light.");
+    } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
+      playKnock();
+      addLog(door.lockedText || "Locked.");
+    } else {
+      if (door.locked) playClick(); // key turning
+      state.doorsOpen[door.id] = true;
+      playDoorCreak();
+      if (door.openText) addLog(door.openText);
+    }
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
@@ -911,6 +1087,7 @@ const clock = new THREE.Clock();
 function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
   tryMovePlayer(dt);
+  checkJohnRoom();
   updateDoorAnimation(dt);
   updateDeskLampFlicker(dt);
   updateFlashlight(dt);
