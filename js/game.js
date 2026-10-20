@@ -199,14 +199,50 @@ function toggleFlashlight() {
   }
   state.flashlightOn = !state.flashlightOn;
   playClick();
-  addLog(state.flashlightOn ? "Flashlight on." : "Flashlight off.");
   renderHud();
+}
+
+// ---- captions: short lines at the bottom middle that fade away ----------------
+
+let captionQueue = [];
+let captionBusy = false;
+let captionTimer = null;
+
+function queueCaption(text) {
+  captionQueue.push(text);
+  if (captionQueue.length > 3) captionQueue.shift();
+  if (!captionBusy) showNextCaption();
+}
+
+function showNextCaption() {
+  const el = document.getElementById("caption");
+  const text = captionQueue.shift();
+  if (!text) {
+    captionBusy = false;
+    el.style.opacity = "0";
+    return;
+  }
+  captionBusy = true;
+  el.textContent = text;
+  el.style.opacity = "1";
+  const hold = 2600 + text.length * 45;
+  captionTimer = setTimeout(() => {
+    el.style.opacity = "0";
+    captionTimer = setTimeout(showNextCaption, 700); // let it fade before the next line
+  }, hold);
+}
+
+function clearCaptions() {
+  captionQueue = [];
+  captionBusy = false;
+  clearTimeout(captionTimer);
+  document.getElementById("caption").style.opacity = "0";
 }
 
 function addLog(entry) {
   state.log.unshift(entry);
   state.log = state.log.slice(0, 6);
-  renderLog();
+  queueCaption(entry);
 }
 
 // ---- screen switching -----------------------------------------------------
@@ -235,7 +271,7 @@ function resetRun() {
   entityGroup.visible = false;
   setFear(0);
   keys.clear();
-  renderLog();
+  clearCaptions();
 }
 
 document.getElementById("title-start-button").addEventListener("click", () => {
@@ -343,24 +379,6 @@ function renderHud() {
       <div class="stat-line">Flashlight: ${flashlightStatus}</div>
     </div>
   `;
-}
-
-function renderLog() {
-  const list = document.getElementById("log-list");
-  list.innerHTML = "";
-  if (state.log.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "log-empty";
-    empty.textContent = "Nothing yet.";
-    list.appendChild(empty);
-    return;
-  }
-  state.log.forEach((entry) => {
-    const div = document.createElement("div");
-    div.className = "log-entry";
-    div.textContent = entry;
-    list.appendChild(div);
-  });
 }
 
 // ---- story screen -------------------------------------------------
