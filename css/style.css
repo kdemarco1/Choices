@@ -485,3 +485,13 @@ h1 {
 .transition-fade.active {
   opacity: 1;
 }
+
+/* ---- presence: red edge pulse as it gets close ---- */
+
+.fear-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 40%, rgba(110, 0, 0, 0.8) 100%);
+}

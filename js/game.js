@@ -20,6 +20,7 @@ const state = {
   batteryLevel: 100, // 0-100, drains while the flashlight is on
   frontDoorOpen: false,
   doorsOpen: {},
+  entity: { mode: "idle", timer: 0, x: 0, z: 0, beat: 0 },
 };
 
 const keys = new Set();
@@ -43,7 +44,7 @@ const DARK_RANGE = 2.6;
 const MOON_RANGE = 6;
 
 // Battery drains fully after this many seconds of continuous use.
-const BATTERY_LIFE_SECONDS = 130;
+const BATTERY_LIFE_SECONDS = 180;
 const BATTERY_DRAIN_RATE = 100 / BATTERY_LIFE_SECONDS;
 
 function hasFlashlightOn() {
@@ -139,6 +140,49 @@ function playClick() {
   o.stop(t + 0.05);
 }
 
+function playHeartbeat(strength) {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  [0, 0.17].forEach((off, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(95, t + off);
+    o.frequency.exponentialRampToValueAtTime(55, t + off + 0.14);
+    const peak = (0.12 + 0.18 * strength) * (i ? 0.7 : 1);
+    g.gain.setValueAtTime(0.0001, t + off);
+    g.gain.linearRampToValueAtTime(peak, t + off + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.16);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + off);
+    o.stop(t + off + 0.2);
+  });
+}
+
+function playSting() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(120, t);
+  o.frequency.exponentialRampToValueAtTime(35, t + 0.9);
+  g.gain.setValueAtTime(0.25, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.9);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.95);
+  const n = audioCtx.createBufferSource();
+  const ng = audioCtx.createGain();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  ng.gain.setValueAtTime(0.15, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  n.connect(ng).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.65);
+}
+
 function playKnock() {
   playFootstep(false);
   setTimeout(() => playFootstep(false), 140);
@@ -175,8 +219,7 @@ function showScreen(id) {
 
 // ---- title screen -----------------------------------------------------------
 
-document.getElementById("title-start-button").addEventListener("click", () => {
-  initAudio();
+function resetRun() {
   state.flags = {};
   state.log = [];
   state.inventory = {};
@@ -188,7 +231,16 @@ document.getElementById("title-start-button").addEventListener("click", () => {
   flashlightFlickerTimer = 0;
   state.activeNpc = null;
   state.dialogueNode = "start";
+  state.entity = { mode: "idle", timer: 0, x: 0, z: 0, beat: 0 };
+  entityGroup.visible = false;
+  setFear(0);
   keys.clear();
+  renderLog();
+}
+
+document.getElementById("title-start-button").addEventListener("click", () => {
+  initAudio();
+  resetRun();
   state.phase = "story";
   showScreen("Story-screen");
   document.getElementById("Story-screen").classList.add("fade-in");
@@ -324,6 +376,10 @@ document.getElementById("Story-screen").addEventListener("click", () => {
     promptEl.classList.remove("hidden");
     return;
   }
+  enterExplore();
+});
+
+function enterExplore() {
   state.phase = "explore";
   showScreen("screen-explore");
   yawObject.position.set(PLAYER_START.x, EYE_HEIGHT, PLAYER_START.y);
@@ -334,7 +390,7 @@ document.getElementById("Story-screen").addEventListener("click", () => {
   clock.start();
   renderer.setAnimationLoop(gameLoop);
   renderer.domElement.requestPointerLock();
-});
+}
 
 // ---- typewriter effect ------------------------------------------------------
 
@@ -598,7 +654,7 @@ function buildWorld() {
   const interiorRows = doorRow + 1;
   const interiorFloor = new THREE.Mesh(
     new THREE.PlaneGeometry(cols, interiorRows),
-    new THREE.MeshStandardMaterial({ color: 0x18140f, roughness: 1 })
+    new THREE.MeshStandardMaterial({ color: 0x3a3228, roughness: 1 })
   );
   interiorFloor.rotation.x = -Math.PI / 2;
   interiorFloor.position.set(cols / 2, 0, interiorRows / 2);
@@ -615,7 +671,7 @@ function buildWorld() {
 
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(cols, rows),
-    new THREE.MeshStandardMaterial({ color: 0x0a0a10, side: THREE.BackSide })
+    new THREE.MeshStandardMaterial({ color: 0x16161e, side: THREE.BackSide })
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(cols / 2, WALL_HEIGHT, rows / 2);
@@ -647,6 +703,11 @@ function buildWorld() {
   // The first thing you see on the left, just past the door.
   addReceptionDesk(3.5, 12.0);
   addBed(10.5, 1.5);
+
+  // One weak, cold bulb in the hallway so it isn't a total void.
+  const hallLight = new THREE.PointLight(0x8fa0b8, 0.35, 6, 2);
+  hallLight.position.set(6.5, WALL_HEIGHT * 0.9, 5.5);
+  worldGroup.add(hallLight);
 
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) =>
@@ -793,6 +854,10 @@ function checkJohnRoom() {
   if (p.x > JOHN_ROOM.minX && p.x < JOHN_ROOM.maxX && p.z > JOHN_ROOM.minY && p.z < JOHN_ROOM.maxY) {
     state.flags.enteredJohnRoom = true;
     addLog("The bed is unmade. John's coat is still on the hook. John isn't here.");
+    state.entity.mode = "done";
+    entityGroup.visible = false;
+    setFear(0);
+    addLog("The cold lifts. For now.");
   }
 }
 
@@ -982,6 +1047,10 @@ function handleInteract() {
       state.doorsOpen[door.id] = true;
       playDoorCreak();
       if (door.openText) addLog(door.openText);
+      if (door.id === "hallDoor" && state.entity.mode === "idle") {
+        state.entity.mode = "waiting";
+        state.entity.timer = ENTITY_SPAWN_DELAY;
+      }
     }
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
@@ -1080,6 +1149,186 @@ function chooseDialogueOption(choice) {
 
 document.getElementById("dialogue-exit").addEventListener("click", closeDialogue);
 
+// ---- the presence ---------------------------------------------------------------
+// Something moves through the building (it ignores walls). Light off or dead:
+// it closes in. Light on but not pointed at it: it hangs back. Light on it:
+// it recoils. If it reaches you in the dark, the run ends.
+
+const ENTITY_SPAWN_DELAY = 12; // seconds after the hall door opens
+const ENTITY_SPEED_DARK = 0.9;
+const ENTITY_SPEED_DEAD = 1.2; // battery gone: it moves faster
+const ENTITY_SPEED_WATCHING = 0.25;
+const ENTITY_RETREAT_SPEED = 1.8;
+const ENTITY_CATCH_DIST = 0.8;
+const ENTITY_BEAM_COS = 0.9; // roughly a 25 degree cone
+const ENTITY_BEAM_RANGE = 9;
+const ENTITY_SPAWNS = [
+  [2.5, 9.5], [10.5, 9.5], [6.5, 9.0], [1.5, 11.5],
+  [11.5, 11.5], [3.5, 5.5], [10.5, 6.0], [6.5, 5.5],
+];
+
+const entityGroup = new THREE.Group();
+(function buildEntityMesh() {
+  const dark = new THREE.MeshStandardMaterial({ color: 0x0f0f12, roughness: 1 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.45, 0.26), dark);
+  body.position.set(0, 0.75, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 8), dark);
+  head.position.set(0, 1.65, 0);
+  const armGeo = new THREE.BoxGeometry(0.09, 1.15, 0.09);
+  const armL = new THREE.Mesh(armGeo, dark);
+  armL.position.set(-0.3, 0.9, 0);
+  const armR = new THREE.Mesh(armGeo, dark);
+  armR.position.set(0.3, 0.9, 0);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xcc2222 });
+  const eyeGeo = new THREE.SphereGeometry(0.03, 6, 6);
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+  eyeL.position.set(-0.07, 1.68, 0.15);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+  eyeR.position.set(0.07, 1.68, 0.15);
+  [body, head, armL, armR, eyeL, eyeR].forEach((m) => entityGroup.add(m));
+  entityGroup.visible = false;
+  scene.add(entityGroup);
+})();
+
+function setFear(v) {
+  document.getElementById("fear-vignette").style.opacity = v.toFixed(2);
+}
+
+function hasLineOfSight(ax, az, bx, bz) {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const steps = Math.ceil(Math.hypot(dx, dz) / 0.25);
+  for (let i = 1; i < steps; i++) {
+    if (isWall(ax + (dx * i) / steps, az + (dz * i) / steps)) return false;
+  }
+  return true;
+}
+
+function entityInBeam(e) {
+  if (!hasFlashlightOn()) return false;
+  const p = yawObject.position;
+  const d = Math.hypot(e.x - p.x, e.z - p.z);
+  if (d > ENTITY_BEAM_RANGE) return false;
+  // Horizontal angle only (the creature is tall), as long as the player isn't
+  // staring at the floor or ceiling.
+  const yaw = yawObject.rotation.y;
+  if (Math.abs(camera.rotation.x) > 0.7) return false;
+  const tx = e.x - p.x;
+  const tz = e.z - p.z;
+  const len = Math.hypot(tx, tz) || 1;
+  const dot = (-Math.sin(yaw) * tx + -Math.cos(yaw) * tz) / len;
+  return dot > ENTITY_BEAM_COS && hasLineOfSight(p.x, p.z, e.x, e.z);
+}
+
+function spawnEntity() {
+  const p = yawObject.position;
+  const far = ENTITY_SPAWNS.filter(([x, z]) => Math.hypot(x - p.x, z - p.z) >= 6);
+  const pool = far.length ? far : ENTITY_SPAWNS;
+  const [x, z] = pool[Math.floor(Math.random() * pool.length)];
+  state.entity.x = x;
+  state.entity.z = z;
+  state.entity.mode = "active";
+  if (!state.flags.entitySeen) {
+    state.flags.entitySeen = true;
+    addLog("The air turns cold. Something else is in the building.");
+  }
+}
+
+function caughtByEntity() {
+  state.phase = "caught";
+  state.entity.mode = "done";
+  keys.clear();
+  playSting();
+  setFear(1);
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  document.getElementById("caught-overlay").classList.remove("hidden");
+}
+
+function updateEntity(dt) {
+  const e = state.entity;
+  if (state.phase !== "explore") return;
+  if (e.mode === "idle" || e.mode === "done") {
+    entityGroup.visible = false;
+    return;
+  }
+  if (e.mode === "waiting" || e.mode === "gone") {
+    entityGroup.visible = false;
+    setFear(0);
+    e.timer -= dt;
+    if (e.timer <= 0) spawnEntity();
+    return;
+  }
+
+  // active
+  if (isOutside()) {
+    entityGroup.visible = false;
+    setFear(0);
+    return;
+  }
+  const p = yawObject.position;
+  const dx = p.x - e.x;
+  const dz = p.z - e.z;
+  const d = Math.hypot(dx, dz) || 0.0001;
+  const inBeam = entityInBeam(e);
+  let speed;
+  let dir = 1;
+  if (inBeam) {
+    speed = ENTITY_RETREAT_SPEED;
+    dir = -1;
+    if (!state.flags.entityRecoiled) {
+      state.flags.entityRecoiled = true;
+      addLog("It recoils from the light.");
+    }
+  } else if (hasFlashlightOn()) {
+    speed = ENTITY_SPEED_WATCHING;
+  } else {
+    speed = state.batteryLevel <= 0 ? ENTITY_SPEED_DEAD : ENTITY_SPEED_DARK;
+  }
+  e.x = Math.max(1.3, Math.min(11.7, e.x + (dir * dx / d) * speed * dt));
+  e.z = Math.max(1.3, Math.min(12.7, e.z + (dir * dz / d) * speed * dt));
+
+  const nd = Math.hypot(p.x - e.x, p.z - e.z);
+  if (inBeam && nd > ENTITY_BEAM_RANGE) {
+    e.mode = "gone";
+    e.timer = 8 + Math.random() * 7;
+    entityGroup.visible = false;
+    setFear(0);
+    return;
+  }
+  if (nd < ENTITY_CATCH_DIST && !inBeam) {
+    caughtByEntity();
+    entityGroup.position.set(e.x, 0, e.z);
+    entityGroup.rotation.y = Math.atan2(p.x - e.x, p.z - e.z);
+    entityGroup.visible = true;
+    return;
+  }
+
+  entityGroup.position.set(e.x, 0, e.z);
+  entityGroup.rotation.y = Math.atan2(p.x - e.x, p.z - e.z);
+  entityGroup.visible = true;
+
+  const fear = Math.max(0, Math.min(1, 1 - (nd - ENTITY_CATCH_DIST) / 7)) * (inBeam ? 0.6 : 1);
+  setFear(fear);
+  e.beat -= dt;
+  if (e.beat <= 0 && fear > 0.05) {
+    playHeartbeat(fear);
+    e.beat = 1.3 - fear * 0.85;
+  }
+}
+
+document.getElementById("caught-retry-button").addEventListener("click", () => {
+  document.getElementById("caught-overlay").classList.add("hidden");
+  resetRun();
+  enterExplore();
+});
+
+document.getElementById("caught-leave-button").addEventListener("click", () => {
+  document.getElementById("caught-overlay").classList.add("hidden");
+  resetRun();
+  state.phase = "title";
+  showScreen("screen-title");
+});
+
 // ---- main loop -----------------------------------------------------------------
 
 const clock = new THREE.Clock();
@@ -1088,6 +1337,7 @@ function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
   tryMovePlayer(dt);
   checkJohnRoom();
+  updateEntity(dt);
   updateDoorAnimation(dt);
   updateDeskLampFlicker(dt);
   updateFlashlight(dt);
@@ -1097,7 +1347,7 @@ function gameLoop() {
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  ambientLight.intensity = outside ? 0.045 : hasFlashlightOn() ? 0.22 : 0.06;
+  ambientLight.intensity = outside ? 0.045 : hasFlashlightOn() ? 0.22 : 0.09;
 
   updateInteractPrompt();
   renderer.render(scene, camera);

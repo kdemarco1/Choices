@@ -61,6 +61,7 @@
           <span id="battery-pct" class="battery-pct">100%</span>
         </div>
         <div id="interact-prompt" class="interact-prompt hidden"></div>
+        <div id="fear-vignette" class="fear-vignette"></div>
         <div id="pointer-lock-hint" class="pointer-lock-hint hidden">Click to look around</div>
         <p class="hint hint-overlay">W/A/S/D to move and strafe. Mouse to look around, any direction. Press E to interact. Press F to toggle the flashlight.</p>
 
@@ -88,6 +89,14 @@
         </div>
 
         <div id="transition-fade" class="transition-fade hidden"></div>
+
+        <div id="caught-overlay" class="overlay overlay-center hidden">
+          <div class="dialogue-box pause-box">
+            <h1>It found you.</h1>
+            <button id="caught-retry-button" class="primary-button">Try Again</button>
+            <button id="caught-leave-button" class="secondary-button">Leave Game</button>
+          </div>
+        </div>
       </div>
     </section>
 
