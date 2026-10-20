@@ -41,7 +41,8 @@ const DOOR_ROW = Math.floor(FRONT_DOOR.y); // row 6 — everything south of this
 // distance. Outdoors always uses the dimmer, moonlit street range.
 const LIT_RANGE = 12;
 const DARK_RANGE = 2.6;
-const MOON_RANGE = 6;
+const MOON_RANGE = 12;
+const FACADE_H = 9; // the street-facing walls are three storeys tall
 
 // Battery drains fully after this many seconds of continuous use.
 const BATTERY_LIFE_SECONDS = 180;
@@ -448,6 +449,11 @@ scene.add(yawObject);
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
+// A faint cold moon, only switched on outside (so it never leaks indoors).
+const moonLight = new THREE.DirectionalLight(0x5566aa, 0);
+moonLight.position.set(8.5, 25, 30);
+scene.add(moonLight);
+
 const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.5, 0.5, 1.1);
 flashlightLight.position.set(0, 0, 0);
 camera.add(flashlightLight);
@@ -609,12 +615,124 @@ function createDoorTexture(plate = FRONT_DOOR.plateNumber, base = "#7c847a") {
   return c;
 }
 
+// Door textures are drawn on a square canvas but shown on a 0.85 x 2.55 door,
+// so anything drawn is stretched 3x vertically. These helpers compensate.
+function ell(t, cx, cy, rx) {
+  t.beginPath();
+  t.ellipse(cx, cy, rx, rx / 3, 0, 0, Math.PI * 2);
+}
+function flatText(t, text, cx, cy, size, color) {
+  t.save();
+  t.translate(cx, cy);
+  t.scale(1, 1 / 3);
+  t.fillStyle = color;
+  t.font = `bold ${size}px "Courier New", monospace`;
+  t.textAlign = "center";
+  t.textBaseline = "middle";
+  t.fillText(text, 0, 0);
+  t.restore();
+}
+
+function createStyledDoorTexture(style, plate, base) {
+  const S = TEXTURE_SIZE;
+  const c = document.createElement("canvas");
+  c.width = S;
+  c.height = S;
+  const t = c.getContext("2d");
+  t.fillStyle = base;
+  t.fillRect(0, 0, S, S);
+  const shade = (x, y, w, h, a) => {
+    t.fillStyle = a > 0 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${-a})`;
+    t.fillRect(x * S, y * S, w * S, h * S);
+  };
+  if (style === "wood") {
+    [[0.1, 0.07], [0.54, 0.07], [0.1, 0.5], [0.54, 0.5]].forEach(([x, y]) => {
+      const h = y < 0.3 ? 0.34 : 0.42;
+      shade(x, y, 0.36, h, -0.22);
+      shade(x + 0.02, y + 0.012, 0.32, h - 0.024, 0.07);
+    });
+    shade(0, 0, 0.03, 1, -0.3);
+    shade(0.97, 0, 0.03, 1, -0.3);
+    t.fillStyle = "#b89a52";
+    t.fillRect(S * 0.36, S * 0.425, S * 0.28, S * 0.06);
+    flatText(t, plate || "", S * 0.5, S * 0.455, S * 0.2, "#2a1f0c");
+    ell(t, S * 0.5, S * 0.3, S * 0.035);
+    t.fillStyle = "#0c0a08";
+    t.fill();
+    t.strokeStyle = "#b89a52";
+    t.lineWidth = 1;
+    t.stroke();
+    ell(t, S * 0.85, S * 0.53, S * 0.035);
+    t.fillStyle = "#c9ab5f";
+    t.fill();
+  } else if (style === "hall") {
+    shade(0.14, 0.07, 0.72, 0.38, 0.28); // frosted glass
+    t.strokeStyle = "rgba(20,16,12,0.9)";
+    t.lineWidth = 2;
+    t.strokeRect(S * 0.14, S * 0.07, S * 0.72, S * 0.38);
+    t.beginPath();
+    t.moveTo(S * 0.5, S * 0.07);
+    t.lineTo(S * 0.5, S * 0.45);
+    t.moveTo(S * 0.14, S * 0.26);
+    t.lineTo(S * 0.86, S * 0.26);
+    t.stroke();
+    shade(0.14, 0.55, 0.72, 0.36, -0.2);
+    shade(0.16, 0.565, 0.68, 0.33, 0.06);
+    ell(t, S * 0.85, S * 0.52, S * 0.035);
+    t.fillStyle = "#c9ab5f";
+    t.fill();
+  } else if (style === "metal") {
+    for (let i = 0; i < 14; i++) shade(0, i / 14, 1, 0.012, -0.25);
+    shade(0, 0, 0.03, 1, -0.3);
+    shade(0.97, 0, 0.03, 1, -0.3);
+    flatText(t, "STAFF", S * 0.5, S * 0.26, S * 0.22, "rgba(15,15,15,0.8)");
+    flatText(t, "ONLY", S * 0.5, S * 0.34, S * 0.22, "rgba(15,15,15,0.8)");
+    for (let i = 0; i < 10; i++) {
+      t.fillStyle = i % 2 ? "#151512" : "#b99a2a";
+      t.fillRect(S * i * 0.1, S * 0.92, S * 0.1, S * 0.05);
+    }
+    t.fillStyle = "#c8ccd0";
+    t.fillRect(S * 0.74, S * 0.5, S * 0.1, S * 0.03);
+  } else if (style === "fire") {
+    shade(0.22, 0.08, 0.56, 0.2, 0.3);
+    t.strokeStyle = "rgba(10,20,14,0.9)";
+    t.lineWidth = 2;
+    t.strokeRect(S * 0.22, S * 0.08, S * 0.56, S * 0.2);
+    for (let i = 1; i < 4; i++) {
+      t.beginPath();
+      t.moveTo(S * (0.22 + 0.14 * i), S * 0.08);
+      t.lineTo(S * (0.22 + 0.14 * i), S * 0.28);
+      t.stroke();
+    }
+    flatText(t, "STAIRS", S * 0.5, S * 0.4, S * 0.2, "rgba(225,225,215,0.85)");
+    t.fillStyle = "#c8ccd0";
+    t.fillRect(S * 0.12, S * 0.55, S * 0.76, S * 0.025);
+    shade(0, 0.88, 1, 0.12, -0.3);
+  } else if (style === "elevator") {
+    for (let i = 0; i < 40; i++) shade(Math.random(), 0, 0.006, 1, Math.random() < 0.5 ? 0.06 : -0.06);
+    shade(0.49, 0, 0.02, 1, -0.55);
+    shade(0.38, 0.03, 0.24, 0.035, -0.5);
+    t.fillStyle = "rgba(200,130,40,0.45)";
+    t.fillRect(S * 0.46, S * 0.04, S * 0.08, S * 0.015);
+    shade(0.86, 0.46, 0.1, 0.1, -0.5);
+    ell(t, S * 0.91, S * 0.5, S * 0.02);
+    t.fillStyle = "rgba(200,130,40,0.5)";
+    t.fill();
+  }
+  return c;
+}
+
 const interiorWallTexture = makeThreeTexture(createInteriorWallTexture());
 const exteriorWallTexture = makeThreeTexture(createExteriorWallTexture());
+// Tall street-side walls repeat the exterior texture once per storey.
+const facadeTexture = makeThreeTexture(createExteriorWallTexture());
+facadeTexture.wrapS = THREE.RepeatWrapping;
+facadeTexture.wrapT = THREE.RepeatWrapping;
+facadeTexture.repeat.set(1, 3);
 const doorTexture = makeThreeTexture(createDoorTexture());
 const doorTextures = { frontDoor: doorTexture };
 DOORS.forEach((d) => {
-  doorTextures[d.id] = makeThreeTexture(createDoorTexture(d.plate, d.baseColor));
+  doorTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor));
 });
 
 function makeColorTexture(hex) {
@@ -648,7 +766,8 @@ function buildWorld() {
   const rows = MAP.length;
   const cols = MAP[0].length;
   const interiorMat = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
-  const exteriorMat = new THREE.MeshStandardMaterial({ map: exteriorWallTexture, roughness: 0.95 });
+  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95 });
+  const facadeGeo = new THREE.BoxGeometry(1, FACADE_H, 1);
   const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
 
   const doorCol = Math.floor(FRONT_DOOR.x);
@@ -658,9 +777,9 @@ function buildWorld() {
     for (let col = 0; col < cols; col++) {
       if (MAP[row][col] !== 1) continue;
       if (doorAtCell(col, row)) continue; // door cells are drawn separately below
-      const mat = row >= doorRow ? exteriorMat : interiorMat;
-      const mesh = new THREE.Mesh(wallGeo, mat);
-      mesh.position.set(col + 0.5, WALL_HEIGHT / 2, row + 0.5);
+      const street = row >= doorRow;
+      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? facadeMat : interiorMat);
+      mesh.position.set(col + 0.5, (street ? FACADE_H : WALL_HEIGHT) / 2, row + 0.5);
       worldGroup.add(mesh);
     }
   }
@@ -686,12 +805,29 @@ function buildWorld() {
   worldGroup.add(streetFloor);
 
   const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(cols, rows),
+    new THREE.PlaneGeometry(cols, interiorRows),
     new THREE.MeshStandardMaterial({ color: 0x16161e, side: THREE.BackSide })
   );
   ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.set(cols / 2, WALL_HEIGHT, rows / 2);
+  ceiling.position.set(cols / 2, WALL_HEIGHT, interiorRows / 2);
   worldGroup.add(ceiling);
+
+  // Roof: a cornice that overhangs the facade, and a pitched slope behind it.
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide });
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(cols, 0.35, 1.6), roofMat);
+  cornice.position.set(cols / 2, FACADE_H + 0.17, doorRow + 0.6);
+  worldGroup.add(cornice);
+  const tilt = 0.35;
+  const eaveZ = doorRow + 0.6;
+  const ridgeZ = 3;
+  const run = eaveZ - ridgeZ;
+  const slope = new THREE.Mesh(new THREE.PlaneGeometry(cols, run / Math.cos(tilt)), roofMat);
+  slope.rotation.x = tilt - Math.PI / 2;
+  slope.position.set(cols / 2, FACADE_H + 0.35 + (run * Math.tan(tilt)) / 2, (eaveZ + ridgeZ) / 2);
+  worldGroup.add(slope);
+  const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.9, 2.2, 0.9), roofMat);
+  chimney.position.set(13.5, FACADE_H + 1.6, 8.5);
+  worldGroup.add(chimney);
 
   // Every door is a real hinged pivot, not a texture trick.
   const doorW = 0.85;
@@ -709,21 +845,44 @@ function buildWorld() {
     doorPivots[door.id] = pivot;
   });
 
+  // Fill the gap above each door so no door has an open slot over it.
+  doorList().forEach((door) => {
+    const top = door.isFront ? FACADE_H : WALL_HEIGHT;
+    const lintel = new THREE.Mesh(
+      new THREE.BoxGeometry(1, top - doorH, 1),
+      door.isFront ? facadeMat : interiorMat
+    );
+    lintel.position.set(Math.floor(door.x) + 0.5, doorH + (top - doorH) / 2, Math.floor(door.y) + 0.5);
+    worldGroup.add(lintel);
+  });
+
   const doorGlow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
   doorGlow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
   worldGroup.add(doorGlow);
 
   // The only other light outside: one street lamp, off to the side.
-  addStreetLight(4.5, 16);
+  addStreetLight(5.5, 16);
 
   // The first thing you see on the left, just past the door.
-  addReceptionDesk(3.5, 12.0);
-  addBed(10.5, 1.5);
+  addReceptionDesk(5.5, 12.0);
+  addMailboxes(1.1, 8.8);
+  addSofa(13.5, 11.6);
+  addPlant(14.7, 8.7);
+  addPlant(1.6, 12.3);
+  addRunner(8.5, 5.5, 13, 1.1);
+  addBed(14.5, 1.6); // John's apartment
+  addTable(6.5, 1.5); // apartment 2, where the key is
+  addChair(5.4, 2.3);
+  const aptLight = new THREE.PointLight(0xffbb66, 0.35, 3.5, 2);
+  aptLight.position.set(6.5, 2.4, 2.2);
+  worldGroup.add(aptLight);
 
   // One weak, cold bulb in the hallway so it isn't a total void.
-  const hallLight = new THREE.PointLight(0x8fa0b8, 0.35, 6, 2);
-  hallLight.position.set(6.5, WALL_HEIGHT * 0.9, 5.5);
-  worldGroup.add(hallLight);
+  [4.5, 8.5, 12.5].forEach((hx) => {
+    const hallLight = new THREE.PointLight(0x8fa0b8, 0.3, 6, 2);
+    hallLight.position.set(hx, WALL_HEIGHT * 0.9, 5.5);
+    worldGroup.add(hallLight);
+  });
 
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) =>
@@ -780,6 +939,58 @@ function addReceptionDesk(x, z) {
   deskLamp = new THREE.PointLight(0xffbb55, 0.8, 3, 2.4);
   deskLamp.position.set(x + 0.4, 0.75 + 0.38, z - 0.15);
   worldGroup.add(deskLamp);
+}
+
+function addBox(w, h, d, x, y, z, color) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+  m.position.set(x, y, z);
+  worldGroup.add(m);
+  return m;
+}
+
+// A block of metal mailboxes on the lobby's west wall.
+function addMailboxes(x, z) {
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 6; c++) {
+      addBox(0.14, 0.22, 0.34, x, 1.0 + r * 0.26, z + c * 0.38, r ? 0x3d4146 : 0x35393d);
+    }
+  }
+}
+
+function addSofa(x, z) {
+  addBox(1.8, 0.4, 0.8, x, 0.2, z, 0x2b2220);
+  addBox(1.8, 0.55, 0.2, x, 0.65, z + 0.35, 0x251d1b);
+  addBox(0.2, 0.55, 0.8, x - 0.9, 0.45, z, 0x251d1b);
+  addBox(0.2, 0.55, 0.8, x + 0.9, 0.45, z, 0x251d1b);
+}
+
+function addPlant(x, z) {
+  addBox(0.35, 0.4, 0.35, x, 0.2, z, 0x2a2018);
+  const leaves = new THREE.Mesh(
+    new THREE.SphereGeometry(0.3, 8, 8),
+    new THREE.MeshStandardMaterial({ color: 0x1d3320, roughness: 1 })
+  );
+  leaves.position.set(x, 0.75, z);
+  worldGroup.add(leaves);
+}
+
+function addRunner(cx, cz, length, width) {
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(length, width),
+    new THREE.MeshStandardMaterial({ color: 0x3a1414, roughness: 1 })
+  );
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(cx, 0.012, cz);
+  worldGroup.add(m);
+}
+
+function addTable(x, z) {
+  addBox(0.9, 0.75, 0.6, x, 0.375, z, 0x2e2419);
+}
+
+function addChair(x, z) {
+  addBox(0.42, 0.45, 0.42, x, 0.225, z, 0x241c15);
+  addBox(0.42, 0.45, 0.06, x, 0.68, z + 0.18, 0x241c15);
 }
 
 // A plain, unmade bed in John's room.
@@ -1173,8 +1384,8 @@ const ENTITY_CATCH_DIST = 0.8;
 const ENTITY_BEAM_COS = 0.9; // roughly a 25 degree cone
 const ENTITY_BEAM_RANGE = 9;
 const ENTITY_SPAWNS = [
-  [2.5, 9.5], [10.5, 9.5], [6.5, 9.0], [1.5, 11.5],
-  [11.5, 11.5], [3.5, 5.5], [10.5, 6.0], [6.5, 5.5],
+  [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
+  [14.5, 11.5], [4.0, 5.5], [12.5, 6.0], [8.5, 5.5],
 ];
 
 const entityGroup = new THREE.Group();
@@ -1292,7 +1503,7 @@ function updateEntity(dt) {
   } else {
     speed = state.batteryLevel <= 0 ? ENTITY_SPEED_DEAD : ENTITY_SPEED_DARK;
   }
-  e.x = Math.max(1.3, Math.min(11.7, e.x + (dir * dx / d) * speed * dt));
+  e.x = Math.max(1.3, Math.min(15.7, e.x + (dir * dx / d) * speed * dt));
   e.z = Math.max(1.3, Math.min(12.7, e.z + (dir * dz / d) * speed * dt));
 
   const nd = Math.hypot(p.x - e.x, p.z - e.z);
@@ -1352,6 +1563,7 @@ function gameLoop() {
 
   const outside = isOutside();
   scene.fog.far = outside ? MOON_RANGE : currentLightRange();
+  moonLight.intensity = outside ? 0.35 : 0;
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);

@@ -6,30 +6,38 @@
 // same physical space, and the only way in or out is that door — the
 // facade is solid across its entire width except for the door's cell.
 
-const MAP = [
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // 0: outer wall
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1], // 1: John's apartment (cols 9-11), other apartments are sealed
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1], // 2: John's apartment
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1], // 3: John's apartment
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // 4: apartment wall — doors at cols 2, 4, 7, 10 (see DOORS)
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 5: hallway
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 6: hallway
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // 7: lobby/hallway wall — hall door at col 6 (see DOORS)
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 8: lobby
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 9: lobby
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 10: lobby
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 11: lobby
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 12: lobby, just past the front door
-  [1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1], // 13: facade — solid except the front door gap at col 6
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 14: street
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 15: street
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 16: street
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 17: street
-  [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], // 18: street, player start
-  [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], // 19: south boundary
+// Layout (17 columns x 20 rows). '#' = wall, '.' = open floor.
+//  rows 1-3   four apartments (doors in row 4 at cols 2, 6, 10, 14)
+//  rows 5-6   the hallway
+//  row 7      hallway/lobby wall: staff door (3), elevator (5), hall door (8), stairwell (12)
+//  rows 8-12  the lobby, reception desk on the left of the front door
+//  row 13     the facade — solid except the front door gap at col 8
+//  rows 14-18 the street
+const MAP_ROWS_TEXT = [
+  "#################", // 0
+  "#...#...#...#...#", // 1  apartments 1-4
+  "#...#...#...#...#", // 2
+  "#...#...#...#...#", // 3
+  "#################", // 4  apartment doors
+  "#...............#", // 5  hallway
+  "#...............#", // 6
+  "#################", // 7  lobby wall + doors
+  "#...............#", // 8  lobby
+  "#...............#", // 9
+  "#...............#", // 10
+  "#...............#", // 11
+  "#...............#", // 12
+  "########.########", // 13 facade, front door at col 8
+  "#...............#", // 14 street
+  "#...............#", // 15
+  "#...............#", // 16
+  "#...............#", // 17
+  "#...............#", // 18 player start
+  "#################", // 19
 ];
+const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : 0)));
 
-const PLAYER_START = { x: 6.5, y: 18.0, angle: -Math.PI / 2 };
+const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
 const NPCS = [];
 
@@ -37,20 +45,20 @@ const ITEMS = [
   {
     id: "flashlight",
     name: "Flashlight",
-    x: 3.5,
-    y: 12.0, // sitting right on the reception desk, just past the front door, to the left as you enter
+    x: 5.5,
+    y: 12.0, // on the reception desk, just past the front door, to the left as you enter
     color: "#c9a15c",
     height: 0.85,
-    pickupText: "A flashlight, sitting on the reception desk. Still has some charge in it.",
+    pickupText: "A flashlight, sitting on the reception desk.",
   },
   {
     id: "johnKey",
     name: "Brass Key",
-    x: 1.5,
-    y: 5.5, // west end of the hallway, far from John's door
+    x: 6.5,
+    y: 1.7, // on the table inside Apartment 2
     color: "#d4b04a",
-    height: 0.3,
-    pickupText: "A brass key on a paper tag. The tag says: 4. John's apartment.",
+    height: 0.9,
+    pickupText: "A brass key on a paper tag: 4.",
   },
 ];
 
@@ -64,7 +72,7 @@ const DIALOGUES = {};
 
 const FRONT_DOOR = {
   id: "frontDoor",
-  x: 6.5,
+  x: 8.5,
   y: 13.0,
   interactionDistance: 1.4,
   label: "Enter the Building",
@@ -73,20 +81,18 @@ const FRONT_DOOR = {
 };
 
 // Interior doors. x/y is the centre of the wall cell the door sits in.
+// style picks the look: wood, hall, metal, fire, elevator.
 // A door with keyId stays locked until the player carries that item.
 const DOORS = [
-  { id: "hallDoor", x: 6.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false, plate: "", baseColor: "#4d5249",
-    openText: "A hallway. Apartment doors line the far wall." },
-  { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, plate: "1", baseColor: "#5a4a3c",
-    lockedText: "Locked." },
-  { id: "apt2", x: 4.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, plate: "2", baseColor: "#5a4a3c",
-    lockedText: "Locked." },
-  { id: "apt3", x: 7.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, plate: "3", baseColor: "#5a4a3c",
-    lockedText: "Locked." },
-  { id: "john", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey", plate: "4", baseColor: "#5a4a3c",
-    unlockLabel: "Unlock Apartment 4",
-    lockedText: "Locked. You need a key.",
-    openText: "The key turns. The door swings open." },
+  { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false, style: "hall", baseColor: "#3b2f27" },
+  { id: "staff", x: 3.5, y: 7.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "metal", baseColor: "#6b6f72", lockedText: "Locked." },
+  { id: "elevator", x: 5.5, y: 7.5, interactionDistance: 1.4, label: "Call Elevator", locked: true, style: "elevator", baseColor: "#8a8f95", lockedText: "No power." },
+  { id: "stairs", x: 12.5, y: 7.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "fire", baseColor: "#2f4a3c", lockedText: "Jammed." },
+  { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "wood", plate: "1", baseColor: "#5a4a3c", lockedText: "Locked." },
+  { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false, style: "wood", plate: "2", baseColor: "#6a5238" },
+  { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "wood", plate: "3", baseColor: "#3e4a52", lockedText: "Locked." },
+  { id: "john", x: 14.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey", style: "wood", plate: "4", baseColor: "#4c3a34",
+    unlockLabel: "Unlock Apartment 4", lockedText: "Locked. You need a key." },
 ];
 
-const JOHN_ROOM = { minX: 9, maxX: 12, minY: 1, maxY: 4 };
+const JOHN_ROOM = { minX: 13, maxX: 16, minY: 1, maxY: 4 };
