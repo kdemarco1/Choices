@@ -451,7 +451,7 @@ scene.add(ambientLight);
 
 // A faint cold moon, only switched on outside (so it never leaks indoors).
 const moonLight = new THREE.DirectionalLight(0x5566aa, 0);
-moonLight.position.set(8.5, 25, 30);
+moonLight.position.set(10.5, 25, 30);
 scene.add(moonLight);
 
 const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.5, 0.5, 1.1);
@@ -467,6 +467,96 @@ let flashlightFlickerTimer = 0;
 
 const worldGroup = new THREE.Group();
 scene.add(worldGroup);
+
+// A real flashlight: barrel, grip rings, flared head, glass lens, switch.
+// Built pointing down -Z. unlit=true gives the always-visible first-person copy.
+function buildFlashlightModel(unlit) {
+  const mat = (color) =>
+    unlit
+      ? new THREE.MeshBasicMaterial({ color, depthTest: false })
+      : new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.5 });
+  const group = new THREE.Group();
+  let order = 999;
+  const add = (mesh) => {
+    if (unlit) mesh.renderOrder = order++;
+    group.add(mesh);
+    return mesh;
+  };
+  const barrel = add(new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 0.2, 14), mat(0x34373a)));
+  barrel.rotation.x = Math.PI / 2;
+  [0.05, 0.08].forEach((z) => {
+    const ring = add(new THREE.Mesh(new THREE.CylinderGeometry(0.0295, 0.0295, 0.014, 14), mat(0x15161a)));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.z = z;
+  });
+  const tail = add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.02, 14), mat(0x4a4e52)));
+  tail.rotation.x = Math.PI / 2;
+  tail.position.z = 0.108;
+  const head = add(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.07, 14), mat(0x4a4e52)));
+  head.rotation.x = Math.PI / 2;
+  head.position.z = -0.135;
+  const lensMat = unlit
+    ? new THREE.MeshBasicMaterial({ color: 0x2a3236, depthTest: false })
+    : new THREE.MeshStandardMaterial({ color: 0x9aa6aa, roughness: 0.2, metalness: 0.3 });
+  const lens = add(new THREE.Mesh(new THREE.CircleGeometry(0.043, 14), lensMat));
+  lens.rotation.y = Math.PI;
+  lens.position.z = -0.1715;
+  const sw = add(new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.012, 0.03), mat(0xa03030)));
+  sw.position.set(0, 0.031, 0.015);
+  return { group, lensMat };
+}
+
+function addFlashlightModel(x, y, z) {
+  const m = buildFlashlightModel(false).group;
+  m.rotation.y = Math.PI / 2 + 0.3; // lying on its side, angled a little
+  m.position.set(x, y, z);
+  worldGroup.add(m);
+}
+
+function addKeyModel(x, y, z) {
+  const brass = new THREE.MeshStandardMaterial({ color: 0xb8963a, emissive: 0x2a2008, roughness: 0.35, metalness: 0.7 });
+  const g = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.009, 6, 14), brass);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.x = -0.06;
+  const stem = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.011, 0.011), brass);
+  stem.position.x = 0.02;
+  const t1 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.011, 0.03), brass);
+  t1.position.set(0.06, 0, 0.014);
+  const t2 = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.011, 0.02), brass);
+  t2.position.set(0.04, 0, 0.01);
+  const tag = new THREE.Mesh(
+    new THREE.BoxGeometry(0.05, 0.004, 0.035),
+    new THREE.MeshStandardMaterial({ color: 0xcfc6a8, roughness: 1 })
+  );
+  tag.position.set(-0.11, -0.004, 0.03);
+  [ring, stem, t1, t2, tag].forEach((m) => g.add(m));
+  g.rotation.y = 0.6;
+  g.position.set(x, y, z);
+  worldGroup.add(g);
+}
+
+// The flashlight in Maria's hand: bottom right of the view, glows when on.
+const held = buildFlashlightModel(true);
+const heldFlashlight = held.group;
+const heldLensMat = held.lensMat;
+heldFlashlight.position.set(0.17, -0.15, -0.34);
+heldFlashlight.rotation.set(0.04, 0.12, 0);
+heldFlashlight.visible = false;
+camera.add(heldFlashlight);
+let heldBobTime = 0;
+
+function updateHeldFlashlight(dt) {
+  heldFlashlight.visible = !!state.inventory.flashlight;
+  if (!heldFlashlight.visible) return;
+  const moving = keys.has("w") || keys.has("a") || keys.has("s") || keys.has("d");
+  heldBobTime += dt * (moving ? 9 : 1.6);
+  const amp = moving ? 0.008 : 0.002;
+  heldFlashlight.position.y = -0.15 + Math.sin(heldBobTime) * amp;
+  heldFlashlight.position.x = 0.17 + Math.cos(heldBobTime * 0.5) * amp;
+  const k = Math.max(0, Math.min(1, flashlightCurrentIntensity / FLASHLIGHT_MAX_INTENSITY));
+  heldLensMat.color.setRGB(0.16 + 0.84 * k, 0.2 + 0.77 * k, 0.21 + 0.55 * k);
+}
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
@@ -731,6 +821,7 @@ facadeTexture.wrapT = THREE.RepeatWrapping;
 facadeTexture.repeat.set(1, 3);
 const doorTexture = makeThreeTexture(createDoorTexture());
 const doorTextures = { frontDoor: doorTexture };
+const fixtureTextures = {};
 DOORS.forEach((d) => {
   doorTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor));
 });
@@ -866,10 +957,13 @@ function buildWorld() {
   // The first thing you see on the left, just past the door.
   addReceptionDesk(5.5, 12.0);
   addMailboxes(1.1, 8.8);
-  addSofa(13.5, 11.6);
+  addSofa(15.5, 11.6);
+  addPlant(18.6, 8.7);
   addPlant(14.7, 8.7);
   addPlant(1.6, 12.3);
-  addRunner(8.5, 5.5, 13, 1.1);
+  addRunner(10.5, 5.5, 17, 1.1);
+  addStairwell(18.5);
+  FIXTURES.forEach(addFixture);
   addBed(14.5, 1.6); // John's apartment
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
@@ -878,16 +972,18 @@ function buildWorld() {
   worldGroup.add(aptLight);
 
   // One weak, cold bulb in the hallway so it isn't a total void.
-  [4.5, 8.5, 12.5].forEach((hx) => {
+  [4.5, 8.5, 12.5, 16.5].forEach((hx) => {
     const hallLight = new THREE.PointLight(0x8fa0b8, 0.3, 6, 2);
     hallLight.position.set(hx, WALL_HEIGHT * 0.9, 5.5);
     worldGroup.add(hallLight);
   });
 
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
-  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) =>
-    addMarkerSprite(it.x, it.y, it.color, 0.4, it.height)
-  );
+  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
+    if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
+    else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
+    else addMarkerSprite(it.x, it.y, it.color, 0.4, it.height);
+  });
 }
 
 // A single street lamp: a dark pole, a lamp head, and a real warm light
@@ -939,6 +1035,57 @@ function addReceptionDesk(x, z) {
   deskLamp = new THREE.PointLight(0xffbb55, 0.8, 3, 2.4);
   deskLamp.position.set(x + 0.4, 0.75 + 0.38, z - 0.15);
   worldGroup.add(deskLamp);
+}
+
+// Staircase filling the back of the stairwell room: steps rise to the ceiling
+// where the way up is boarded over.
+function addStairwell(cx) {
+  const steps = 8;
+  const zFront = 3.0;
+  const depth = 0.25;
+  for (let i = 0; i < steps; i++) {
+    const h = (i + 1) * (WALL_HEIGHT / steps);
+    addBox(3, h, depth, cx, h / 2, zFront - depth * (i + 0.5), 0x2c2c2e);
+  }
+  // Boards nailed across the stairs, a few steps up.
+  [1.35, 1.7, 2.05, 2.4, 2.75].forEach((y, i) => {
+    const plank = addBox(3.1, 0.17, 0.05, cx, y, 2.4 - (i % 2) * 0.06, 0x3a2a1c);
+    plank.rotation.z = ((i % 3) - 1) * 0.06;
+  });
+  const bulb = new THREE.PointLight(0xaabbaa, 0.35, 5, 2);
+  bulb.position.set(cx, 2.5, 3.2);
+  worldGroup.add(bulb);
+}
+
+// A door-looking panel stuck to the lobby side of a wall (nothing behind it).
+function addFixture(f) {
+  const frame = new THREE.Mesh(
+    new THREE.BoxGeometry(f.width + 0.12, 2.7, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.8 })
+  );
+  frame.position.set(f.x, 1.35, f.y + 0.025);
+  worldGroup.add(frame);
+  if (!fixtureTextures[f.id]) {
+    fixtureTextures[f.id] = makeThreeTexture(createStyledDoorTexture(f.style, f.plate, f.baseColor));
+  }
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(f.width, 2.55),
+    new THREE.MeshStandardMaterial({ map: fixtureTextures[f.id], roughness: 0.6, metalness: f.style === "elevator" ? 0.3 : 0 })
+  );
+  panel.position.set(f.x, 1.275, f.y + 0.052);
+  worldGroup.add(panel);
+  if (f.style === "elevator") {
+    const lamp = new THREE.Mesh(
+      new THREE.BoxGeometry(0.3, 0.07, 0.03),
+      new THREE.MeshBasicMaterial({ color: 0x5a3810 })
+    );
+    lamp.position.set(f.x, 2.82, f.y + 0.05);
+    worldGroup.add(lamp);
+    const plate = addBox(0.11, 0.2, 0.03, f.x + 0.72, 1.1, f.y + 0.03, 0x25272a);
+    const btn = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.02), new THREE.MeshBasicMaterial({ color: 0x5a3810 }));
+    btn.position.set(f.x + 0.72, 1.1, f.y + 0.05);
+    worldGroup.add(btn);
+  }
 }
 
 function addBox(w, h, d, x, y, z, color) {
@@ -1028,6 +1175,7 @@ function isWall(x, y) {
   // takes precedence over the map's own value there.
   const door = doorAtCell(col, row);
   if (door) return !isDoorOpen(door);
+  if (BLOCKED_CELLS.some(([bc, br]) => bc === col && br === row)) return true;
   return MAP[row][col] === 1;
 }
 
@@ -1230,6 +1378,13 @@ function nearestInteractable() {
       };
     }
   });
+  FIXTURES.forEach((f) => {
+    const d = Math.hypot(f.x - px, f.y + 0.5 - py);
+    if (d < 1.4 && d < doorDist) {
+      doorDist = d;
+      doorTarget = { type: "fixture", id: f.id, label: f.label };
+    }
+  });
   return doorTarget;
 }
 
@@ -1257,7 +1412,12 @@ function handleInteract() {
   const target = nearestInteractable();
   if (!target) return;
 
-  if (target.type === "door") {
+  if (target.type === "fixture") {
+    const f = FIXTURES.find((x) => x.id === target.id);
+    if (f.sound === "click") playClick();
+    else playKnock();
+    addLog(f.text);
+  } else if (target.type === "door") {
     const door = doorList().find((d) => d.id === target.id);
     if (door.isFront) {
       state.frontDoorOpen = true;
@@ -1385,7 +1545,7 @@ const ENTITY_BEAM_COS = 0.9; // roughly a 25 degree cone
 const ENTITY_BEAM_RANGE = 9;
 const ENTITY_SPAWNS = [
   [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
-  [14.5, 11.5], [4.0, 5.5], [12.5, 6.0], [8.5, 5.5],
+  [17.5, 10.5], [4.0, 5.5], [12.5, 6.0], [17.5, 6.0],
 ];
 
 const entityGroup = new THREE.Group();
@@ -1503,7 +1663,7 @@ function updateEntity(dt) {
   } else {
     speed = state.batteryLevel <= 0 ? ENTITY_SPEED_DEAD : ENTITY_SPEED_DARK;
   }
-  e.x = Math.max(1.3, Math.min(15.7, e.x + (dir * dx / d) * speed * dt));
+  e.x = Math.max(1.3, Math.min(19.7, e.x + (dir * dx / d) * speed * dt));
   e.z = Math.max(1.3, Math.min(12.7, e.z + (dir * dz / d) * speed * dt));
 
   const nd = Math.hypot(p.x - e.x, p.z - e.z);
@@ -1560,6 +1720,7 @@ function gameLoop() {
   updateDoorAnimation(dt);
   updateDeskLampFlicker(dt);
   updateFlashlight(dt);
+  updateHeldFlashlight(dt);
 
   const outside = isOutside();
   scene.fog.far = outside ? MOON_RANGE : currentLightRange();

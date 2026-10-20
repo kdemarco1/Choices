@@ -6,36 +6,42 @@
 // same physical space, and the only way in or out is that door — the
 // facade is solid across its entire width except for the door's cell.
 
-// Layout (17 columns x 20 rows). '#' = wall, '.' = open floor.
-//  rows 1-3   four apartments (doors in row 4 at cols 2, 6, 10, 14)
+// Layout (21 columns x 20 rows). '#' = wall, '.' = open floor.
+//  rows 1-3   apartments 1, 2, 3, 4 (cols 1-3, 5-7, 9-11, 13-15) and the stairwell (cols 17-19)
+//  row 4      doors into them (cols 2, 6, 10, 14, 18)
 //  rows 5-6   the hallway
-//  row 7      hallway/lobby wall: staff door (3), elevator (5), hall door (8), stairwell (12)
+//  row 7      hallway/lobby wall — the hall door (col 8), plus the elevator and a staff
+//             door drawn on the lobby side only (see FIXTURES)
 //  rows 8-12  the lobby, reception desk on the left of the front door
 //  row 13     the facade — solid except the front door gap at col 8
 //  rows 14-18 the street
 const MAP_ROWS_TEXT = [
-  "#################", // 0
-  "#...#...#...#...#", // 1  apartments 1-4
-  "#...#...#...#...#", // 2
-  "#...#...#...#...#", // 3
-  "#################", // 4  apartment doors
-  "#...............#", // 5  hallway
-  "#...............#", // 6
-  "#################", // 7  lobby wall + doors
-  "#...............#", // 8  lobby
-  "#...............#", // 9
-  "#...............#", // 10
-  "#...............#", // 11
-  "#...............#", // 12
-  "########.########", // 13 facade, front door at col 8
-  "#...............#", // 14 street
-  "#...............#", // 15
-  "#...............#", // 16
-  "#...............#", // 17
-  "#...............#", // 18 player start
-  "#################", // 19
+  "#####################", // 0
+  "#...#...#...#...#...#", // 1  apartments 1-3 and John's (4), then the stairwell
+  "#...#...#...#...#...#", // 2
+  "#...#...#...#...#...#", // 3
+  "#####################", // 4  apartment + stairwell doors
+  "#...................#", // 5  hallway
+  "#...................#", // 6
+  "#####################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
+  "#...................#", // 8  lobby
+  "#...................#", // 9
+  "#...................#", // 10
+  "#...................#", // 11
+  "#...................#", // 12
+  "########.############", // 13 facade, front door at col 8
+  "#...................#", // 14 street
+  "#...................#", // 15
+  "#...................#", // 16
+  "#...................#", // 17
+  "#...................#", // 18 player start
+  "#####################", // 19
 ];
 const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : 0)));
+
+// Floor cells that are solid but drawn as props instead of wall blocks
+// (the staircase fills the back of the stairwell).
+const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2]];
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
@@ -80,19 +86,24 @@ const FRONT_DOOR = {
   plateNumber: "60406",
 };
 
-// Interior doors. x/y is the centre of the wall cell the door sits in.
-// style picks the look: wood, hall, metal, fire, elevator.
-// A door with keyId stays locked until the player carries that item.
+// Interior doors that really open. x/y is the centre of the wall cell.
+// style picks the look: wood, hall, fire. A door with keyId stays locked
+// until the player carries that item.
 const DOORS = [
   { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false, style: "hall", baseColor: "#3b2f27" },
-  { id: "staff", x: 3.5, y: 7.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "metal", baseColor: "#6b6f72", lockedText: "Locked." },
-  { id: "elevator", x: 5.5, y: 7.5, interactionDistance: 1.4, label: "Call Elevator", locked: true, style: "elevator", baseColor: "#8a8f95", lockedText: "No power." },
-  { id: "stairs", x: 12.5, y: 7.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "fire", baseColor: "#2f4a3c", lockedText: "Jammed." },
   { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "wood", plate: "1", baseColor: "#5a4a3c", lockedText: "Locked." },
   { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false, style: "wood", plate: "2", baseColor: "#6a5238" },
   { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, style: "wood", plate: "3", baseColor: "#3e4a52", lockedText: "Locked." },
   { id: "john", x: 14.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey", style: "wood", plate: "4", baseColor: "#4c3a34",
     unlockLabel: "Unlock Apartment 4", lockedText: "Locked. You need a key." },
+  { id: "stairs", x: 18.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false, style: "fire", baseColor: "#2f4a3c" },
+];
+
+// One-sided things on the lobby wall: they look like doors but only exist on
+// the lobby side (y is the wall face the lobby sees).
+const FIXTURES = [
+  { id: "staff", x: 3.5, y: 8.0, width: 0.9, style: "metal", baseColor: "#6b6f72", label: "Try Door", text: "Locked.", sound: "knock" },
+  { id: "elevator", x: 5.5, y: 8.0, width: 0.95, style: "elevator", baseColor: "#8a8f95", label: "Call Elevator", text: "No power.", sound: "click" },
 ];
 
 const JOHN_ROOM = { minX: 13, maxX: 16, minY: 1, maxY: 4 };
