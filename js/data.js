@@ -78,14 +78,14 @@ const DOORS = [
   { id: "hallDoor", x: 6.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false, plate: "", baseColor: "#4d5249",
     openText: "A hallway. Apartment doors line the far wall." },
   { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, plate: "1", baseColor: "#5a4a3c",
-    lockedText: "Apartment 1. Locked. No one answers." },
+    lockedText: "Locked." },
   { id: "apt2", x: 4.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, plate: "2", baseColor: "#5a4a3c",
-    lockedText: "Apartment 2. Locked. Something shifts behind the door, then stops." },
+    lockedText: "Locked." },
   { id: "apt3", x: 7.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, plate: "3", baseColor: "#5a4a3c",
-    lockedText: "Apartment 3. Locked." },
+    lockedText: "Locked." },
   { id: "john", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey", plate: "4", baseColor: "#5a4a3c",
     unlockLabel: "Unlock Apartment 4",
-    lockedText: "Apartment 4. John's. Locked — she'll need the key.",
+    lockedText: "Locked. You need a key.",
     openText: "The key turns. The door swings open." },
 ];
 

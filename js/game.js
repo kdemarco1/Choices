@@ -190,11 +190,9 @@ function playKnock() {
 
 function toggleFlashlight() {
   if (!state.inventory.flashlight) {
-    addLog("She doesn't have a flashlight yet.");
     return;
   }
   if (state.batteryLevel <= 0) {
-    addLog("The flashlight is dead. No charge left.");
     return;
   }
   state.flashlightOn = !state.flashlightOn;
@@ -871,11 +869,9 @@ function checkJohnRoom() {
   const p = yawObject.position;
   if (p.x > JOHN_ROOM.minX && p.x < JOHN_ROOM.maxX && p.z > JOHN_ROOM.minY && p.z < JOHN_ROOM.maxY) {
     state.flags.enteredJohnRoom = true;
-    addLog("The bed is unmade. John's coat is still on the hook. John isn't here.");
     state.entity.mode = "done";
     entityGroup.visible = false;
     setFear(0);
-    addLog("The cold lifts. For now.");
   }
 }
 
@@ -916,7 +912,6 @@ function updateFlashlight(dt) {
     if (state.batteryLevel <= 0) {
       state.batteryLevel = 0;
       state.flashlightOn = false;
-      addLog("The flashlight flickers and dies.");
       renderHud();
     }
   }
@@ -1056,7 +1051,6 @@ function handleInteract() {
     if (door.isFront) {
       state.frontDoorOpen = true;
       playDoorCreak();
-      addLog("The door creaks open. It's dark inside — she'll need to find some light.");
     } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
       playKnock();
       addLog(door.lockedText || "Locked.");
@@ -1064,7 +1058,6 @@ function handleInteract() {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
       playDoorCreak();
-      if (door.openText) addLog(door.openText);
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
         state.entity.timer = ENTITY_SPAWN_DELAY;
@@ -1073,9 +1066,8 @@ function handleInteract() {
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
-    addLog(item.pickupText);
     if (target.id === "flashlight") {
-      addLog("She can turn it on now. Press F.");
+      addLog("Press F to turn the flashlight on.");
     }
     renderHud();
     buildWorld(); // remove the collected item's marker from the scene
@@ -1248,7 +1240,6 @@ function spawnEntity() {
   state.entity.mode = "active";
   if (!state.flags.entitySeen) {
     state.flags.entitySeen = true;
-    addLog("The air turns cold. Something else is in the building.");
   }
 }
 
@@ -1295,7 +1286,6 @@ function updateEntity(dt) {
     dir = -1;
     if (!state.flags.entityRecoiled) {
       state.flags.entityRecoiled = true;
-      addLog("It recoils from the light.");
     }
   } else if (hasFlashlightOn()) {
     speed = ENTITY_SPEED_WATCHING;
