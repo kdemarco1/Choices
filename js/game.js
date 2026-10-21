@@ -33,7 +33,7 @@ const INTERACT_DIST = 1.15;
 const EYE_HEIGHT = 1.5;
 const WALL_HEIGHT = 3;
 const DOOR_OPEN_ANGLE = -Math.PI * 0.62; // swings inward, like a real hinge
-const DOOR_OPEN_SPEED = 2.4; // radians/second
+const DOOR_OPEN_SPEED = 1.9; // radians/second
 const DOOR_ROW = Math.floor(FRONT_DOOR.y); // row 6 — everything south of this is "the street"
 
 // Vision range indoors: full range while the flashlight is on and has
@@ -111,20 +111,73 @@ function playFootstep(quiet) {
   src.start();
 }
 
-function playDoorCreak() {
+// A slow, rusty hinge: two sawtooth voices pushed through a resonant filter
+// that sweeps as the door turns, chopped by a fast stick-slip pulse, with a
+// latch click at the start and a soft thud when it comes to rest.
+function playDoorCreak(pitch) {
   if (!audioReady()) return;
+  pitch = pitch || 1;
   const t = audioCtx.currentTime;
-  const o = audioCtx.createOscillator();
-  const g = audioCtx.createGain();
-  o.type = "sawtooth";
-  o.frequency.setValueAtTime(180, t);
-  o.frequency.linearRampToValueAtTime(85, t + 1.1);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(0.05, t + 0.3);
-  g.gain.linearRampToValueAtTime(0.0001, t + 1.1);
-  o.connect(g).connect(audioCtx.destination);
-  o.start(t);
-  o.stop(t + 1.15);
+  const dur = 1.2 + Math.random() * 0.4;
+  const master = audioCtx.createGain();
+  master.gain.setValueAtTime(0.0001, t);
+  master.gain.linearRampToValueAtTime(0.5, t + 0.12);
+  master.gain.setValueAtTime(0.5, t + dur * 0.7);
+  master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  master.connect(audioCtx.destination);
+
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.Q.value = 6;
+  bp.frequency.setValueAtTime(420 * pitch, t);
+  bp.frequency.linearRampToValueAtTime(980 * pitch, t + dur * 0.55);
+  bp.frequency.linearRampToValueAtTime(560 * pitch, t + dur);
+
+  const am = audioCtx.createGain();
+  am.gain.value = 0.45;
+  const lfo = audioCtx.createOscillator();
+  lfo.type = "sawtooth";
+  lfo.frequency.setValueAtTime(24, t);
+  lfo.frequency.linearRampToValueAtTime(41, t + dur * 0.6);
+  lfo.frequency.linearRampToValueAtTime(19, t + dur);
+  const lfoDepth = audioCtx.createGain();
+  lfoDepth.gain.value = 0.45;
+  lfo.connect(lfoDepth).connect(am.gain);
+  lfo.start(t);
+  lfo.stop(t + dur + 0.05);
+
+  [1, 1.51].forEach((mult) => {
+    const o = audioCtx.createOscillator();
+    o.type = "sawtooth";
+    const f0 = 118 * pitch * mult;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.linearRampToValueAtTime(f0 * 1.5, t + dur * 0.5);
+    o.frequency.linearRampToValueAtTime(f0 * 1.1, t + dur);
+    o.connect(am);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  });
+  am.connect(bp).connect(master);
+
+  const click = audioCtx.createBufferSource();
+  click.buffer = noiseBuf;
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 1500;
+  const cg = audioCtx.createGain();
+  cg.gain.value = 0.12;
+  click.connect(hp).connect(cg).connect(audioCtx.destination);
+  click.start(t);
+
+  const thud = audioCtx.createBufferSource();
+  thud.buffer = noiseBuf;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.value = 140;
+  const tg = audioCtx.createGain();
+  tg.gain.value = 0.18;
+  thud.connect(lp).connect(tg).connect(audioCtx.destination);
+  thud.start(t + dur * 0.95);
 }
 
 function playClick() {
@@ -723,7 +776,9 @@ function flatText(t, text, cx, cy, size, color) {
   t.restore();
 }
 
-function createStyledDoorTexture(style, plate, base) {
+function createStyledDoorTexture(style, plate, base, back) {
+  if (style === "panelka") return createDoorTexture(back ? "" : plate, base);
+  if (style === "wood") style = "wood4";
   const S = TEXTURE_SIZE;
   const c = document.createElement("canvas");
   c.width = S;
@@ -735,28 +790,54 @@ function createStyledDoorTexture(style, plate, base) {
     t.fillStyle = a > 0 ? `rgba(255,255,255,${a})` : `rgba(0,0,0,${-a})`;
     t.fillRect(x * S, y * S, w * S, h * S);
   };
-  if (style === "wood") {
-    [[0.1, 0.07], [0.54, 0.07], [0.1, 0.5], [0.54, 0.5]].forEach(([x, y]) => {
-      const h = y < 0.3 ? 0.34 : 0.42;
-      shade(x, y, 0.36, h, -0.22);
-      shade(x + 0.02, y + 0.012, 0.32, h - 0.024, 0.07);
-    });
-    shade(0, 0, 0.03, 1, -0.3);
-    shade(0.97, 0, 0.03, 1, -0.3);
-    t.fillStyle = "#b89a52";
-    t.fillRect(S * 0.36, S * 0.425, S * 0.28, S * 0.06);
-    flatText(t, plate || "", S * 0.5, S * 0.455, S * 0.2, "#2a1f0c");
-    ell(t, S * 0.5, S * 0.3, S * 0.035);
-    t.fillStyle = "#0c0a08";
-    t.fill();
-    t.strokeStyle = "#b89a52";
-    t.lineWidth = 1;
-    t.stroke();
-    ell(t, S * 0.85, S * 0.53, S * 0.035);
-    t.fillStyle = "#c9ab5f";
-    t.fill();
+  const raised = (x, y, w, h) => {
+    shade(x, y, w, h, -0.28);
+    shade(x + 0.02, y + 0.012, w - 0.04, h - 0.024, 0.08);
+  };
+  const grain = (n, a) => {
+    for (let i = 0; i < n; i++) shade(Math.random(), Math.random() * 0.4, 0.004, 0.3 + Math.random() * 0.6, (Math.random() < 0.5 ? 1 : -1) * a);
+  };
+  const stiles = () => {
+    shade(0, 0, 0.04, 1, -0.3);
+    shade(0.96, 0, 0.04, 1, -0.3);
+  };
+  if (style === "wood4") {
+    grain(40, 0.05);
+    stiles();
+    [[0.1, 0.07, 0.36, 0.34], [0.54, 0.07, 0.36, 0.34], [0.1, 0.5, 0.36, 0.42], [0.54, 0.5, 0.36, 0.42]].forEach((p) => raised(...p));
+  } else if (style === "wood6") {
+    grain(40, 0.05);
+    stiles();
+    [0.1, 0.54].forEach((x) => [[0.05, 0.22], [0.31, 0.22], [0.58, 0.34]].forEach(([y, h]) => raised(x, y, 0.36, h)));
+  } else if (style === "flush") {
+    grain(70, 0.035);
+    stiles();
+    shade(0, 0.5, 1, 0.012, -0.45);
+    shade(0, 0.512, 1, 0.006, 0.12);
+    shade(0.1, 0.1, 0.8, 0.012, -0.3);
+    shade(0.1, 0.9, 0.8, 0.012, -0.3);
+  } else if (style === "arch") {
+    grain(50, 0.06);
+    stiles();
+    const arch = (inset, a) => {
+      const x0 = S * (0.12 + inset);
+      const x1 = S * (0.88 - inset);
+      const rx = (x1 - x0) / 2;
+      t.beginPath();
+      t.moveTo(x0, S * (0.4 - inset * 0.4));
+      t.lineTo(x0, S * 0.2);
+      t.ellipse(S * 0.5, S * 0.2, rx, rx / 3, 0, Math.PI, Math.PI * 2);
+      t.lineTo(x1, S * (0.4 - inset * 0.4));
+      t.closePath();
+      t.fillStyle = a;
+      t.fill();
+    };
+    arch(0, "rgba(0,0,0,0.32)");
+    arch(0.025, "rgba(255,255,255,0.07)");
+    raised(0.12, 0.52, 0.76, 0.4);
   } else if (style === "hall") {
-    shade(0.14, 0.07, 0.72, 0.38, 0.28); // frosted glass
+    grain(30, 0.04);
+    shade(0.14, 0.07, 0.72, 0.38, back ? 0.2 : 0.28); // frosted glass
     t.strokeStyle = "rgba(20,16,12,0.9)";
     t.lineWidth = 2;
     t.strokeRect(S * 0.14, S * 0.07, S * 0.72, S * 0.38);
@@ -766,24 +847,21 @@ function createStyledDoorTexture(style, plate, base) {
     t.moveTo(S * 0.14, S * 0.26);
     t.lineTo(S * 0.86, S * 0.26);
     t.stroke();
-    shade(0.14, 0.55, 0.72, 0.36, -0.2);
-    shade(0.16, 0.565, 0.68, 0.33, 0.06);
-    ell(t, S * 0.85, S * 0.52, S * 0.035);
-    t.fillStyle = "#c9ab5f";
-    t.fill();
+    raised(0.14, 0.55, 0.72, 0.36);
   } else if (style === "metal") {
     for (let i = 0; i < 14; i++) shade(0, i / 14, 1, 0.012, -0.25);
     shade(0, 0, 0.03, 1, -0.3);
     shade(0.97, 0, 0.03, 1, -0.3);
-    flatText(t, "STAFF", S * 0.5, S * 0.26, S * 0.22, "rgba(15,15,15,0.8)");
-    flatText(t, "ONLY", S * 0.5, S * 0.34, S * 0.22, "rgba(15,15,15,0.8)");
+    if (!back) {
+      flatText(t, "STAFF", S * 0.5, S * 0.26, S * 0.22, "rgba(15,15,15,0.8)");
+      flatText(t, "ONLY", S * 0.5, S * 0.34, S * 0.22, "rgba(15,15,15,0.8)");
+    }
     for (let i = 0; i < 10; i++) {
       t.fillStyle = i % 2 ? "#151512" : "#b99a2a";
       t.fillRect(S * i * 0.1, S * 0.92, S * 0.1, S * 0.05);
     }
-    t.fillStyle = "#c8ccd0";
-    t.fillRect(S * 0.74, S * 0.5, S * 0.1, S * 0.03);
   } else if (style === "fire") {
+    grain(20, 0.04);
     shade(0.22, 0.08, 0.56, 0.2, 0.3);
     t.strokeStyle = "rgba(10,20,14,0.9)";
     t.lineWidth = 2;
@@ -794,20 +872,12 @@ function createStyledDoorTexture(style, plate, base) {
       t.lineTo(S * (0.22 + 0.14 * i), S * 0.28);
       t.stroke();
     }
-    flatText(t, "STAIRS", S * 0.5, S * 0.4, S * 0.2, "rgba(225,225,215,0.85)");
-    t.fillStyle = "#c8ccd0";
-    t.fillRect(S * 0.12, S * 0.55, S * 0.76, S * 0.025);
-    shade(0, 0.88, 1, 0.12, -0.3);
+    shade(0, 0, 0.03, 1, -0.3);
+    shade(0.97, 0, 0.03, 1, -0.3);
+    if (!back) flatText(t, "STAIRS", S * 0.5, S * 0.4, S * 0.2, "rgba(225,225,215,0.85)");
   } else if (style === "elevator") {
     for (let i = 0; i < 40; i++) shade(Math.random(), 0, 0.006, 1, Math.random() < 0.5 ? 0.06 : -0.06);
     shade(0.49, 0, 0.02, 1, -0.55);
-    shade(0.38, 0.03, 0.24, 0.035, -0.5);
-    t.fillStyle = "rgba(200,130,40,0.45)";
-    t.fillRect(S * 0.46, S * 0.04, S * 0.08, S * 0.015);
-    shade(0.86, 0.46, 0.1, 0.1, -0.5);
-    ell(t, S * 0.91, S * 0.5, S * 0.02);
-    t.fillStyle = "rgba(200,130,40,0.5)";
-    t.fill();
   }
   return c;
 }
@@ -822,8 +892,10 @@ facadeTexture.repeat.set(1, 3);
 const doorTexture = makeThreeTexture(createDoorTexture());
 const doorTextures = { frontDoor: doorTexture };
 const fixtureTextures = {};
+const doorBackTextures = { frontDoor: makeThreeTexture(createDoorTexture("", FRONT_DOOR.baseColor)) };
 DOORS.forEach((d) => {
-  doorTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor));
+  doorTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor, false));
+  doorBackTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor, true));
 });
 
 function makeColorTexture(hex) {
@@ -837,6 +909,123 @@ function makeColorTexture(hex) {
 }
 
 // ---- world building -------------------------------------------------------
+
+// ---- doors -----------------------------------------------------------------
+
+const DOOR_W = 0.88;
+const DOOR_H = 2.5;
+const DOOR_THICK = 0.07;
+const DOOR_TRIM = 0.1;
+
+function makePlateTexture(text, bg, fg) {
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 32;
+  const t = c.getContext("2d");
+  t.fillStyle = bg;
+  t.fillRect(0, 0, 64, 32);
+  t.strokeStyle = "rgba(0,0,0,0.5)";
+  t.lineWidth = 2;
+  t.strokeRect(1, 1, 62, 30);
+  t.fillStyle = fg;
+  t.font = 'bold 22px "Courier New", monospace';
+  t.textAlign = "center";
+  t.textBaseline = "middle";
+  t.fillText(text, 32, 17);
+  return makeThreeTexture(c);
+}
+
+// The door itself, built around its left (hinge) edge. Handles, hinges, plates
+// and the rest are real meshes on both faces so it reads as a complete door.
+function buildDoorMesh(door) {
+  const metal = new THREE.MeshStandardMaterial({ color: door.metal || "#b8963a", roughness: 0.3, metalness: 0.8 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x0a0907, roughness: 1 });
+  const side = new THREE.MeshStandardMaterial({ color: door.baseColor, roughness: 0.9 });
+  const frontMat = new THREE.MeshStandardMaterial({ map: doorTextures[door.id], roughness: 0.8 });
+  const backMat = new THREE.MeshStandardMaterial({ map: doorBackTextures[door.id], roughness: 0.8 });
+  const slab = new THREE.Mesh(new THREE.BoxGeometry(DOOR_W, DOOR_H, DOOR_THICK), [side, side, side, side, frontMat, backMat]);
+  slab.position.set(DOOR_W / 2, 0, 0);
+
+  const half = DOOR_THICK / 2;
+  const yAt = (h) => h - DOOR_H / 2; // height above the floor -> slab-local y
+  const hx = DOOR_W / 2 - 0.09; // handle position, near the free edge
+  const put = (mesh, x, y, z) => {
+    mesh.position.set(x, y, z);
+    slab.add(mesh);
+    return mesh;
+  };
+  const box = (w, h, d, m) => new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+  const upright = (r, len, m) => new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 12), m); // axis along Y
+  const deep = (r, len, m) => {
+    const c = upright(r, len, m);
+    c.rotation.x = Math.PI / 2; // axis along Z
+    return c;
+  };
+
+  [1, -1].forEach((s) => {
+    const z0 = s * half;
+    if (door.handle === "knob") {
+      put(deep(0.034, 0.012, metal), hx, yAt(1.0), z0 + s * 0.006);
+      put(deep(0.011, 0.05, metal), hx, yAt(1.0), z0 + s * 0.03);
+      put(new THREE.Mesh(new THREE.SphereGeometry(0.032, 12, 10), metal), hx, yAt(1.0), z0 + s * 0.062);
+    } else if (door.handle === "lever") {
+      put(deep(0.03, 0.01, metal), hx, yAt(1.0), z0 + s * 0.005);
+      put(deep(0.01, 0.045, metal), hx, yAt(1.0), z0 + s * 0.027);
+      put(box(0.13, 0.022, 0.022, metal), hx - 0.045, yAt(1.0), z0 + s * 0.05);
+    } else if (door.handle === "pull") {
+      if (s === 1) {
+        put(upright(0.014, 0.42, metal), hx, yAt(1.05), z0 + 0.055);
+        [-0.17, 0.17].forEach((dy) => put(deep(0.009, 0.055, metal), hx, yAt(1.05) + dy, z0 + 0.027));
+      } else {
+        put(box(0.1, 0.34, 0.01, metal), hx, yAt(1.05), z0 - 0.005); // push plate on the other side
+      }
+    } else if (door.handle === "pushbar") {
+      const bar = upright(0.014, 0.7, metal);
+      bar.rotation.z = Math.PI / 2;
+      put(bar, 0, yAt(1.0), z0 + s * 0.05);
+      [-0.33, 0.33].forEach((dx) => put(deep(0.012, 0.05, metal), dx, yAt(1.0), z0 + s * 0.025));
+    }
+    if (door.deadbolt) {
+      put(deep(0.03, 0.01, metal), hx, yAt(1.22), z0 + s * 0.005);
+      put(deep(0.018, 0.03, metal), hx, yAt(1.22), z0 + s * 0.02);
+    }
+    if (door.kick) put(box(DOOR_W - 0.1, 0.22, 0.012, metal), 0, yAt(0.15), z0 + s * 0.006);
+  });
+  // front-face details only
+  if (door.keyhole) {
+    put(box(0.05, 0.11, 0.008, metal), hx, yAt(0.84), half + 0.004);
+    put(box(0.01, 0.034, 0.01, dark), hx, yAt(0.85), half + 0.009);
+  }
+  if (door.peephole) {
+    put(deep(0.016, 0.012, metal), 0, yAt(1.6), half + 0.006);
+    put(deep(0.009, 0.014, dark), 0, yAt(1.6), half + 0.008);
+  }
+  if (door.plate) {
+    const plate = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.14, 0.07),
+      new THREE.MeshStandardMaterial({ map: makePlateTexture(door.plate, "#b89a52", "#2a1f0c"), roughness: 0.4, metalness: 0.5 })
+    );
+    put(plate, 0, yAt(1.78), half + 0.004);
+  }
+  [0.25, 1.25, 2.2].forEach((h) => put(upright(0.017, 0.1, metal), -DOOR_W / 2 + 0.003, yAt(h), 0));
+  return slab;
+}
+
+function addDoorFrame(door) {
+  const mat = new THREE.MeshStandardMaterial({ color: door.frame || "#222222", roughness: 0.85 });
+  const h = DOOR_H + DOOR_TRIM;
+  [-0.47, 0.47].forEach((dx) => {
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.06, h, 0.18), mat);
+    jamb.position.set(door.x + dx, h / 2, door.y);
+    worldGroup.add(jamb);
+  });
+  const header = new THREE.Mesh(new THREE.BoxGeometry(1.0, DOOR_TRIM, 0.18), mat);
+  header.position.set(door.x, DOOR_H + DOOR_TRIM / 2, door.y);
+  worldGroup.add(header);
+  const sill = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.02, 0.26), new THREE.MeshStandardMaterial({ color: 0x15120f, roughness: 1 }));
+  sill.position.set(door.x, 0.01, door.y);
+  worldGroup.add(sill);
+}
 
 function disposeWorld() {
   worldGroup.children.slice().forEach((obj) => {
@@ -920,30 +1109,26 @@ function buildWorld() {
   chimney.position.set(13.5, FACADE_H + 1.6, 8.5);
   worldGroup.add(chimney);
 
-  // Every door is a real hinged pivot, not a texture trick.
-  const doorW = 0.85;
-  const doorH = WALL_HEIGHT * 0.85;
-  const doorGeo = new THREE.BoxGeometry(doorW, doorH, 0.14);
+  // Every door is a full hinged door: slab, frame, handles, hinges.
   doorList().forEach((door) => {
-    const mat = new THREE.MeshStandardMaterial({ map: doorTextures[door.id], roughness: 0.85 });
-    const mesh = new THREE.Mesh(doorGeo, mat);
-    mesh.position.set(doorW / 2, 0, 0);
     const pivot = new THREE.Group();
-    pivot.position.set(door.x - doorW / 2, doorH / 2, door.y);
+    pivot.position.set(door.x - DOOR_W / 2, DOOR_H / 2, door.y);
     pivot.rotation.y = isDoorOpen(door) ? DOOR_OPEN_ANGLE : 0;
-    pivot.add(mesh);
+    pivot.add(buildDoorMesh(door));
     worldGroup.add(pivot);
     doorPivots[door.id] = pivot;
+    addDoorFrame(door);
   });
 
-  // Fill the gap above each door so no door has an open slot over it.
+  // Fill the wall above each door frame.
   doorList().forEach((door) => {
     const top = door.isFront ? FACADE_H : WALL_HEIGHT;
+    const low = DOOR_H + DOOR_TRIM;
     const lintel = new THREE.Mesh(
-      new THREE.BoxGeometry(1, top - doorH, 1),
+      new THREE.BoxGeometry(1, top - low, 1),
       door.isFront ? facadeMat : interiorMat
     );
-    lintel.position.set(Math.floor(door.x) + 0.5, doorH + (top - doorH) / 2, Math.floor(door.y) + 0.5);
+    lintel.position.set(Math.floor(door.x) + 0.5, low + (top - low) / 2, Math.floor(door.y) + 0.5);
     worldGroup.add(lintel);
   });
 
@@ -1421,14 +1606,14 @@ function handleInteract() {
     const door = doorList().find((d) => d.id === target.id);
     if (door.isFront) {
       state.frontDoorOpen = true;
-      playDoorCreak();
+      playDoorCreak(door.creak);
     } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
       playKnock();
       addLog(door.lockedText || "Locked.");
     } else {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
-      playDoorCreak();
+      playDoorCreak(door.creak);
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
         state.entity.timer = ENTITY_SPAWN_DELAY;
