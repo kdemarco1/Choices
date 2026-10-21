@@ -14,7 +14,8 @@
 //             door drawn on the lobby side only (see FIXTURES)
 //  rows 8-12  the lobby, reception desk on the left of the front door
 //  row 13     the facade — solid except the front door gap at col 8
-//  rows 14-18 the street
+//  rows 14-18 the front yard ('x' = hedge at the left/right edge, curb along the road at row 19);
+//             the road runs behind you past row 19 and can't be crossed
 const MAP_ROWS_TEXT = [
   "#####################", // 0
   "#...#...#...#...#...#", // 1  apartments 1-3 and John's (4), then the stairwell
@@ -30,18 +31,19 @@ const MAP_ROWS_TEXT = [
   "#...................#", // 11
   "#...................#", // 12
   "########.############", // 13 facade, front door at col 8
-  "#...................#", // 14 street
-  "#...................#", // 15
-  "#...................#", // 16
-  "#...................#", // 17
-  "#...................#", // 18 player start
-  "#####################", // 19
+  "x...................x", // 14 street
+  "x...................x", // 15
+  "x...................x", // 16
+  "x...................x", // 17
+  "x...................x", // 18 player start
+  "xxxxxxxxxxxxxxxxxxxxx", // 19
 ];
-const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : 0)));
+// 0 = open, 1 = wall (drawn), 2 = invisible-solid barrier (hedge at the yard edges, curb along the road)
+const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : ch === "x" ? 2 : 0)));
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
-const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15]]; // + the two entrance columns
+const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17]]; // + the entrance columns and four yard trees
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 

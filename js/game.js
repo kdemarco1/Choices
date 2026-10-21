@@ -523,13 +523,13 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
 
-const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.5, 0.5, 1.1);
+const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 14, 0.3, 0.28, 1.2); // narrow cone, tight soft edge
 flashlightLight.position.set(0, 0, 0);
 camera.add(flashlightLight);
 camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
-const FLASHLIGHT_MAX_INTENSITY = 2.4;
+const FLASHLIGHT_MAX_INTENSITY = 5.0; // narrower beam, so brighter in the middle
 const FLASHLIGHT_RAMP_SPEED = 7; // intensity/second — fast but not an instant snap
 let flashlightCurrentIntensity = 0;
 let flashlightFlickerTimer = 0;
@@ -614,6 +614,32 @@ heldFlashlight.rotation.set(0.04, 0.12, 0);
 heldFlashlight.visible = false;
 camera.add(heldFlashlight);
 let heldBobTime = 0;
+
+// The night sky: scattered stars and a pale moon (never fogged).
+(function buildSky() {
+  const n = 260;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(0.12 + Math.random() * 0.88);
+    pos[i * 3] = 10.5 + Math.sin(ph) * Math.cos(th) * 90;
+    pos[i * 3 + 1] = Math.cos(ph) * 90;
+    pos[i * 3 + 2] = 10 + Math.sin(ph) * Math.sin(th) * 90;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xcfd8ff, size: 1.8, sizeAttenuation: false, fog: false })));
+  const moon = new THREE.Mesh(new THREE.CircleGeometry(5, 32), new THREE.MeshBasicMaterial({ color: 0xdde4f0, fog: false }));
+  moon.position.set(32, 42, 62);
+  moon.lookAt(10.5, 1.5, 10);
+  const halo = new THREE.Mesh(
+    new THREE.CircleGeometry(10, 32),
+    new THREE.MeshBasicMaterial({ color: 0x8899bb, transparent: true, opacity: 0.14, fog: false, depthWrite: false })
+  );
+  halo.position.set(0, 0, -0.2);
+  moon.add(halo);
+  scene.add(moon);
+})();
 
 function updateHeldFlashlight(dt) {
   heldFlashlight.visible = !!state.inventory.flashlight;
@@ -955,6 +981,116 @@ function makeColorTexture(hex) {
   return makeThreeTexture(c);
 }
 
+// ---- outdoors: road behind you, curb, trees, lamps, parked cars ----------------
+
+let brokenLamp = null;
+let brokenLampTimer = 0;
+let brokenLampLevel = 1;
+
+function updateBrokenLamp(dt) {
+  if (!brokenLamp) return;
+  brokenLampTimer -= dt;
+  if (brokenLampTimer <= 0) {
+    brokenLampLevel = Math.random() < 0.55 ? 1 : 0.06;
+    brokenLampTimer = brokenLampLevel === 1 ? 0.2 + Math.random() * 1.8 : 0.04 + Math.random() * 0.12;
+  }
+  brokenLamp.intensity = 1.9 * brokenLampLevel;
+}
+
+function addTree(x, z, s, bare) {
+  const wood = 0x2a1f16;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1 * s, 0.17 * s, 2.4 * s, 7),
+    new THREE.MeshStandardMaterial({ color: wood, roughness: 1 })
+  );
+  trunk.position.set(x, 1.2 * s, z);
+  worldGroup.add(trunk);
+  if (!bare) {
+    const leaf = new THREE.MeshStandardMaterial({ color: 0x15281a, roughness: 1 });
+    [[0.95, 1.7, 2.3], [0.72, 1.4, 3.2], [0.45, 1.1, 4.0]].forEach(([r, h, y]) => {
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(r * s, h * s, 8), leaf);
+      cone.position.set(x, y * s, z);
+      worldGroup.add(cone);
+    });
+  } else {
+    [[0.7, 0.4, 0.2], [-0.8, -0.35, 1.5], [0.5, 0.25, 3.0], [-0.55, -0.3, 4.2]].forEach(([tz, dx, ry]) => {
+      const br = addBox(0.07 * s, 1.3 * s, 0.07 * s, x + dx * s, 2.6 * s, z, wood);
+      br.rotation.z = tz;
+      br.rotation.y = ry;
+    });
+  }
+}
+
+// A parked car, long side along X, front toward +X.
+function addCar(x, z, rotY, color) {
+  const g = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.5 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x0d1317, roughness: 0.15, metalness: 0.6 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 0.9 });
+  const part = (geo, mat, px, py, pz, rx) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(px, py, pz);
+    if (rx) m.rotation.x = rx;
+    g.add(m);
+    return m;
+  };
+  part(new THREE.BoxGeometry(4.2, 0.55, 1.8), paint, 0, 0.62, 0);
+  part(new THREE.BoxGeometry(2.2, 0.5, 1.55), paint, -0.2, 1.14, 0);
+  part(new THREE.BoxGeometry(2.24, 0.3, 1.59), glass, -0.2, 1.16, 0);
+  [[1.3, 0.9], [1.3, -0.9], [-1.3, 0.9], [-1.3, -0.9]].forEach(([wx, wz]) =>
+    part(new THREE.CylinderGeometry(0.33, 0.33, 0.24, 14), black, wx, 0.33, wz, Math.PI / 2)
+  );
+  const head = new THREE.MeshBasicMaterial({ color: 0x6c6c52 });
+  const tail = new THREE.MeshBasicMaterial({ color: 0x5a0e0e });
+  [0.6, -0.6].forEach((lz) => {
+    part(new THREE.BoxGeometry(0.05, 0.14, 0.3), head, 2.1, 0.74, lz);
+    part(new THREE.BoxGeometry(0.05, 0.14, 0.3), tail, -2.1, 0.74, lz);
+  });
+  part(new THREE.BoxGeometry(0.1, 0.18, 1.7), black, 2.12, 0.4, 0);
+  part(new THREE.BoxGeometry(0.1, 0.18, 1.7), black, -2.12, 0.4, 0);
+  g.rotation.y = rotY;
+  g.position.set(x, 0, z);
+  worldGroup.add(g);
+}
+
+function addOutdoors(cols, rows) {
+  const flat = (w, d, x, z, y, color) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(x, y, z);
+    worldGroup.add(m);
+  };
+  const cx = cols / 2;
+  flat(240, 240, cx, rows + 40, -0.02, 0x10150e); // dark ground all around
+  flat(160, 9, cx, rows + 4.5, 0.004, 0x1b1b1e); // the road behind you, z 20-29
+  flat(160, 2.2, cx, rows + 10.1, 0.004, 0x2e2e2c); // far sidewalk
+  flat(1.8, 3.4, FRONT_DOOR.x, rows - 2.4, 0.007, 0x3b3b39); // path from the door to the road
+  flat(cols - 2, 1.2, cx, rows - 1.6, 0.006, 0x33332f); // sidewalk along the curb
+  for (let i = 0; i < 16; i++) {
+    const dash = addBox(1.6, 0.01, 0.12, -14 + i * 3.6, 0.01, rows + 4.5, 0x8a8a7a);
+    dash.material.emissive = new THREE.Color(0x15150f);
+  }
+
+  // street lamps along the curb — one of them is failing
+  addStreetLight(4.5, rows - 0.5);
+  addStreetLight(12.5, rows - 0.5);
+  brokenLamp = addStreetLight(19, rows - 0.5);
+
+  // trees: four in the yard (their trunks block you), more beyond the hedges and across the road
+  [[2.5, 15.5, 1.0, false], [4.5, 17.5, 0.9, true], [14.5, 15.5, 1.1, false], [17.5, 17.5, 0.95, false]].forEach((t) =>
+    addTree(t[0], t[1], t[2], t[3])
+  );
+  [[-2.5, 16.5, 1.2, false], [-4.5, 21, 1.0, true], [23.5, 15.5, 1.15, false], [25, 20.5, 0.95, false],
+   [3, rows + 10.4, 1.1, false], [10, rows + 10.6, 1.2, true], [17, rows + 10.3, 1.0, false]].forEach((t) =>
+    addTree(t[0], t[1], t[2], t[3])
+  );
+
+  // parked and stopped cars
+  addCar(5.0, rows + 1.5, 0, 0x4a1c1c);
+  addCar(15.5, rows + 1.5, 0, 0x20303b);
+  addCar(10.5, rows + 6.6, Math.PI, 0x2f2f34);
+}
+
 // ---- world building -------------------------------------------------------
 
 // ---- doors -----------------------------------------------------------------
@@ -1134,6 +1270,19 @@ function buildWorld() {
     }
   }
 
+  // Hedges along the left/right edge of the yard, curb along the road.
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (MAP[row][col] !== 2) continue;
+      if (row === rows - 1) {
+        addBox(1, 0.22, 1, col + 0.5, 0.11, row + 0.5, 0x4d4d4a);
+      } else {
+        addBox(1, 1.1, 1, col + 0.5, 0.55, row + 0.5, 0x182b1b);
+        addBox(0.88, 0.22, 0.88, col + 0.5, 1.2, row + 0.5, 0x1d3522);
+      }
+    }
+  }
+
   // Two floor strips — dark interior floor north of the door, cold street
   // ground south of it — plus one continuous ceiling.
   const interiorRows = doorRow + 1;
@@ -1253,7 +1402,7 @@ function buildWorld() {
   worldGroup.add(signGlow);
 
   // The only other light outside: one street lamp, off to the side.
-  addStreetLight(5.5, 16);
+  addOutdoors(cols, rows);
 
   // The first thing you see on the left, just past the door.
   addReceptionDesk(5.5, 12.0);
@@ -1308,6 +1457,7 @@ function addStreetLight(x, z) {
   const lamp = new THREE.PointLight(0xffdca0, 1.9, 7, 2);
   lamp.position.set(x, 2.55, z);
   worldGroup.add(lamp);
+  return lamp;
 }
 
 // A creepy old reception desk: a dark, worn desk with a single dim,
@@ -1477,7 +1627,7 @@ function isWall(x, y) {
   const door = doorAtCell(col, row);
   if (door) return !isDoorOpen(door);
   if (BLOCKED_CELLS.some(([bc, br]) => bc === col && br === row)) return true;
-  return MAP[row][col] === 1;
+  return MAP[row][col] !== 0;
 }
 
 const _forward = new THREE.Vector3();
@@ -1842,7 +1992,7 @@ const ENTITY_SPEED_DEAD = 1.2; // battery gone: it moves faster
 const ENTITY_SPEED_WATCHING = 0.25;
 const ENTITY_RETREAT_SPEED = 1.8;
 const ENTITY_CATCH_DIST = 0.8;
-const ENTITY_BEAM_COS = 0.9; // roughly a 25 degree cone
+const ENTITY_BEAM_COS = 0.93; // matches the tighter beam (about 21 degrees)
 const ENTITY_BEAM_RANGE = 9;
 const ENTITY_SPAWNS = [
   [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
@@ -2020,6 +2170,7 @@ function gameLoop() {
   updateEntity(dt);
   updateDoorAnimation(dt);
   updateDeskLampFlicker(dt);
+  updateBrokenLamp(dt);
   updateFlashlight(dt);
   updateHeldFlashlight(dt);
 
@@ -2028,7 +2179,7 @@ function gameLoop() {
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  const ambientTarget = hasFlashlightOn() ? 0.22 : 0.08;
+  const ambientTarget = hasFlashlightOn() ? 0.1 : 0.08; // little ambient wash, so the beam stands out
   ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();
