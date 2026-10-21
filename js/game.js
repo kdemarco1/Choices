@@ -44,6 +44,26 @@ const DARK_RANGE = 2.6;
 const MOON_RANGE = 12;
 const FACADE_H = 9; // the street-facing walls are three storeys tall
 
+// Fog is decided by where a surface IS, not where the camera stands: anything
+// inside the building (south edge z < 13.02, below the ceiling) fades at the
+// short indoor range, everything else at the street range. So the lobby is
+// already dark when you look in through the open door from outside.
+(function patchFogChunks() {
+  const SC = THREE.ShaderChunk;
+  if (!SC || !SC.fog_fragment) return;
+  const swap = (name, from, to) => {
+    if (SC[name].indexOf(from) !== -1) SC[name] = SC[name].replace(from, to);
+  };
+  swap("fog_pars_vertex", "varying float vFogDepth;", "varying float vFogDepth;\n\tvarying vec3 vFogWorld;");
+  swap("fog_vertex", "vFogDepth = - mvPosition.z;", "vFogDepth = - mvPosition.z;\n\tvFogWorld = ( inverse( viewMatrix ) * mvPosition ).xyz;");
+  swap("fog_pars_fragment", "varying float vFogDepth;", "varying float vFogDepth;\n\tvarying vec3 vFogWorld;");
+  swap(
+    "fog_fragment",
+    "float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );",
+    "float fogFarHere = ( vFogWorld.z < 13.02 && vFogWorld.y < 3.1 ) ? fogFar : " + MOON_RANGE.toFixed(1) + ";\n\t\tfloat fogFactor = smoothstep( fogNear, fogFarHere, vFogDepth );"
+  );
+})();
+
 // Battery drains fully after this many seconds of continuous use.
 const BATTERY_LIFE_SECONDS = 180;
 const BATTERY_DRAIN_RATE = 100 / BATTERY_LIFE_SECONDS;
@@ -502,10 +522,6 @@ scene.add(yawObject);
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
-// A faint cold moon, only switched on outside (so it never leaks indoors).
-const moonLight = new THREE.DirectionalLight(0x5566aa, 0);
-moonLight.position.set(10.5, 25, 30);
-scene.add(moonLight);
 
 const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 9, Math.PI / 6.5, 0.5, 1.1);
 flashlightLight.position.set(0, 0, 0);
@@ -835,6 +851,32 @@ function createStyledDoorTexture(style, plate, base, back) {
     arch(0, "rgba(0,0,0,0.32)");
     arch(0.025, "rgba(255,255,255,0.07)");
     raised(0.12, 0.52, 0.76, 0.4);
+  } else if (style === "entrance") {
+    grain(60, 0.05);
+    stiles();
+    t.fillStyle = back ? "rgba(205,170,105,0.55)" : "rgba(70,98,86,0.72)";
+    t.fillRect(S * 0.12, S * 0.06, S * 0.76, S * 0.42);
+    shade(0.2, 0.06, 0.1, 0.42, 0.1); // a pale reflection across the glass
+    t.strokeStyle = "rgba(8,10,8,0.95)";
+    t.lineWidth = 3;
+    t.strokeRect(S * 0.12, S * 0.06, S * 0.76, S * 0.42);
+    t.lineWidth = 2;
+    [1, 2, 3].forEach((i) => {
+      t.beginPath();
+      t.moveTo(S * (0.12 + 0.19 * i), S * 0.06);
+      t.lineTo(S * (0.12 + 0.19 * i), S * 0.48);
+      t.stroke();
+    });
+    [0.2, 0.34].forEach((y) => {
+      t.beginPath();
+      t.moveTo(S * 0.12, S * y);
+      t.lineTo(S * 0.88, S * y);
+      t.stroke();
+    });
+    raised(0.12, 0.56, 0.34, 0.34);
+    raised(0.54, 0.56, 0.34, 0.34);
+    t.fillStyle = "#b89a52";
+    t.fillRect(S * 0.06, S * 0.93, S * 0.88, S * 0.045);
   } else if (style === "hall") {
     grain(30, 0.04);
     shade(0.14, 0.07, 0.72, 0.38, back ? 0.2 : 0.28); // frosted glass
@@ -889,10 +931,15 @@ const facadeTexture = makeThreeTexture(createExteriorWallTexture());
 facadeTexture.wrapS = THREE.RepeatWrapping;
 facadeTexture.wrapT = THREE.RepeatWrapping;
 facadeTexture.repeat.set(1, 3);
+// The lobby side of the facade row is 9 tall, so its wall texture repeats per storey too.
+const lobbyWallTexture = makeThreeTexture(createInteriorWallTexture());
+lobbyWallTexture.wrapS = THREE.RepeatWrapping;
+lobbyWallTexture.wrapT = THREE.RepeatWrapping;
+lobbyWallTexture.repeat.set(1, 3);
 const doorTexture = makeThreeTexture(createDoorTexture());
-const doorTextures = { frontDoor: doorTexture };
+const doorTextures = { frontDoor: makeThreeTexture(createStyledDoorTexture(FRONT_DOOR.style, "", FRONT_DOOR.baseColor, false)) };
 const fixtureTextures = {};
-const doorBackTextures = { frontDoor: makeThreeTexture(createDoorTexture("", FRONT_DOOR.baseColor)) };
+const doorBackTextures = { frontDoor: makeThreeTexture(createStyledDoorTexture(FRONT_DOOR.style, "", FRONT_DOOR.baseColor, true)) };
 DOORS.forEach((d) => {
   doorTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor, false));
   doorBackTextures[d.id] = makeThreeTexture(createStyledDoorTexture(d.style, d.plate, d.baseColor, true));
@@ -917,6 +964,24 @@ const DOOR_H = 2.5;
 const DOOR_THICK = 0.07;
 const DOOR_TRIM = 0.1;
 
+function makeSignTexture(text, bg, fg) {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 64;
+  const t = c.getContext("2d");
+  t.fillStyle = bg;
+  t.fillRect(0, 0, 256, 64);
+  t.strokeStyle = fg;
+  t.lineWidth = 3;
+  t.strokeRect(5, 5, 246, 54);
+  t.fillStyle = fg;
+  t.font = 'bold 34px "Courier New", monospace';
+  t.textAlign = "center";
+  t.textBaseline = "middle";
+  t.fillText(text, 128, 34);
+  return makeThreeTexture(c);
+}
+
 function makePlateTexture(text, bg, fg) {
   const c = document.createElement("canvas");
   c.width = 64;
@@ -928,7 +993,8 @@ function makePlateTexture(text, bg, fg) {
   t.lineWidth = 2;
   t.strokeRect(1, 1, 62, 30);
   t.fillStyle = fg;
-  t.font = 'bold 22px "Courier New", monospace';
+  const size = Math.min(22, Math.floor(58 / (text.length * 0.6)));
+  t.font = `bold ${size}px "Courier New", monospace`;
   t.textAlign = "center";
   t.textBaseline = "middle";
   t.fillText(text, 32, 17);
@@ -1046,7 +1112,9 @@ function buildWorld() {
   const rows = MAP.length;
   const cols = MAP[0].length;
   const interiorMat = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
-  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95 });
+  // No moon: the street walls and roof carry a faint cold glow of their own.
+  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95, emissive: 0x0a1020 });
+  const lobbyWallMat = new THREE.MeshStandardMaterial({ map: lobbyWallTexture, roughness: 0.95 });
   const facadeGeo = new THREE.BoxGeometry(1, FACADE_H, 1);
   const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
 
@@ -1058,7 +1126,9 @@ function buildWorld() {
       if (MAP[row][col] !== 1) continue;
       if (doorAtCell(col, row)) continue; // door cells are drawn separately below
       const street = row >= doorRow;
-      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? facadeMat : interiorMat);
+      // the facade row shows the street texture outside and plain lobby wall inside
+      const faces = row === doorRow ? [facadeMat, facadeMat, facadeMat, facadeMat, facadeMat, lobbyWallMat] : facadeMat;
+      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? faces : interiorMat);
       mesh.position.set(col + 0.5, (street ? FACADE_H : WALL_HEIGHT) / 2, row + 0.5);
       worldGroup.add(mesh);
     }
@@ -1093,7 +1163,7 @@ function buildWorld() {
   worldGroup.add(ceiling);
 
   // Roof: a cornice that overhangs the facade, and a pitched slope behind it.
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide, emissive: 0x070912 });
   const cornice = new THREE.Mesh(new THREE.BoxGeometry(cols, 0.35, 1.6), roofMat);
   cornice.position.set(cols / 2, FACADE_H + 0.17, doorRow + 0.6);
   worldGroup.add(cornice);
@@ -1113,7 +1183,7 @@ function buildWorld() {
   doorList().forEach((door) => {
     const pivot = new THREE.Group();
     pivot.position.set(door.x - DOOR_W / 2, DOOR_H / 2, door.y);
-    pivot.rotation.y = isDoorOpen(door) ? DOOR_OPEN_ANGLE : 0;
+    pivot.rotation.y = isDoorOpen(door) ? (door.openAngle !== undefined ? door.openAngle : DOOR_OPEN_ANGLE) : 0;
     pivot.add(buildDoorMesh(door));
     worldGroup.add(pivot);
     doorPivots[door.id] = pivot;
@@ -1132,9 +1202,55 @@ function buildWorld() {
     worldGroup.add(lintel);
   });
 
-  const doorGlow = new THREE.PointLight(0xc3e182, 1.4, 5, 2);
-  doorGlow.position.set(FRONT_DOOR.x, WALL_HEIGHT * 0.8, FRONT_DOOR.y);
+  // ---- the entrance: stone surround, canopy on two columns, lit sign, lantern ----
+  const fx = FRONT_DOOR.x;
+  const faceZ = doorRow + 1; // street face of the facade
+  const stone = 0x3a3d39;
+  addBox(0.2, 3.2, 0.12, fx - 0.65, 1.6, faceZ + 0.06, stone); // pilasters
+  addBox(0.2, 3.2, 0.12, fx + 0.65, 1.6, faceZ + 0.06, stone);
+  addBox(1.7, 0.24, 0.16, fx, 2.78, faceZ + 0.08, stone); // header slab over the door
+  const address = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.62, 0.19),
+    new THREE.MeshStandardMaterial({ map: makePlateTexture(FRONT_DOOR.plateNumber, "#b89a52", "#2a1f0c"), roughness: 0.4, metalness: 0.5 })
+  );
+  address.position.set(fx, 2.78, faceZ + 0.165);
+  worldGroup.add(address);
+  addBox(3.6, 0.16, 2.2, fx, 3.15, faceZ + 1.1, 0x2a2c2b); // canopy
+  addBox(3.7, 0.08, 0.1, fx, 3.0, faceZ + 2.15, 0x1c1d1c);
+  [fx - 1, fx + 1].forEach((cx) => addBox(0.24, 3.1, 0.24, cx, 1.55, faceZ + 1.5, stone));
+  const apron = new THREE.Mesh(
+    new THREE.PlaneGeometry(3.4, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0x353533, roughness: 1 })
+  );
+  apron.rotation.x = -Math.PI / 2;
+  apron.position.set(fx, 0.008, faceZ + 1.2);
+  worldGroup.add(apron);
+  const doormat = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.2, 0.7),
+    new THREE.MeshStandardMaterial({ color: 0x3a1717, roughness: 1 })
+  );
+  doormat.rotation.x = -Math.PI / 2;
+  doormat.position.set(fx, 0.016, faceZ + 0.5);
+  worldGroup.add(doormat);
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.9, 0.48),
+    new THREE.MeshBasicMaterial({ map: makeSignTexture(FRONT_DOOR.signText, "#14200f", "#c3e182") })
+  );
+  sign.position.set(fx, 3.75, faceZ + 0.02);
+  worldGroup.add(sign);
+  addBox(0.02, 0.3, 0.02, fx, 2.95, faceZ + 1.0, 0x1a1a18); // hanging lantern
+  const lanternGlass = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.2, 0.16),
+    new THREE.MeshBasicMaterial({ color: 0xd4e68c })
+  );
+  lanternGlass.position.set(fx, 2.7, faceZ + 1.0);
+  worldGroup.add(lanternGlass);
+  const doorGlow = new THREE.PointLight(0xc3e182, 1.8, 8, 2);
+  doorGlow.position.set(fx, 2.6, faceZ + 1.0);
   worldGroup.add(doorGlow);
+  const signGlow = new THREE.PointLight(0xc3e182, 0.8, 6, 2);
+  signGlow.position.set(fx, 3.6, faceZ + 0.8);
+  worldGroup.add(signGlow);
 
   // The only other light outside: one street lamp, off to the side.
   addStreetLight(5.5, 16);
@@ -1423,7 +1539,7 @@ function updateDoorAnimation(dt) {
   doorList().forEach((door) => {
     const pivot = doorPivots[door.id];
     if (!pivot) return;
-    const target = isDoorOpen(door) ? DOOR_OPEN_ANGLE : 0;
+    const target = isDoorOpen(door) ? (door.openAngle !== undefined ? door.openAngle : DOOR_OPEN_ANGLE) : 0;
     const current = pivot.rotation.y;
     if (Math.abs(target - current) < 0.001) {
       pivot.rotation.y = target;
@@ -1908,12 +2024,12 @@ function gameLoop() {
   updateHeldFlashlight(dt);
 
   const outside = isOutside();
-  scene.fog.far = outside ? MOON_RANGE : currentLightRange();
-  moonLight.intensity = outside ? 0.35 : 0;
+  scene.fog.far = currentLightRange(); // indoor range; the street range is baked into the fog shader
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  ambientLight.intensity = outside ? 0.045 : hasFlashlightOn() ? 0.22 : 0.09;
+  const ambientTarget = hasFlashlightOn() ? 0.22 : 0.08;
+  ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();
   renderer.render(scene, camera);

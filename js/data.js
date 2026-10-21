@@ -41,7 +41,7 @@ const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ?
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
-const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2]];
+const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15]]; // + the two entrance columns
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
@@ -79,17 +79,20 @@ const DIALOGUES = {};
 const FRONT_DOOR = {
   id: "frontDoor",
   x: 8.5,
-  y: 13.0,
+  y: 13.9, // the leaf sits at the street face of the wall, with a recess behind it
   interactionDistance: 1.4,
   label: "Enter the Building",
   signText: "ENTRANCE",
   plateNumber: "60406",
-  style: "panelka",
-  baseColor: "#7c847a",
-  frame: "#23261f",
-  handle: "lever",
-  metal: "#9a9a92",
-  peephole: true,
+  // heavy green-painted entrance door: barred glass panel, brass pull and kick strip
+  style: "entrance",
+  baseColor: "#24402f",
+  frame: "#2a2d29",
+  handle: "pull",
+  metal: "#b8963a",
+  keyhole: true,
+  kick: true,
+  openAngle: -Math.PI * 0.5, // swings in against the recess wall
   creak: 0.8,
 };
 
