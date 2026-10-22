@@ -101,11 +101,12 @@ function initAudio() {
     const g = audioCtx.createGain();
     o.type = "sine";
     o.frequency.value = f;
-    g.gain.value = state.settings.soundOn ? 0.03 : 0;
+    g.gain.value = 0;
     o.connect(g).connect(audioCtx.destination);
     o.start();
     ambientGains.push(g);
   });
+  ambientOn = null;
   // The recorded door creak. If it can't load (e.g. opened as a plain file), the
   // synthesized creak below is used instead.
   if (typeof fetch === "function") {
@@ -121,7 +122,17 @@ function initAudio() {
 
 function setSoundEnabled(on) {
   state.settings.soundOn = on;
-  ambientGains.forEach((g) => (g.gain.value = on ? 0.03 : 0));
+  syncAmbient();
+}
+
+// The background hum only plays while you're actually exploring — silent on the
+// title, pause, inventory, reading and caught screens.
+let ambientOn = null;
+function syncAmbient() {
+  const want = state.settings.soundOn && state.phase === "explore";
+  if (want === ambientOn) return;
+  ambientOn = want;
+  ambientGains.forEach((g) => (g.gain.value = want ? 0.03 : 0));
 }
 
 function audioReady() {
@@ -363,6 +374,7 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 function resetRun() {
+  staffSwing = null;
   state.flags = {};
   state.log = [];
   state.inventory = {};
@@ -687,6 +699,8 @@ function updateHeldFlashlight(dt) {
   const k = Math.max(0, Math.min(1, flashlightCurrentIntensity / FLASHLIGHT_MAX_INTENSITY));
   heldLensMat.color.setRGB(0.16 + 0.84 * k, 0.2 + 0.77 * k, 0.21 + 0.55 * k);
 }
+let staffPivot = null; // the staff door's hinge group, swings when unlocked
+let staffSwing = null;
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
@@ -1347,6 +1361,7 @@ function disposeWorld() {
 function buildWorld() {
   disposeWorld();
   doorPivots = {};
+  staffPivot = null;
   deskLamp = null;
 
   const rows = MAP.length;
@@ -1708,8 +1723,17 @@ function addFixture(f) {
     new THREE.PlaneGeometry(f.width, 2.55),
     new THREE.MeshStandardMaterial({ map: fixtureTextures[f.id], roughness: 0.6, metalness: f.style === "elevator" ? 0.3 : 0 })
   );
-  panel.position.set(f.x, 1.275, f.y + 0.052);
-  worldGroup.add(panel);
+  if (f.id === "staff") {
+    addBox(f.width, 2.55, 0.01, f.x, 1.275, f.y + 0.05, 0x030303); // dark doorway behind the leaf
+    staffPivot = new THREE.Group();
+    staffPivot.position.set(f.x - f.width / 2, 1.275, f.y + 0.056);
+    panel.position.set(f.width / 2, 0, 0);
+    staffPivot.add(panel);
+    worldGroup.add(staffPivot);
+  } else {
+    panel.position.set(f.x, 1.275, f.y + 0.052);
+    worldGroup.add(panel);
+  }
   if (f.style === "elevator") {
     const lamp = new THREE.Mesh(
       new THREE.BoxGeometry(0.3, 0.07, 0.03),
@@ -1875,6 +1899,18 @@ function updateDoorAnimation(dt) {
     const step = DOOR_OPEN_SPEED * (door.creak || 1) * dt; // heavier doors swing slower, matching their creak
     pivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
   });
+}
+
+function updateStaffDoor(dt) {
+  if (staffSwing === null || !staffPivot) return;
+  staffSwing += dt;
+  const k = Math.min(1, staffSwing / 0.9);
+  staffPivot.rotation.y = -1.6 * (1 - (1 - k) * (1 - k));
+  if (staffSwing >= 1.1) {
+    staffSwing = null;
+    staffPivot.rotation.y = 0;
+    travel(STAFF_ARRIVAL);
+  }
 }
 
 function updateDeskLampFlicker(dt) {
@@ -2062,8 +2098,10 @@ function handleInteract() {
   if (target.type === "fixture") {
     const f = FIXTURES.find((x) => x.id === target.id);
     if (f.id === "staff" && state.inventory.staffKey) {
-      playDoorCreak(DOORS[0]);
-      travel(STAFF_ARRIVAL);
+      if (staffSwing === null) {
+        playDoorCreak(DOORS[0]);
+        staffSwing = 0;
+      }
       return;
     }
     if (f.sound === "click") playClick();
@@ -2537,6 +2575,8 @@ function gameLoop() {
   checkJohnRoom();
   updateEntity(dt);
   updateDoorAnimation(dt);
+  updateStaffDoor(dt);
+  syncAmbient();
   updateDeskLampFlicker(dt);
   updateBrokenLamp(dt);
   updateFlashlight(dt);
