@@ -1454,13 +1454,13 @@ function buildWorld() {
   addBox(0.5, 0.75, 1.0, 15.45, 0.375, 2.8, 0x2e2419); // his desk
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
-  const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
+  const aptLight = new THREE.PointLight(0xffbb66, 0.12 * POWER(), 3, 2);
   aptLight.position.set(6.5, 2.4, 2.2);
   worldGroup.add(aptLight);
 
   // One weak, cold bulb in the hallway so it isn't a total void.
   [4.5, 8.5, 12.5, 16.5].forEach((hx) => {
-    const hallLight = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
+    const hallLight = new THREE.PointLight(0x8fa0b8, 0.07 * POWER(), 5, 2);
     hallLight.position.set(hx, WALL_HEIGHT * 0.9, 5.5);
     worldGroup.add(hallLight);
   });
@@ -1471,12 +1471,14 @@ function buildWorld() {
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
-    else if (it.id === "axe") addAxeModel(it.x, 0.07, it.y);
+    else if (it.id === "axe") { if (state.flags.powerOn) addAxeModel(it.x, 0.07, it.y); }
     else if (it.id === "batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, 0.78, it.y + o - 0.03, 0x9a7a1a));
     else if (it.note) addBox(0.2, 0.012, 0.28, it.x, it.h || 0.02, it.y, 0xcfc6a8).rotation.y = it.x;
     else addMarkerSprite(it.x, it.y, it.color, 0.4, it.height);
   });
 }
+
+const POWER = () => (state.flags.powerOn ? 6 : 1); // the breaker brings the building lights up
 
 function addAxeModel(x, y, z) {
   const g = buildAxeGroup();
@@ -1500,9 +1502,18 @@ function addLevels() {
   addBox(0.9, 0.04, 0.9, 34.5, 0.02, 4.8, 0x2a2a2c);
   // upstairs: stairs down at the end of the hall
   addBox(0.9, 0.04, 0.9, 31.5, 0.02, 5.5, 0x0b0b0c);
+  // staff room: shelves, mop bucket, breaker panel
+  addBox(1.4, 1.6, 0.35, 47.9, 0.8, 1.3, 0x2a2118);
+  addBox(0.3, 0.3, 0.3, 51.0, 0.15, 3.8, 0x3a3a3c);
+  addBox(0.5, 0.6, 0.12, 49.5, 1.55, 1.06, 0x4a4d4f);
+  addBox(0.05, 0.22, 0.05, 49.5, 1.55, 1.15, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
+  addBox(0.9, 0.04, 0.9, 49.5, 0.02, 4.6, 0x1a1a1c);
+  const sl = new THREE.PointLight(0xffe0b0, 0.3, 5, 2);
+  sl.position.set(49.5, 2.5, 2.5);
+  worldGroup.add(sl);
   // faint bulbs so each level isn't a void
   [[35.5, 2.5, 3.0], [27.5, 2.5, 5.5], [24.5, 2.5, 2.5]].forEach(([x, y, z]) => {
-    const l = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
+    const l = new THREE.PointLight(0x8fa0b8, 0.07 * POWER(), 5, 2);
     l.position.set(x, y, z);
     worldGroup.add(l);
   });
@@ -1536,10 +1547,35 @@ function addStreetLight(x, z) {
 // flickering lamp — barely enough light to see the desk itself, let alone
 // the room around it.
 function addReceptionDesk(x, z) {
-  const deskMat = new THREE.MeshStandardMaterial({ color: 0x241f18, roughness: 0.9 });
-  const desk = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.75, 0.6), deskMat);
-  desk.position.set(x, 0.375, z);
-  worldGroup.add(desk);
+  const open = state.flags.drawers || 0;
+  addBox(1.6, 0.7, 0.6, x, 0.35, z, 0x241f18);
+  addBox(1.72, 0.05, 0.72, x, 0.725, z, 0x2f261b); // top
+  const zf = z - 0.3;
+  for (let i = 0; i < 3; i++) {
+    const y = 0.2 + i * 0.19;
+    const o = i < open ? 0.28 : 0;
+    addBox(0.5, 0.16, 0.03, x + 0.45, y, zf - 0.015 - o, 0x3a2e20);
+    addBox(0.1, 0.02, 0.03, x + 0.45, y, zf - 0.04 - o, 0xb8963a); // pull
+    if (i < open) {
+      addBox(0.46, 0.03, 0.28, x + 0.45, y - 0.07, zf - 0.14, 0x1a1510);
+      addBox(0.02, 0.1, 0.28, x + 0.22, y - 0.03, zf - 0.14, 0x1a1510);
+      addBox(0.02, 0.1, 0.28, x + 0.68, y - 0.03, zf - 0.14, 0x1a1510);
+    }
+  }
+  // things on the desk: old monitor, phone, bell, papers, pens, the guest log
+  addBox(0.2, 0.03, 0.15, x - 0.55, 0.765, z - 0.15, 0x1a1a18);
+  addBox(0.36, 0.28, 0.3, x - 0.55, 0.92, z - 0.15, 0x2a2a28);
+  const screen = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.01), new THREE.MeshStandardMaterial({ color: 0x0a0f0c, emissive: 0x08150d }));
+  screen.position.set(x - 0.55, 0.93, z);
+  worldGroup.add(screen);
+  addBox(0.16, 0.06, 0.2, x + 0.62, 0.78, z + 0.1, 0x15151a);
+  addBox(0.14, 0.03, 0.04, x + 0.62, 0.82, z + 0.1, 0x0c0c10);
+  addBox(0.07, 0.04, 0.07, x + 0.65, 0.77, z - 0.1, 0xb8963a);
+  addBox(0.25, 0.04, 0.18, x - 0.05, 0.77, z - 0.15, 0xcfc6a8);
+  addBox(0.05, 0.09, 0.05, x - 0.05, 0.8, z + 0.2, 0x222222);
+  addBox(0.4, 0.015, 0.28, x - 0.35, 0.765, z + 0.1, 0x3a1c18); // guest log, open
+  addBox(0.18, 0.025, 0.25, x - 0.45, 0.78, z + 0.1, 0xd8cfb4);
+  addBox(0.18, 0.025, 0.25, x - 0.25, 0.78, z + 0.1, 0xd8cfb4);
 
   const lampBaseMat = new THREE.MeshStandardMaterial({ color: 0x171512 });
   const lampBase = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), lampBaseMat);
@@ -1575,7 +1611,7 @@ function addStairwell(cx) {
     const plank = addBox(3.1, 0.17, 0.05, cx, y, 2.4 - (i % 2) * 0.06, 0x3a2a1c);
     plank.rotation.z = ((i % 3) - 1) * 0.06;
   });
-  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
+  const bulb = new THREE.PointLight(0xaabbaa, 0.1 * POWER(), 4, 2);
   bulb.position.set(cx, 2.5, 3.2);
   worldGroup.add(bulb);
 }
@@ -1867,6 +1903,7 @@ function nearestInteractable() {
 
   ITEMS.forEach((item) => {
     if (state.inventory[item.id]) return;
+    if (item.id === "axe" && !state.flags.powerOn) return;
     const d = Math.hypot(item.x - px, item.y - py);
     if (d < closestDist) {
       closestDist = d;
@@ -1896,7 +1933,7 @@ function nearestInteractable() {
     const d = Math.hypot(f.x - px, f.y + 0.5 - py);
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
-      doorTarget = { type: "fixture", id: f.id, label: f.label };
+      doorTarget = { type: "fixture", id: f.id, label: f.id === "staff" && state.inventory.staffKey ? "Unlock Staff Room" : f.label };
     }
   });
   HOTSPOTS.forEach((h) => {
@@ -1904,6 +1941,8 @@ function nearestInteractable() {
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
       let label = h.label;
+      if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? "Empty Drawers" : "Search Drawer";
+      if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Flip Breaker";
       if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : state.held === "axe" ? "Chop Boards" : "Boards";
       doorTarget = { type: "hotspot", id: h.id, label };
     }
@@ -1945,6 +1984,11 @@ function handleInteract() {
 
   if (target.type === "fixture") {
     const f = FIXTURES.find((x) => x.id === target.id);
+    if (f.id === "staff" && state.inventory.staffKey) {
+      playDoorCreak(DOORS[0]);
+      travel(STAFF_ARRIVAL);
+      return;
+    }
     if (f.sound === "click") playClick();
     else playKnock();
     addLog(f.text);
@@ -1978,6 +2022,27 @@ function handleInteract() {
       } else {
         playKnock();
         addLog(state.inventory.axe ? "Need the axe in hand." : "Nailed shut.");
+      }
+    } else if (h.id === "drawers") {
+      const n = state.flags.drawers || 0;
+      if (n >= 3) addLog("Nothing else.");
+      else {
+        state.flags.drawers = n + 1;
+        playClick();
+        if (n === 2) state.inventory.staffKey = true;
+        addLog(["Rubber bands. A dead pager.", "Old menus and receipts.", "A key taped to the back: STAFF."][n]);
+        buildWorld();
+      }
+    } else if (h.id === "guestLog") {
+      openReader("Guest Log", GUEST_LOG);
+    } else if (h.id === "breaker") {
+      if (state.flags.powerOn) addLog("The power is on.");
+      else {
+        state.flags.powerOn = true;
+        playClick();
+        setTimeout(playKnock, 200);
+        addLog("Power restored.");
+        buildWorld();
       }
     } else if (h.go) travel(h.go);
     else {
@@ -2049,9 +2114,26 @@ function renderInventory() {
       renderInventory();
     }, state.batteryLevel >= 100);
   }
-  ["johnKey"].filter((id) => state.inventory[id]).forEach(() => add("Brass Key", null));
+  ["johnKey", "staffKey"].filter((id) => state.inventory[id]).forEach((id) => add(id === "johnKey" ? "Brass Key" : "Staff Key", null));
   if (!list.children.length) add("Empty", null);
 }
+
+function openReader(title, lines) {
+  state.phase = "reading";
+  keys.clear();
+  document.getElementById("reader-title").textContent = title;
+  document.getElementById("reader-body").textContent = lines.join("\n");
+  document.getElementById("reader-overlay").classList.remove("hidden");
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+
+function closeReader() {
+  document.getElementById("reader-overlay").classList.add("hidden");
+  state.phase = "explore";
+  renderer.domElement.requestPointerLock();
+}
+
+document.getElementById("reader-close").addEventListener("click", closeReader);
 
 function openInventory() {
   state.phase = "inventory";
@@ -2081,6 +2163,8 @@ window.addEventListener("keydown", (e) => {
       closePauseMenu();
     } else if (state.phase === "inventory") {
       closeInventory();
+    } else if (state.phase === "reading") {
+      closeReader();
     }
     return;
   }
@@ -2088,6 +2172,10 @@ window.addEventListener("keydown", (e) => {
   if (key === "shift" && !e.repeat) {
     if (state.phase === "explore" && !state.activeNpc) openInventory();
     else if (state.phase === "inventory") closeInventory();
+    return;
+  }
+  if (state.phase === "reading") {
+    if (key === "e") closeReader();
     return;
   }
   if (state.phase === "inventory") return;
