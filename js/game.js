@@ -374,7 +374,6 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 function resetRun() {
-  staffSwing = null;
   state.flags = {};
   state.log = [];
   state.inventory = {};
@@ -607,7 +606,7 @@ function addFlashlightModel(x, y, z) {
   worldGroup.add(m);
 }
 
-function addKeyModel(x, y, z) {
+function addKeyModel(x, y, z, scale = 1) {
   const brass = new THREE.MeshStandardMaterial({ color: 0xb8963a, emissive: 0x2a2008, roughness: 0.35, metalness: 0.7 });
   const g = new THREE.Group();
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.035, 0.009, 6, 14), brass);
@@ -626,6 +625,7 @@ function addKeyModel(x, y, z) {
   tag.position.set(-0.11, -0.004, 0.03);
   [ring, stem, t1, t2, tag].forEach((m) => g.add(m));
   g.rotation.y = 0.6;
+  g.scale.setScalar(scale);
   g.position.set(x, y, z);
   worldGroup.add(g);
 }
@@ -699,8 +699,6 @@ function updateHeldFlashlight(dt) {
   const k = Math.max(0, Math.min(1, flashlightCurrentIntensity / FLASHLIGHT_MAX_INTENSITY));
   heldLensMat.color.setRGB(0.16 + 0.84 * k, 0.2 + 0.77 * k, 0.21 + 0.55 * k);
 }
-let staffPivot = null; // the staff door's hinge group, swings when unlocked
-let staffSwing = null;
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
@@ -1361,7 +1359,6 @@ function disposeWorld() {
 function buildWorld() {
   disposeWorld();
   doorPivots = {};
-  staffPivot = null;
   deskLamp = null;
 
   const rows = MAP.length;
@@ -1594,14 +1591,13 @@ function addLevels() {
   addBox(0.9, 0.04, 0.9, 34.5, 0.02, 4.8, 0x2a2a2c);
   // upstairs: stairs down at the end of the hall
   addBox(0.9, 0.04, 0.9, 31.5, 0.02, 5.5, 0x0b0b0c);
-  // staff room: shelves, mop bucket, breaker panel
-  addBox(1.4, 1.6, 0.35, 47.9, 0.8, 1.3, 0x2a2118);
-  addBox(0.3, 0.3, 0.3, 51.0, 0.15, 3.8, 0x3a3a3c);
-  addBox(0.5, 0.6, 0.12, 49.5, 1.55, 1.06, 0x4a4d4f);
-  addBox(0.05, 0.22, 0.05, 49.5, 1.55, 1.15, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
-  addBox(0.9, 0.04, 0.9, 49.5, 0.02, 4.6, 0x1a1a1c);
-  const sl = new THREE.PointLight(0xffe0b0, 0.3, 5, 2);
-  sl.position.set(49.5, 2.5, 2.5);
+  // staff room (west end of the hallway): shelf, mop bucket, breaker panel
+  addBox(1.2, 1.6, 0.35, 1.8, 0.8, 6.8, 0x2a2118);
+  addBox(0.3, 0.3, 0.3, 4.5, 0.15, 6.5, 0x3a3a3c);
+  addBox(0.5, 0.6, 0.12, 2.0, 1.55, 5.06, 0x4a4d4f);
+  addBox(0.05, 0.22, 0.05, 2.0, 1.55, 5.15, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
+  const sl = new THREE.PointLight(0xffe0b0, 0.3, 4, 2);
+  sl.position.set(3, 2.5, 6);
   worldGroup.add(sl);
   // faint bulbs so each level isn't a void
   [[35.5, 2.5, 3.0], [27.5, 2.5, 5.5], [24.5, 2.5, 2.5]].forEach(([x, y, z]) => {
@@ -1653,6 +1649,9 @@ function addReceptionDesk(x, z) {
       addBox(0.02, 0.1, 0.28, x + 0.22, y - 0.03, zf - 0.14, 0x1a1510);
       addBox(0.02, 0.1, 0.28, x + 0.68, y - 0.03, zf - 0.14, 0x1a1510);
     }
+  }
+  if (open >= 3 && !state.inventory.staffKey) {
+    addKeyModel(x + 0.45, 0.545, zf - 0.14, 2.2); // the staff key, lying in the open drawer
   }
   // things on the desk: old monitor, phone, bell, papers, pens, the guest log
   addBox(0.2, 0.03, 0.15, x - 0.55, 0.765, z - 0.15, 0x1a1a18);
@@ -1723,17 +1722,8 @@ function addFixture(f) {
     new THREE.PlaneGeometry(f.width, 2.55),
     new THREE.MeshStandardMaterial({ map: fixtureTextures[f.id], roughness: 0.6, metalness: f.style === "elevator" ? 0.3 : 0 })
   );
-  if (f.id === "staff") {
-    addBox(f.width, 2.55, 0.01, f.x, 1.275, f.y + 0.05, 0x030303); // dark doorway behind the leaf
-    staffPivot = new THREE.Group();
-    staffPivot.position.set(f.x - f.width / 2, 1.275, f.y + 0.056);
-    panel.position.set(f.width / 2, 0, 0);
-    staffPivot.add(panel);
-    worldGroup.add(staffPivot);
-  } else {
-    panel.position.set(f.x, 1.275, f.y + 0.052);
-    worldGroup.add(panel);
-  }
+  panel.position.set(f.x, 1.275, f.y + 0.052);
+  worldGroup.add(panel);
   if (f.style === "elevator") {
     const lamp = new THREE.Mesh(
       new THREE.BoxGeometry(0.3, 0.07, 0.03),
@@ -1901,18 +1891,6 @@ function updateDoorAnimation(dt) {
   });
 }
 
-function updateStaffDoor(dt) {
-  if (staffSwing === null || !staffPivot) return;
-  staffSwing += dt;
-  const k = Math.min(1, staffSwing / 0.9);
-  staffPivot.rotation.y = -1.6 * (1 - (1 - k) * (1 - k));
-  if (staffSwing >= 1.1) {
-    staffSwing = null;
-    staffPivot.rotation.y = 0;
-    travel(STAFF_ARRIVAL);
-  }
-}
-
 function updateDeskLampFlicker(dt) {
   if (!deskLamp) return;
   deskLampFlickerTimer += dt;
@@ -2046,7 +2024,7 @@ function nearestInteractable() {
     const d = Math.hypot(f.x - px, f.y + 0.5 - py);
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
-      doorTarget = { type: "fixture", id: f.id, label: f.id === "staff" && state.inventory.staffKey ? "Unlock Staff Room" : f.label };
+      doorTarget = { type: "fixture", id: f.id, label: f.label };
     }
   });
   HOTSPOTS.forEach((h) => {
@@ -2054,7 +2032,7 @@ function nearestInteractable() {
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
       let label = h.label;
-      if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? "Empty Drawers" : "Search Drawer";
+      if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? (state.inventory.staffKey ? "Empty Drawers" : "Take Key") : "Search Drawer";
       if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Flip Breaker";
       if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : state.held === "axe" ? "Chop Boards" : "Boards";
       doorTarget = { type: "hotspot", id: h.id, label };
@@ -2097,13 +2075,6 @@ function handleInteract() {
 
   if (target.type === "fixture") {
     const f = FIXTURES.find((x) => x.id === target.id);
-    if (f.id === "staff" && state.inventory.staffKey) {
-      if (staffSwing === null) {
-        playDoorCreak(DOORS[0]);
-        staffSwing = 0;
-      }
-      return;
-    }
     if (f.sound === "click") playClick();
     else playKnock();
     addLog(f.text);
@@ -2140,12 +2111,18 @@ function handleInteract() {
       }
     } else if (h.id === "drawers") {
       const n = state.flags.drawers || 0;
-      if (n >= 3) addLog("Nothing else.");
-      else {
+      if (n >= 3) {
+        if (state.inventory.staffKey) addLog("Nothing else.");
+        else {
+          state.inventory.staffKey = true;
+          playClick();
+          showPickup("Staff Key");
+          buildWorld();
+        }
+      } else {
         state.flags.drawers = n + 1;
         playClick();
-        if (n === 2) state.inventory.staffKey = true;
-        addLog(["Rubber bands. A dead pager.", "Old menus and receipts.", "A key taped to the back: STAFF."][n]);
+        addLog(["Rubber bands. A dead pager.", "Old menus and receipts.", "A brass key on a tag: STAFF."][n]);
         buildWorld();
       }
     } else if (h.id === "guestLog") {
@@ -2167,7 +2144,7 @@ function handleInteract() {
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
-    if (item.id === "batteries") addLog(item.pickupText);
+    if (!item.note) showPickup(item.name);
     if (item.note) openPaper(item);
     if (item.id === "batteries") state.batteries += 1;
     if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
@@ -2236,6 +2213,15 @@ function renderInventory() {
   }));
   ["johnKey", "staffKey"].filter((id) => state.inventory[id]).forEach((id) => add(id === "johnKey" ? "Brass Key" : "Staff Key", null));
   if (!list.children.length) add("Empty", null);
+}
+
+let pickupTimer = null;
+function showPickup(name) {
+  const el = document.getElementById("pickup-popup");
+  el.textContent = `Picked up: ${name}`;
+  el.classList.add("show");
+  clearTimeout(pickupTimer);
+  pickupTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
 function openReader(title, lines) {
@@ -2397,7 +2383,7 @@ const ENTITY_BEAM_COS = 0.96; // matches the small beam (about 16 degrees)
 const ENTITY_BEAM_RANGE = 9;
 const ENTITY_SPAWNS = [
   [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
-  [17.5, 10.5], [4.0, 5.5], [12.5, 6.0], [17.5, 6.0],
+  [17.5, 10.5], [7.5, 5.5], [12.5, 6.0], [17.5, 6.0],
 ];
 
 const entityGroup = new THREE.Group();
@@ -2575,7 +2561,6 @@ function gameLoop() {
   checkJohnRoom();
   updateEntity(dt);
   updateDoorAnimation(dt);
-  updateStaffDoor(dt);
   syncAmbient();
   updateDeskLampFlicker(dt);
   updateBrokenLamp(dt);

@@ -22,8 +22,8 @@ const MAP_ROWS_TEXT = [
   "#...#...#...#...#...###...#...####...##########.....#", // 2
   "#...#...#...#...#...###...#...####...........##.....#", // 3
   "########################.###.#####...##########.....#", // 4  apartment + stairwell doors
-  "#...................###.........##...################", // 5  hallway
-  "#...................###.........#####################", // 6
+  "#....#..............###.........##...################", // 5  hallway
+  "#....#..............###.........#####################", // 6
   "#####################################################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
   "#...................#################################", // 8  lobby
   "#...................#################################", // 9
@@ -71,7 +71,7 @@ const ITEMS = [
   { id: "axe", name: "Axe", x: 14.5, y: 1.6, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
   { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 15.45, y: 3.15, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
   { id: "batteries", name: "Batteries", h: 0.76, x: 15.45, y: 2.4, pickupText: "Spare batteries." },
-  { id: "staffNote", name: "Notice", note: true, x: 48.2, y: 2.4, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
+  { id: "staffNote", name: "Notice", note: true, x: 4.2, y: 5.7, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
   { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 1.6, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
   { id: "note2", name: "Letter", note: true, x: 28.5, y: 1.6, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
   { id: "note3", name: "Scrap of Paper", note: true, x: 23.7, y: 5.5, paper: "it only stops when\nsomeone goes into {his}\nroom. the key is 4", sloppy: 0.7, seed: 9 },
@@ -85,8 +85,7 @@ const HOTSPOTS = [
   { id: "upDown", x: 31.5, y: 5.5, label: "Go Down", go: { x: 18.5, y: 3.3, yaw: 0 } },
   { id: "drawers", x: 5.95, y: 11.4, label: "Search Drawer" },
   { id: "guestLog", x: 5.15, y: 12.1, label: "Read Guest Log" },
-  { id: "staffExit", x: 49.5, y: 4.6, label: "Leave", go: { x: 3.5, y: 9.3, yaw: Math.PI } },
-  { id: "breaker", x: 49.5, y: 1.35, label: "Flip Breaker" },
+  { id: "breaker", x: 2.0, y: 5.6, label: "Flip Breaker" },
   { id: "rubble", x: 40.4, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
 
@@ -125,10 +124,6 @@ const DOORS = [
   // lobby -> hallway: dark walnut with frosted glass, a pull handle and kick plate
   { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false,
     style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9, creakTone: 6500, creakGain: 0.85, creakStart: 0.03 },
-  // apartment 1: dark red four-panel door, brass knob, deadbolt, peephole
-  { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true,
-    style: "wood4", plate: "1", baseColor: "#5a2c28", frame: "#2a1512", handle: "knob", deadbolt: true, peephole: true, metal: "#b8963a", creak: 1.0, creakTone: 8000, creakGain: 0.8, creakStart: 0,
-    lockedText: "Locked." },
   // apartment 2: yellowed cream six-panel door, lever handle
   { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
     style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15, creakTone: 11000, creakGain: 0.7, creakStart: 0.06 }, // light and quick
@@ -140,6 +135,10 @@ const DOORS = [
   { id: "john", x: 14.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey",
     style: "arch", plate: "4", baseColor: "#4c3a34", frame: "#201813", handle: "knob", keyhole: true, metal: "#b8963a", creak: 0.82, creakTone: 2800, creakGain: 1.0, creakStart: 0.04, // old, dark, slow
     unlockLabel: "Unlock Apartment 4", lockedText: "Locked. You need a key." },
+  // staff room (carved out of the hallway's west end): grey steel door, deadbolt
+  { id: "staffDoor", x: 3.5, y: 7.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "staffKey",
+    style: "flush", baseColor: "#6b6f72", frame: "#1d2327", handle: "lever", deadbolt: true, metal: "#c4c8cc", creak: 0.9, creakTone: 4500, creakGain: 0.9, creakStart: 0.02,
+    unlockLabel: "Unlock Staff Room", lockedText: "Locked." },
   // stairwell: green steel fire door with a push bar and kick plate
   { id: "stairs", x: 18.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
     style: "fire", baseColor: "#2f4a3c", frame: "#171f1a", handle: "pushbar", kick: true, metal: "#c8ccd0", creak: 0.7, creakTone: 3800, creakGain: 1.0, creakStart: 0 }, // heavy steel
@@ -148,13 +147,11 @@ const DOORS = [
 // One-sided things on the lobby wall: they look like doors but only exist on
 // the lobby side (y is the wall face the lobby sees).
 const FIXTURES = [
-  { id: "staff", x: 3.5, y: 8.0, width: 0.9, style: "metal", baseColor: "#6b6f72", label: "Try Door", text: "Locked.", sound: "knock" },
   { id: "elevator", x: 5.5, y: 8.0, width: 0.95, style: "elevator", baseColor: "#8a8f95", label: "Call Elevator", text: "No power.", sound: "click" },
 ];
 
 const JOHN_ROOM = { minX: 13, maxX: 16, minY: 1, maxY: 4 };
 
-const STAFF_ARRIVAL = { x: 49.5, y: 3.0, yaw: 0 };
 const GUEST_LOG = [
   "Sept 02 · Apt 1 · M. Okafor · in 8:40pm",
   "Sept 09 · Apt 3 · R. Lindqvist · in 6:15pm",
