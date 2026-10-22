@@ -86,6 +86,7 @@ let audioCtx = null;
 let ambientGains = [];
 let footstepTimer = 0;
 let noiseBuf = null;
+let doorCreakBuffer = null; // the recorded creak, loaded after the first click
 
 function initAudio() {
   if (audioCtx) return;
@@ -105,6 +106,17 @@ function initAudio() {
     o.start();
     ambientGains.push(g);
   });
+  // The recorded door creak. If it can't load (e.g. opened as a plain file), the
+  // synthesized creak below is used instead.
+  if (typeof fetch === "function") {
+    fetch("audio/door-creak.mp3")
+      .then((r) => r.arrayBuffer())
+      .then((buf) => audioCtx.decodeAudioData(buf))
+      .then((decoded) => {
+        doorCreakBuffer = decoded;
+      })
+      .catch(() => {});
+  }
 }
 
 function setSoundEnabled(on) {
@@ -134,9 +146,27 @@ function playFootstep(quiet) {
 // A slow, rusty hinge: two sawtooth voices pushed through a resonant filter
 // that sweeps as the door turns, chopped by a fast stick-slip pulse, with a
 // latch click at the start and a soft thud when it comes to rest.
-function playDoorCreak(pitch) {
+function playDoorCreak(door) {
   if (!audioReady()) return;
-  pitch = pitch || 1;
+  const cfg = typeof door === "number" ? { creak: door } : door || {};
+  if (doorCreakBuffer) {
+    // Same recording for every door, but each door shifts its speed (heavier
+    // doors slower and lower), darkens or brightens it, changes its loudness and
+    // starts a little way in, plus a tiny random drift so no two opens match.
+    const src = audioCtx.createBufferSource();
+    src.buffer = doorCreakBuffer;
+    src.playbackRate.value = Math.max(0.6, Math.min(1.4, (cfg.creak || 1) * (0.97 + Math.random() * 0.06)));
+    const tone = audioCtx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = cfg.creakTone || 8000;
+    tone.Q.value = 0.7;
+    const level = audioCtx.createGain();
+    level.gain.value = 0.7 * (cfg.creakGain || 1);
+    src.connect(tone).connect(level).connect(audioCtx.destination);
+    src.start(audioCtx.currentTime, cfg.creakStart || 0);
+    return;
+  }
+  const pitch = cfg.creak || 1;
   const t = audioCtx.currentTime;
   const dur = 1.2 + Math.random() * 0.4;
   const master = audioCtx.createGain();
@@ -271,7 +301,6 @@ function toggleFlashlight() {
   }
   state.flashlightOn = !state.flashlightOn;
   playClick();
-  renderHud();
 }
 
 // ---- captions: short lines at the bottom middle that fade away ----------------
@@ -430,29 +459,6 @@ document.getElementById("toggle-prompts").addEventListener("click", () => {
 
 // ---- HUD / log --------------------------------------------------------------
 
-function renderHud() {
-  const hud = document.getElementById("hud");
-  const carried = Object.keys(state.inventory).filter((id) => state.inventory[id]);
-  const carriedNames = carried
-    .map((id) => (ITEMS.find((it) => it.id === id) || {}).name || id)
-    .join(" · ");
-  const flashlightStatus = hasFlashlightOn()
-    ? "ON"
-    : state.inventory.flashlight
-    ? state.batteryLevel <= 0
-      ? "dead"
-      : "OFF (press F)"
-    : "none";
-  hud.innerHTML = `
-    <div class="portrait" style="background:${PROTAGONIST.color}">${PROTAGONIST.name.charAt(0)}</div>
-    <div>
-      <div class="hud-name">${PROTAGONIST.name}</div>
-      <div class="stat-line">Carrying: ${carriedNames || "nothing"}</div>
-      <div class="stat-line">Flashlight: ${flashlightStatus}</div>
-    </div>
-  `;
-}
-
 // ---- story screen -------------------------------------------------
 
 document.getElementById("Story-screen").addEventListener("click", () => {
@@ -476,7 +482,6 @@ function enterExplore() {
   yawObject.rotation.y = 0;
   camera.rotation.x = 0;
   buildWorld();
-  renderHud();
   clock.start();
   renderer.setAnimationLoop(gameLoop);
   renderer.domElement.requestPointerLock();
@@ -523,13 +528,13 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
 
-const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 14, 0.3, 0.28, 1.2); // narrow cone, tight soft edge
+const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 12, 0.22, 0.4, 2); // small circle of light that falls off with distance
 flashlightLight.position.set(0, 0, 0);
 camera.add(flashlightLight);
 camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
-const FLASHLIGHT_MAX_INTENSITY = 5.0; // narrower beam, so brighter in the middle
+const FLASHLIGHT_MAX_INTENSITY = 15; // tight beam with real falloff, so it needs more punch
 const FLASHLIGHT_RAMP_SPEED = 7; // intensity/second — fast but not an instant snap
 let flashlightCurrentIntensity = 0;
 let flashlightFlickerTimer = 0;
@@ -994,7 +999,7 @@ function updateBrokenLamp(dt) {
     brokenLampLevel = Math.random() < 0.55 ? 1 : 0.06;
     brokenLampTimer = brokenLampLevel === 1 ? 0.2 + Math.random() * 1.8 : 0.04 + Math.random() * 0.12;
   }
-  brokenLamp.intensity = 1.9 * brokenLampLevel;
+  brokenLamp.intensity = 1.3 * brokenLampLevel;
 }
 
 function addTree(x, z, s, bare) {
@@ -1249,7 +1254,7 @@ function buildWorld() {
   const cols = MAP[0].length;
   const interiorMat = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
   // No moon: the street walls and roof carry a faint cold glow of their own.
-  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95, emissive: 0x0a1020 });
+  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95, emissive: 0x03050a });
   const lobbyWallMat = new THREE.MeshStandardMaterial({ map: lobbyWallTexture, roughness: 0.95 });
   const facadeGeo = new THREE.BoxGeometry(1, FACADE_H, 1);
   const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
@@ -1260,6 +1265,7 @@ function buildWorld() {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       if (MAP[row][col] !== 1) continue;
+      if (col > 21 && row > 7) continue;
       if (doorAtCell(col, row)) continue; // door cells are drawn separately below
       const street = row >= doorRow;
       // the facade row shows the street texture outside and plain lobby wall inside
@@ -1305,14 +1311,14 @@ function buildWorld() {
 
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(cols, interiorRows),
-    new THREE.MeshStandardMaterial({ color: 0x16161e, side: THREE.BackSide })
+    new THREE.MeshStandardMaterial({ color: 0x16161e, roughness: 1, side: THREE.DoubleSide }) // solid from below, so no sky shows through
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(cols / 2, WALL_HEIGHT, interiorRows / 2);
   worldGroup.add(ceiling);
 
   // Roof: a cornice that overhangs the facade, and a pitched slope behind it.
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide, emissive: 0x070912 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide, emissive: 0x020309 });
   const cornice = new THREE.Mesh(new THREE.BoxGeometry(cols, 0.35, 1.6), roofMat);
   cornice.position.set(cols / 2, FACADE_H + 0.17, doorRow + 0.6);
   worldGroup.add(cornice);
@@ -1417,22 +1423,61 @@ function buildWorld() {
   addBed(14.5, 1.6); // John's apartment
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
-  const aptLight = new THREE.PointLight(0xffbb66, 0.35, 3.5, 2);
+  const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
   aptLight.position.set(6.5, 2.4, 2.2);
   worldGroup.add(aptLight);
 
   // One weak, cold bulb in the hallway so it isn't a total void.
   [4.5, 8.5, 12.5, 16.5].forEach((hx) => {
-    const hallLight = new THREE.PointLight(0x8fa0b8, 0.3, 6, 2);
+    const hallLight = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
     hallLight.position.set(hx, WALL_HEIGHT * 0.9, 5.5);
     worldGroup.add(hallLight);
   });
 
+  addLevels();
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
+    else if (it.id === "axe") addAxeModel(it.x, 0.78, it.y);
+    else if (it.note) addBox(0.2, 0.012, 0.28, it.x, 0.02, it.y, 0xcfc6a8).rotation.y = it.x;
     else addMarkerSprite(it.x, it.y, it.color, 0.4, it.height);
+  });
+}
+
+function addAxeModel(x, y, z) {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8a1a14, roughness: 0.5, metalness: 0.5 });
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.04), wood);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.22), steel);
+  head.position.set(0.28, 0, 0.06);
+  g.add(handle, head);
+  g.position.set(x, y, z);
+  g.rotation.y = 0.5;
+  worldGroup.add(g);
+}
+
+// Basement, upstairs: the extra levels live in the far east of the map.
+function addLevels() {
+  // cellar hatch in the stairwell floor
+  addBox(0.9, 0.04, 0.9, 17.5, 0.02, 3.55, 0x0b0b0c);
+  addBox(0.95, 0.05, 0.05, 17.5, 0.03, 3.1, 0x2a2a2c);
+  // basement: workbench, rubble blocking the corridor
+  addBox(1.4, 0.8, 0.6, 35.5, 0.4, 1.5, 0x3a2a1c);
+  addBox(0.5, 0.5, 0.5, 36.4, 0.25, 4.4, 0x2d2d2a);
+  [[41.5, 3.5, 1.3], [41.3, 3.2, 0.9], [41.7, 3.8, 0.8], [41.2, 3.9, 0.6]].forEach(([x, z, s], i) => {
+    const r = addBox(s, s, s, x, s / 2, z, i % 2 ? 0x3a3835 : 0x2a2927);
+    r.rotation.y = i * 0.7;
+  });
+  addBox(0.9, 0.04, 0.9, 34.5, 0.02, 4.8, 0x2a2a2c);
+  // upstairs: stairs down at the end of the hall
+  addBox(0.9, 0.04, 0.9, 31.5, 0.02, 5.5, 0x0b0b0c);
+  // faint bulbs so each level isn't a void
+  [[35.5, 2.5, 3.0], [27.5, 2.5, 5.5], [24.5, 2.5, 2.5]].forEach(([x, y, z]) => {
+    const l = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
+    l.position.set(x, y, z);
+    worldGroup.add(l);
   });
 }
 
@@ -1454,7 +1499,7 @@ function addStreetLight(x, z) {
   head.position.set(x, 2.62, z);
   worldGroup.add(head);
 
-  const lamp = new THREE.PointLight(0xffdca0, 1.9, 7, 2);
+  const lamp = new THREE.PointLight(0xffdca0, 1.3, 6, 2);
   lamp.position.set(x, 2.55, z);
   worldGroup.add(lamp);
   return lamp;
@@ -1499,11 +1544,11 @@ function addStairwell(cx) {
     addBox(3, h, depth, cx, h / 2, zFront - depth * (i + 0.5), 0x2c2c2e);
   }
   // Boards nailed across the stairs, a few steps up.
-  [1.35, 1.7, 2.05, 2.4, 2.75].forEach((y, i) => {
+  if (!state.flags.boardsChopped) [1.35, 1.7, 2.05, 2.4, 2.75].forEach((y, i) => {
     const plank = addBox(3.1, 0.17, 0.05, cx, y, 2.4 - (i % 2) * 0.06, 0x3a2a1c);
     plank.rotation.z = ((i % 3) - 1) * 0.06;
   });
-  const bulb = new THREE.PointLight(0xaabbaa, 0.35, 5, 2);
+  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
   bulb.position.set(cx, 2.5, 3.2);
   worldGroup.add(bulb);
 }
@@ -1695,7 +1740,7 @@ function updateDoorAnimation(dt) {
       pivot.rotation.y = target;
       return;
     }
-    const step = DOOR_OPEN_SPEED * dt;
+    const step = DOOR_OPEN_SPEED * (door.creak || 1) * dt; // heavier doors swing slower, matching their creak
     pivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
   });
 }
@@ -1722,7 +1767,6 @@ function updateFlashlight(dt) {
     if (state.batteryLevel <= 0) {
       state.batteryLevel = 0;
       state.flashlightOn = false;
-      renderHud();
     }
   }
 
@@ -1836,7 +1880,24 @@ function nearestInteractable() {
       doorTarget = { type: "fixture", id: f.id, label: f.label };
     }
   });
+  HOTSPOTS.forEach((h) => {
+    const d = Math.hypot(h.x - px, h.y - py);
+    if (d < 1.4 && d < doorDist) {
+      doorDist = d;
+      let label = h.label;
+      if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : state.inventory.axe ? "Chop Boards" : "Boards";
+      doorTarget = { type: "hotspot", id: h.id, label };
+    }
+  });
   return doorTarget;
+}
+
+function travel(to) {
+  playClick();
+  yawObject.position.x = to.x;
+  yawObject.position.z = to.y;
+  yawObject.rotation.y = to.yaw;
+  keys.clear();
 }
 
 function capitalize(s) {
@@ -1872,26 +1933,45 @@ function handleInteract() {
     const door = doorList().find((d) => d.id === target.id);
     if (door.isFront) {
       state.frontDoorOpen = true;
-      playDoorCreak(door.creak);
+      playDoorCreak(door);
     } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
       playKnock();
       addLog(door.lockedText || "Locked.");
     } else {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
-      playDoorCreak(door.creak);
+      playDoorCreak(door);
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
         state.entity.timer = ENTITY_SPAWN_DELAY;
       }
     }
+  } else if (target.type === "hotspot") {
+    const h = HOTSPOTS.find((x) => x.id === target.id);
+    if (h.id === "boards") {
+      if (state.flags.boardsChopped) travel({ x: 29.5, y: 5.9, yaw: Math.PI / 2 });
+      else if (state.inventory.axe) {
+        state.flags.boardsChopped = true;
+        playKnock();
+        setTimeout(playKnock, 220);
+        setTimeout(playKnock, 460);
+        buildWorld();
+      } else {
+        playKnock();
+        addLog("Nailed shut.");
+      }
+    } else if (h.go) travel(h.go);
+    else {
+      playKnock();
+      addLog(h.text);
+    }
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
+    if (item.note) addLog(item.pickupText);
     if (target.id === "flashlight") {
       addLog("Press F to turn the flashlight on.");
     }
-    renderHud();
     buildWorld(); // remove the collected item's marker from the scene
   } else if (target.type === "npc") {
     openDialogue(target.id);
@@ -1992,7 +2072,7 @@ const ENTITY_SPEED_DEAD = 1.2; // battery gone: it moves faster
 const ENTITY_SPEED_WATCHING = 0.25;
 const ENTITY_RETREAT_SPEED = 1.8;
 const ENTITY_CATCH_DIST = 0.8;
-const ENTITY_BEAM_COS = 0.93; // matches the tighter beam (about 21 degrees)
+const ENTITY_BEAM_COS = 0.96; // matches the small beam (about 16 degrees)
 const ENTITY_BEAM_RANGE = 9;
 const ENTITY_SPAWNS = [
   [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
@@ -2078,6 +2158,11 @@ function caughtByEntity() {
 function updateEntity(dt) {
   const e = state.entity;
   if (state.phase !== "explore") return;
+  if (yawObject.position.x > 21) {
+    entityGroup.visible = false;
+    setFear(0);
+    return; // it stays on the ground floor
+  }
   if (e.mode === "idle" || e.mode === "done") {
     entityGroup.visible = false;
     return;
@@ -2179,7 +2264,7 @@ function gameLoop() {
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  const ambientTarget = hasFlashlightOn() ? 0.1 : 0.08; // little ambient wash, so the beam stands out
+  const ambientTarget = 0.025; // nearly none: only real lights and the beam show anything
   ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();

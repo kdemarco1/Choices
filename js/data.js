@@ -17,33 +17,33 @@
 //  rows 14-18 the front yard ('x' = hedge at the left/right edge, curb along the road at row 19);
 //             the road runs behind you past row 19 and can't be crossed
 const MAP_ROWS_TEXT = [
-  "#####################", // 0
-  "#...#...#...#...#...#", // 1  apartments 1-3 and John's (4), then the stairwell
-  "#...#...#...#...#...#", // 2
-  "#...#...#...#...#...#", // 3
-  "#####################", // 4  apartment + stairwell doors
-  "#...................#", // 5  hallway
-  "#...................#", // 6
-  "#####################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
-  "#...................#", // 8  lobby
-  "#...................#", // 9
-  "#...................#", // 10
-  "#...................#", // 11
-  "#...................#", // 12
-  "########.############", // 13 facade, front door at col 8
-  "x...................x", // 14 street
-  "x...................x", // 15
-  "x...................x", // 16
-  "x...................x", // 17
-  "x...................x", // 18 player start
-  "xxxxxxxxxxxxxxxxxxxxx", // 19
+  "##############################################", // 0
+  "#...#...#...#...#...###...#...####...#########", // 1  apartments 1-3 and John's (4), then the stairwell
+  "#...#...#...#...#...###...#...####...#########", // 2
+  "#...#...#...#...#...###...#...####...........#", // 3
+  "########################.###.#####...#########", // 4  apartment + stairwell doors
+  "#...................###.........##...#########", // 5  hallway
+  "#...................###.........##############", // 6
+  "##############################################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
+  "#...................##########################", // 8  lobby
+  "#...................##########################", // 9
+  "#...................##########################", // 10
+  "#...................##########################", // 11
+  "#...................##########################", // 12
+  "########.#####################################", // 13 facade, front door at col 8
+  "x...................x#########################", // 14 street
+  "x...................x#########################", // 15
+  "x...................x#########################", // 16
+  "x...................x#########################", // 17
+  "x...................x#########################", // 18 player start
+  "xxxxxxxxxxxxxxxxxxxxx#########################", // 19
 ];
 // 0 = open, 1 = wall (drawn), 2 = invisible-solid barrier (hedge at the yard edges, curb along the road)
 const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : ch === "x" ? 2 : 0)));
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
-const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17]]; // + the entrance columns and four yard trees
+const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17], [41, 3]]; // + the entrance columns and four yard trees
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
@@ -68,6 +68,19 @@ const ITEMS = [
     height: 0.9,
     pickupText: "A brass key on a paper tag: 4.",
   },
+  { id: "axe", name: "Axe", x: 35.5, y: 1.6, color: "#999999", height: 0.9, pickupText: "A fire axe." },
+  { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 1.6, pickupText: "\"John won't sleep. He says it walks the halls when the lights die.\"" },
+  { id: "note2", name: "Letter", note: true, x: 28.5, y: 1.6, pickupText: "\"Don't go below. Something is sealed in the cellar. Keep your light on.\"" },
+  { id: "note3", name: "Scrap of Paper", note: true, x: 23.7, y: 5.5, pickupText: "\"It only stops when someone goes into his room. The key is 4.\"" },
+];
+
+// Spots you can use with E. 'go' teleports between levels.
+const HOTSPOTS = [
+  { id: "cellar", x: 17.5, y: 3.55, label: "Go Down", go: { x: 35.5, y: 3.5, yaw: -Math.PI / 2 } },
+  { id: "cellarUp", x: 34.5, y: 4.8, label: "Go Up", go: { x: 17.5, y: 3.2, yaw: 0 } },
+  { id: "boards", x: 18.5, y: 3.3, label: "Boards" },
+  { id: "upDown", x: 31.5, y: 5.5, label: "Go Down", go: { x: 18.5, y: 3.3, yaw: 0 } },
+  { id: "rubble", x: 40.4, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
 
 const PROTAGONIST = {
@@ -95,7 +108,7 @@ const FRONT_DOOR = {
   keyhole: true,
   kick: true,
   openAngle: -Math.PI * 0.5, // swings in against the recess wall
-  creak: 0.8,
+  creak: 0.8, creakTone: 4200, creakGain: 1.0, creakStart: 0, // slow and heavy
 };
 
 // Interior doors that really open. x/y is the centre of the wall cell.
@@ -104,25 +117,25 @@ const FRONT_DOOR = {
 const DOORS = [
   // lobby -> hallway: dark walnut with frosted glass, a pull handle and kick plate
   { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false,
-    style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9 },
+    style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9, creakTone: 6500, creakGain: 0.85, creakStart: 0.03 },
   // apartment 1: dark red four-panel door, brass knob, deadbolt, peephole
   { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true,
-    style: "wood4", plate: "1", baseColor: "#5a2c28", frame: "#2a1512", handle: "knob", deadbolt: true, peephole: true, metal: "#b8963a", creak: 1.0,
+    style: "wood4", plate: "1", baseColor: "#5a2c28", frame: "#2a1512", handle: "knob", deadbolt: true, peephole: true, metal: "#b8963a", creak: 1.0, creakTone: 8000, creakGain: 0.8, creakStart: 0,
     lockedText: "Locked." },
   // apartment 2: yellowed cream six-panel door, lever handle
   { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
-    style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15 },
+    style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15, creakTone: 11000, creakGain: 0.7, creakStart: 0.06 }, // light and quick
   // apartment 3: modern blue-grey flush door, steel lever and deadbolt
   { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true,
-    style: "flush", plate: "3", baseColor: "#3e4a52", frame: "#1d2327", handle: "lever", deadbolt: true, peephole: true, metal: "#c4c8cc", creak: 0.95,
+    style: "flush", plate: "3", baseColor: "#3e4a52", frame: "#1d2327", handle: "lever", deadbolt: true, peephole: true, metal: "#c4c8cc", creak: 0.95, creakTone: 5500, creakGain: 0.8, creakStart: 0.02,
     lockedText: "Locked." },
   // apartment 4 (John's): old oak door with an arched panel, brass knob and keyhole
   { id: "john", x: 14.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey",
-    style: "arch", plate: "4", baseColor: "#4c3a34", frame: "#201813", handle: "knob", keyhole: true, metal: "#b8963a", creak: 0.85,
+    style: "arch", plate: "4", baseColor: "#4c3a34", frame: "#201813", handle: "knob", keyhole: true, metal: "#b8963a", creak: 0.82, creakTone: 2800, creakGain: 1.0, creakStart: 0.04, // old, dark, slow
     unlockLabel: "Unlock Apartment 4", lockedText: "Locked. You need a key." },
   // stairwell: green steel fire door with a push bar and kick plate
   { id: "stairs", x: 18.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
-    style: "fire", baseColor: "#2f4a3c", frame: "#171f1a", handle: "pushbar", kick: true, metal: "#c8ccd0", creak: 0.7 },
+    style: "fire", baseColor: "#2f4a3c", frame: "#171f1a", handle: "pushbar", kick: true, metal: "#c8ccd0", creak: 0.7, creakTone: 3800, creakGain: 1.0, creakStart: 0 }, // heavy steel
 ];
 
 // One-sided things on the lobby wall: they look like doors but only exist on
