@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Hollow House</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Reenie+Beanie&family=Nothing+You+Could+Do&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -87,6 +89,13 @@
           <div class="dialogue-box pause-box">
             <h1>Inventory</h1>
             <div id="inventory-list"></div>
+          </div>
+        </div>
+
+        <div id="paper-overlay" class="overlay overlay-center hidden">
+          <div class="dialogue-box pause-box" style="text-align:center">
+            <canvas id="paper-canvas" width="512" height="640" style="width:min(70vw,340px);height:auto;box-shadow:0 6px 24px #000a;"></canvas>
+            <div><button id="paper-close" class="secondary-button" style="margin-top:14px">Close (E)</button></div>
           </div>
         </div>
 

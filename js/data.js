@@ -69,12 +69,12 @@ const ITEMS = [
     pickupText: "A brass key on a paper tag: 4.",
   },
   { id: "axe", name: "Axe", x: 14.5, y: 1.6, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
-  { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 15.45, y: 3.15, pickupText: "\"Sept 21. Third week of no sleep. It stands in the hall at night. I hid the axe under my bed, just in case.\"" },
+  { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 15.45, y: 3.15, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
   { id: "batteries", name: "Batteries", h: 0.76, x: 15.45, y: 2.4, pickupText: "Spare batteries." },
-  { id: "staffNote", name: "Notice", note: true, x: 48.2, y: 2.4, pickupText: "\"Power out again? Main breaker is on the north wall.\"" },
-  { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 1.6, pickupText: "\"John won't sleep. He says it walks the halls when the lights die.\"" },
-  { id: "note2", name: "Letter", note: true, x: 28.5, y: 1.6, pickupText: "\"Don't go below. Something is sealed in the cellar. Keep your light on.\"" },
-  { id: "note3", name: "Scrap of Paper", note: true, x: 23.7, y: 5.5, pickupText: "\"It only stops when someone goes into his room. The key is 4.\"" },
+  { id: "staffNote", name: "Notice", note: true, x: 48.2, y: 2.4, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
+  { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 1.6, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
+  { id: "note2", name: "Letter", note: true, x: 28.5, y: 1.6, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
+  { id: "note3", name: "Scrap of Paper", note: true, x: 23.7, y: 5.5, paper: "it only stops when\nsomeone goes into {his}\nroom. the key is 4", sloppy: 0.7, seed: 9 },
 ];
 
 // Spots you can use with E. 'go' teleports between levels.

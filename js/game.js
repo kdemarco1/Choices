@@ -703,6 +703,75 @@ window.addEventListener("resize", resizeRenderer);
 
 const TEXTURE_SIZE = 128;
 
+// Handwritten paper: seeded jitter per letter, ink fade, and {scribbled-out} words nobody can read.
+function drawPaper(c, text, sloppy, seed) {
+  const w = (c.width = 512);
+  const h = (c.height = 640);
+  const ctx = c.getContext("2d");
+  let s = seed * 9301 + 49297;
+  const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  ctx.fillStyle = "#d8ceae";
+  ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = `rgba(120,90,40,${0.02 + r() * 0.035})`;
+    ctx.beginPath();
+    ctx.arc(r() * w, r() * h, 30 + r() * 80, 0, 6.3);
+    ctx.fill();
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.08)";
+  ctx.fillRect(0, h / 2, w, 2);
+  ctx.strokeStyle = "rgba(70,90,120,0.18)";
+  ctx.lineWidth = 1;
+  for (let y = 90; y < h; y += 46) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+  const size = 44 - sloppy * 8;
+  ctx.font = `${size}px "Reenie Beanie","Nothing You Could Do","Segoe Script","Bradley Hand",cursive`;
+  const ink = "#1d1f2e";
+  let y = 92;
+  text.split("\n").forEach((line) => {
+    let x = 34 + r() * 16;
+    const tilt = (r() - 0.5) * sloppy * 0.06;
+    (line.match(/\{[^}]*\}|\S+/g) || []).forEach((tok) => {
+      const bad = tok[0] === "{";
+      const word = bad ? tok.slice(1, -1) : tok;
+      if (bad) {
+        const len = Math.max(3, word.length) * size * 0.36;
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 2 + r() * 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y - size * 0.3);
+        for (let i = 1; i <= 9; i++) ctx.lineTo(x + (len * i) / 9, y - size * 0.3 + (i % 2 ? -1 : 1) * size * (0.1 + r() * 0.3));
+        ctx.stroke();
+      } else {
+        for (const ch of word) {
+          ctx.save();
+          ctx.translate(x, y + (r() - 0.5) * sloppy * 12 + x * tilt);
+          ctx.rotate((r() - 0.5) * sloppy * 0.6);
+          ctx.globalAlpha = 1 - sloppy * r() * 0.5;
+          ctx.fillStyle = ink;
+          ctx.fillText(ch, 0, 0);
+          ctx.restore();
+          x += (ctx.measureText(ch).width || size * 0.4) * (0.95 + r() * 0.2 * (1 + sloppy));
+        }
+      }
+      x += size * 0.35 * (bad ? 1.4 : 1);
+    });
+    y += 50 + r() * sloppy * 14;
+  });
+  ctx.globalAlpha = 1;
+  if (sloppy > 0.6) {
+    ctx.fillStyle = "rgba(20,20,40,0.22)";
+    ctx.beginPath();
+    ctx.ellipse(w * (0.55 + r() * 0.3), h * (0.6 + r() * 0.25), 22 + r() * 18, 14 + r() * 10, r(), 0, 6.3);
+    ctx.fill();
+  }
+  return c;
+}
+
 function makeThreeTexture(canvasEl) {
   const tex = new THREE.CanvasTexture(canvasEl);
   tex.magFilter = THREE.NearestFilter; // crisp, no blur
@@ -1473,7 +1542,15 @@ function buildWorld() {
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
     else if (it.id === "axe") { if (state.flags.powerOn) addAxeModel(it.x, 0.07, it.y); }
     else if (it.id === "batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, 0.78, it.y + o - 0.03, 0x9a7a1a));
-    else if (it.note) addBox(0.2, 0.012, 0.28, it.x, it.h || 0.02, it.y, 0xcfc6a8).rotation.y = it.x;
+    else if (it.note) {
+      const paper = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.22, 0.28),
+        new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), it.paper, it.sloppy, it.seed)), roughness: 1 })
+      );
+      paper.rotation.set(-Math.PI / 2, 0, it.seed * 0.7);
+      paper.position.set(it.x, (it.h || 0.02) + 0.005, it.y);
+      worldGroup.add(paper);
+    }
     else addMarkerSprite(it.x, it.y, it.color, 0.4, it.height);
   });
 }
@@ -2052,7 +2129,8 @@ function handleInteract() {
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
-    if (item.note || item.id === "batteries") addLog(item.pickupText);
+    if (item.id === "batteries") addLog(item.pickupText);
+    if (item.note) openPaper(item);
     if (item.id === "batteries") state.batteries += 1;
     if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
     if (target.id === "flashlight") {
@@ -2114,6 +2192,10 @@ function renderInventory() {
       renderInventory();
     }, state.batteryLevel >= 100);
   }
+  ITEMS.filter((it) => it.note && state.inventory[it.id]).forEach((it) => add(it.name, "Read", () => {
+    document.getElementById("inventory-overlay").classList.add("hidden");
+    openPaper(it);
+  }));
   ["johnKey", "staffKey"].filter((id) => state.inventory[id]).forEach((id) => add(id === "johnKey" ? "Brass Key" : "Staff Key", null));
   if (!list.children.length) add("Empty", null);
 }
@@ -2127,13 +2209,24 @@ function openReader(title, lines) {
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
 }
 
+function openPaper(it) {
+  state.phase = "reading";
+  keys.clear();
+  drawPaper(document.getElementById("paper-canvas"), it.paper, it.sloppy, it.seed);
+  document.getElementById("paper-overlay").classList.remove("hidden");
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+
 function closeReader() {
+  document.getElementById("paper-overlay").classList.add("hidden");
   document.getElementById("reader-overlay").classList.add("hidden");
   state.phase = "explore";
   renderer.domElement.requestPointerLock();
 }
 
 document.getElementById("reader-close").addEventListener("click", closeReader);
+document.getElementById("paper-close").addEventListener("click", closeReader);
+if (document.fonts && document.fonts.load) document.fonts.load('40px "Reenie Beanie"');
 
 function openInventory() {
   state.phase = "inventory";
