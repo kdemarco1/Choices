@@ -26,7 +26,7 @@
         <h1>Settings</h1>
 
         <label class="label">Controls</label>
-        <p class="settings-text">W/A/S/D to move. Click the view, then move the mouse to look in any direction, including behind you. E to interact. F to turn the flashlight on and off. Esc to pause.</p>
+        <p class="settings-text">W/A/S/D to move. Click the view, then move the mouse to look in any direction, including behind you. E to interact. F to turn the flashlight on and off. Caps Lock to switch the item in your hand. Shift for inventory. Esc to pause.</p>
 
         <label class="label" for="toggle-sound">Sound</label>
         <button id="toggle-sound" class="toggle-button"></button>
@@ -80,6 +80,13 @@
             <button id="pause-resume-button" class="primary-button">Resume</button>
             <button id="pause-settings-button" class="secondary-button">Settings</button>
             <button id="pause-leave-button" class="secondary-button">Leave Game</button>
+          </div>
+        </div>
+
+        <div id="inventory-overlay" class="overlay overlay-center hidden">
+          <div class="dialogue-box pause-box">
+            <h1>Inventory</h1>
+            <div id="inventory-list"></div>
           </div>
         </div>
 

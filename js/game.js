@@ -69,7 +69,7 @@ const BATTERY_LIFE_SECONDS = 180;
 const BATTERY_DRAIN_RATE = 100 / BATTERY_LIFE_SECONDS;
 
 function hasFlashlightOn() {
-  return !!(state.inventory.flashlight && state.batteryLevel > 0 && state.flashlightOn);
+  return !!(state.inventory.flashlight && state.held === "flashlight" && state.batteryLevel > 0 && state.flashlightOn);
 }
 
 function currentLightRange() {
@@ -299,6 +299,12 @@ function toggleFlashlight() {
   if (state.batteryLevel <= 0) {
     return;
   }
+  if (state.held !== "flashlight") {
+    state.held = "flashlight";
+    state.flashlightOn = true;
+    playClick();
+    return;
+  }
   state.flashlightOn = !state.flashlightOn;
   playClick();
 }
@@ -360,6 +366,8 @@ function resetRun() {
   state.flags = {};
   state.log = [];
   state.inventory = {};
+  state.held = null;
+  state.batteries = 0;
   state.flashlightOn = false;
   state.batteryLevel = 100;
   state.frontDoorOpen = false;
@@ -618,6 +626,23 @@ heldFlashlight.position.set(0.17, -0.15, -0.34);
 heldFlashlight.rotation.set(0.04, 0.12, 0);
 heldFlashlight.visible = false;
 camera.add(heldFlashlight);
+
+function buildAxeGroup() {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8a1a14, roughness: 0.5, metalness: 0.5 });
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.04), wood));
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.22), steel);
+  head.position.set(0.28, 0, 0.06);
+  g.add(head);
+  return g;
+}
+const heldAxe = buildAxeGroup();
+heldAxe.position.set(0.22, -0.2, -0.45);
+heldAxe.rotation.set(0.5, 1.2, 0.9);
+heldAxe.scale.setScalar(0.7);
+heldAxe.visible = false;
+camera.add(heldAxe);
 let heldBobTime = 0;
 
 // The night sky: scattered stars and a pale moon (never fogged).
@@ -647,7 +672,12 @@ let heldBobTime = 0;
 })();
 
 function updateHeldFlashlight(dt) {
-  heldFlashlight.visible = !!state.inventory.flashlight;
+  heldAxe.visible = state.held === "axe" && !!state.inventory.axe;
+  if (heldAxe.visible) {
+    heldBobTime += dt * 2;
+    heldAxe.position.y = -0.2 + Math.sin(heldBobTime) * 0.004;
+  }
+  heldFlashlight.visible = state.held === "flashlight" && !!state.inventory.flashlight;
   if (!heldFlashlight.visible) return;
   const moving = keys.has("w") || keys.has("a") || keys.has("s") || keys.has("d");
   heldBobTime += dt * (moving ? 9 : 1.6);
@@ -1449,13 +1479,7 @@ function buildWorld() {
 }
 
 function addAxeModel(x, y, z) {
-  const g = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x8a1a14, roughness: 0.5, metalness: 0.5 });
-  const handle = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.04), wood);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.22), steel);
-  head.position.set(0.28, 0, 0.06);
-  g.add(handle, head);
+  const g = buildAxeGroup();
   g.position.set(x, y, z);
   g.rotation.y = 0.5;
   worldGroup.add(g);
@@ -1880,7 +1904,7 @@ function nearestInteractable() {
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
       let label = h.label;
-      if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : state.inventory.axe ? "Chop Boards" : "Boards";
+      if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : state.held === "axe" ? "Chop Boards" : "Boards";
       doorTarget = { type: "hotspot", id: h.id, label };
     }
   });
@@ -1945,7 +1969,7 @@ function handleInteract() {
     const h = HOTSPOTS.find((x) => x.id === target.id);
     if (h.id === "boards") {
       if (state.flags.boardsChopped) travel({ x: 29.5, y: 5.9, yaw: Math.PI / 2 });
-      else if (state.inventory.axe) {
+      else if (state.held === "axe") {
         state.flags.boardsChopped = true;
         playKnock();
         setTimeout(playKnock, 220);
@@ -1953,7 +1977,7 @@ function handleInteract() {
         buildWorld();
       } else {
         playKnock();
-        addLog("Nailed shut.");
+        addLog(state.inventory.axe ? "Need the axe in hand." : "Nailed shut.");
       }
     } else if (h.go) travel(h.go);
     else {
@@ -1964,7 +1988,8 @@ function handleInteract() {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
     if (item.note || item.id === "batteries") addLog(item.pickupText);
-    if (item.id === "batteries") state.batteryLevel = 100;
+    if (item.id === "batteries") state.batteries += 1;
+    if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
     if (target.id === "flashlight") {
       addLog("Press F to turn the flashlight on.");
     }
@@ -1972,6 +1997,74 @@ function handleInteract() {
   } else if (target.type === "npc") {
     openDialogue(target.id);
   }
+}
+
+// ---- held items + inventory ---------------------------------------------------
+
+const HELD_ORDER = ["flashlight", "axe"];
+
+function equip(id) {
+  if (!state.inventory[id] || state.held === id) return;
+  if (state.held === "flashlight") state.flashlightOn = false;
+  state.held = id;
+  playClick();
+}
+
+function cycleHeld() {
+  const owned = HELD_ORDER.filter((id) => state.inventory[id]);
+  if (owned.length < 2) return;
+  const i = owned.indexOf(state.held);
+  equip(owned[(i + 1) % owned.length]);
+}
+
+function renderInventory() {
+  const list = document.getElementById("inventory-list");
+  list.innerHTML = "";
+  const add = (name, btnLabel, onClick, disabled) => {
+    const row = document.createElement("div");
+    row.className = "inv-row";
+    const span = document.createElement("span");
+    span.textContent = name;
+    row.appendChild(span);
+    if (btnLabel) {
+      const b = document.createElement("button");
+      b.className = "choice-button";
+      b.textContent = btnLabel;
+      b.disabled = !!disabled;
+      b.addEventListener("click", onClick);
+      row.appendChild(b);
+    }
+    list.appendChild(row);
+  };
+  HELD_ORDER.filter((id) => state.inventory[id]).forEach((id) => {
+    const name = id === "flashlight" ? "Flashlight" : "Axe";
+    add(name, state.held === id ? "In hand" : "Equip", () => { equip(id); renderInventory(); }, state.held === id);
+  });
+  if (state.batteries > 0) {
+    add(`Batteries x${state.batteries}`, "Use", () => {
+      if (state.batteries <= 0) return;
+      state.batteries -= 1;
+      state.batteryLevel = 100;
+      playClick();
+      renderInventory();
+    }, state.batteryLevel >= 100);
+  }
+  ["johnKey"].filter((id) => state.inventory[id]).forEach(() => add("Brass Key", null));
+  if (!list.children.length) add("Empty", null);
+}
+
+function openInventory() {
+  state.phase = "inventory";
+  keys.clear();
+  renderInventory();
+  document.getElementById("inventory-overlay").classList.remove("hidden");
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+}
+
+function closeInventory() {
+  document.getElementById("inventory-overlay").classList.add("hidden");
+  state.phase = "explore";
+  renderer.domElement.requestPointerLock();
 }
 
 // ---- keyboard input -----------------------------------------------------------
@@ -1986,11 +2079,24 @@ window.addEventListener("keydown", (e) => {
       openPauseMenu();
     } else if (state.phase === "paused") {
       closePauseMenu();
+    } else if (state.phase === "inventory") {
+      closeInventory();
     }
     return;
   }
 
+  if (key === "shift" && !e.repeat) {
+    if (state.phase === "explore" && !state.activeNpc) openInventory();
+    else if (state.phase === "inventory") closeInventory();
+    return;
+  }
+  if (state.phase === "inventory") return;
   if (state.phase !== "explore") return;
+  if (key === "capslock") {
+    e.preventDefault();
+    cycleHeld();
+    return;
+  }
   if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
     e.preventDefault();
     keys.add(key);
