@@ -78,7 +78,10 @@ function groundLit() {
 }
 
 function currentLightRange() {
-  return hasFlashlightOn() || groundLit() ? LIT_RANGE : DARK_RANGE;
+  if (hasFlashlightOn() || groundLit()) return LIT_RANGE;
+  // the reception lamp throws enough light that the desk reads from across the lobby
+  const near = Math.hypot(yawObject.position.x - 5.7, yawObject.position.z - 11.8) < 6.5;
+  return near ? 7 : DARK_RANGE;
 }
 
 function isOutside() {
@@ -559,7 +562,7 @@ camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
 const FLASHLIGHT_MAX_INTENSITY = 22; // tight beam with real falloff, so it needs more punch
-const FLASHLIGHT_RAMP_SPEED = 7; // intensity/second — fast but not an instant snap
+const FLASHLIGHT_RAMP_SPEED = 160; // intensity/second — about a tenth of a second, so on/off feels instant
 let flashlightCurrentIntensity = 0;
 let flashlightFlickerTimer = 0;
 
@@ -705,6 +708,10 @@ function updateHeldFlashlight(dt) {
   heldLensMat.color.setRGB(0.16 + 0.84 * k, 0.2 + 0.77 * k, 0.21 + 0.55 * k);
 }
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
+let deskBulbMat = null;
+const DESK_LAMP_LEVEL = 10;
+let deskLampFlickerLeft = 0;
+let deskLampNextFlicker = 6;
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
 
@@ -1679,13 +1686,13 @@ function addStreetLight(x, z) {
 // the room around it.
 function addReceptionDesk(x, z) {
   const open = state.flags.drawers || 0;
-  addBox(1.6, 0.7, 0.6, x, 0.35, z, 0x241f18);
-  addBox(1.72, 0.05, 0.72, x, 0.725, z, 0x2f261b); // top
+  addBox(1.6, 0.7, 0.6, x, 0.35, z, 0x4a3826);
+  addBox(1.72, 0.05, 0.72, x, 0.725, z, 0x5d4631); // top
   const zf = z - 0.3;
   for (let i = 0; i < 3; i++) {
     const y = 0.2 + i * 0.19;
     const o = i < open ? 0.28 : 0;
-    addBox(0.5, 0.16, 0.03, x + 0.45, y, zf - 0.015 - o, 0x3a2e20);
+    addBox(0.5, 0.16, 0.03, x + 0.45, y, zf - 0.015 - o, 0x6a5238);
     addBox(0.1, 0.02, 0.03, x + 0.45, y, zf - 0.04 - o, 0xb8963a); // pull
     if (i < open) {
       addBox(0.46, 0.03, 0.28, x + 0.45, y - 0.07, zf - 0.14, 0x1a1510);
@@ -1711,23 +1718,59 @@ function addReceptionDesk(x, z) {
   addBox(0.18, 0.025, 0.25, x - 0.45, 0.78, z + 0.1, 0xd8cfb4);
   addBox(0.18, 0.025, 0.25, x - 0.25, 0.78, z + 0.1, 0xd8cfb4);
 
-  const lampBaseMat = new THREE.MeshStandardMaterial({ color: 0x171512 });
-  const lampBase = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.32, 0.07), lampBaseMat);
-  lampBase.position.set(x + 0.4, 0.75 + 0.16, z - 0.15);
-  worldGroup.add(lampBase);
+  // A proper desk lamp: round base, arm, open metal shade, glowing yellow bulb.
+  const lx = x + 0.5;
+  const lz = z - 0.2;
+  const metal = new THREE.MeshStandardMaterial({ color: 0x1d2a22, roughness: 0.5, metalness: 0.4 });
+  const lbase = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.1, 0.03, 14), metal);
+  lbase.position.set(lx, 0.765, lz);
+  const lstem = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.3, 0.025), metal);
+  lstem.position.set(lx, 0.93, lz);
+  const larm = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.022, 0.022), metal);
+  larm.position.set(lx - 0.09, 1.08, lz);
+  const shade = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.15, 0.14, 14, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x1d2a22, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide })
+  );
+  shade.position.set(lx - 0.2, 1.06, lz);
+  deskBulbMat = new THREE.MeshBasicMaterial({ color: 0xffd27a });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), deskBulbMat);
+  bulb.position.set(lx - 0.2, 1.0, lz);
+  [lbase, lstem, larm, shade, bulb].forEach((m) => worldGroup.add(m));
 
-  const bulbMat = new THREE.MeshStandardMaterial({
-    color: 0x332211,
-    emissive: 0xffbb55,
-    emissiveIntensity: 1.3,
-  });
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), bulbMat);
-  bulb.position.set(x + 0.4, 0.75 + 0.34, z - 0.15);
-  worldGroup.add(bulb);
-
-  deskLamp = new THREE.PointLight(0xffbb55, 0.8, 3, 2.4);
-  deskLamp.position.set(x + 0.4, 0.75 + 0.38, z - 0.15);
+  deskLamp = new THREE.PointLight(0xffb347, DESK_LAMP_LEVEL, 8, 2);
+  deskLamp.position.set(lx - 0.2, 0.96, lz);
   worldGroup.add(deskLamp);
+
+  // RECEPTION plate on the customer-facing side
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.7, 0.18),
+    new THREE.MeshStandardMaterial({ map: makePlateTexture("RECEPTION", "#b89a52", "#2a1f0c"), roughness: 0.4, metalness: 0.5 })
+  );
+  plate.position.set(x, 0.5, z + 0.305);
+  worldGroup.add(plate);
+
+  // office chair pushed back behind the desk
+  const seatMat = new THREE.MeshStandardMaterial({ color: 0x4a2f26, roughness: 0.9 });
+  const cz = z - 0.85;
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.08, 0.46), seatMat);
+  seat.position.set(x - 0.2, 0.5, cz);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.55, 0.07), seatMat);
+  back.position.set(x - 0.2, 0.82, cz - 0.22);
+  back.rotation.x = -0.12;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8), metal);
+  pole.position.set(x - 0.2, 0.26, cz);
+  [seat, back, pole].forEach((m) => {
+    m.rotation.y += 0.35;
+    worldGroup.add(m);
+  });
+  for (let i = 0; i < 5; i++) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.04), metal);
+    leg.position.set(x - 0.2, 0.05, cz);
+    leg.rotation.y = (i * Math.PI * 2) / 5 + 0.35;
+    leg.translateX(0.14);
+    worldGroup.add(leg);
+  }
 }
 
 // Staircase filling the back of the stairwell room: steps rise to the ceiling
@@ -1936,11 +1979,18 @@ function updateDoorAnimation(dt) {
 
 function updateDeskLampFlicker(dt) {
   if (!deskLamp) return;
-  deskLampFlickerTimer += dt;
-  if (deskLampFlickerTimer > 0.13) {
-    deskLampFlickerTimer = 0;
-    deskLamp.intensity = 0.5 + Math.random() * 0.55;
+  deskLampNextFlicker -= dt;
+  if (deskLampNextFlicker <= 0 && deskLampFlickerLeft <= 0) {
+    deskLampFlickerLeft = 0.3 + Math.random() * 0.5; // a short stutter every so often
+    deskLampNextFlicker = 6 + Math.random() * 10;
   }
+  let level = 1;
+  if (deskLampFlickerLeft > 0) {
+    deskLampFlickerLeft -= dt;
+    level = Math.random() < 0.55 ? 0.08 + Math.random() * 0.4 : 1;
+  }
+  deskLamp.intensity = DESK_LAMP_LEVEL * 1.1 * level;
+  if (deskBulbMat) deskBulbMat.color.setRGB(1 * (0.3 + 0.7 * level), 0.82 * (0.3 + 0.7 * level), 0.48 * (0.3 + 0.7 * level));
 }
 
 // Drains the battery while genuinely on, smoothly ramps the light's actual
@@ -2174,6 +2224,9 @@ function handleInteract() {
       if (state.flags.powerOn) addLog("The power is on.");
       else {
         state.flags.powerOn = true;
+        state.entity.mode = "done"; // the light drives it out of the building
+        entityGroup.visible = false;
+        setFear(0);
         playClick();
         setTimeout(playKnock, 200);
         addLog("Power restored.");
