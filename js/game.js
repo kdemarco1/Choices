@@ -1421,6 +1421,7 @@ function buildWorld() {
   addStairwell(18.5);
   FIXTURES.forEach(addFixture);
   addBed(14.5, 1.6); // John's apartment
+  addBox(0.5, 0.75, 1.0, 15.45, 0.375, 2.8, 0x2e2419); // his desk
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
   const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
@@ -1440,8 +1441,9 @@ function buildWorld() {
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
-    else if (it.id === "axe") addAxeModel(it.x, 0.78, it.y);
-    else if (it.note) addBox(0.2, 0.012, 0.28, it.x, 0.02, it.y, 0xcfc6a8).rotation.y = it.x;
+    else if (it.id === "axe") addAxeModel(it.x, 0.07, it.y);
+    else if (it.id === "batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, 0.78, it.y + o - 0.03, 0x9a7a1a));
+    else if (it.note) addBox(0.2, 0.012, 0.28, it.x, it.h || 0.02, it.y, 0xcfc6a8).rotation.y = it.x;
     else addMarkerSprite(it.x, it.y, it.color, 0.4, it.height);
   });
 }
@@ -1639,18 +1641,10 @@ function addChair(x, z) {
 
 // A plain, unmade bed in John's room.
 function addBed(x, z) {
-  const frame = new THREE.Mesh(
-    new THREE.BoxGeometry(1.7, 0.4, 0.9),
-    new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 1 })
-  );
-  frame.position.set(x, 0.2, z);
-  worldGroup.add(frame);
-  const sheet = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 0.12, 0.8),
-    new THREE.MeshStandardMaterial({ color: 0x59544a, roughness: 1 })
-  );
-  sheet.position.set(x, 0.46, z);
-  worldGroup.add(sheet);
+  const wood = 0x2a2320;
+  [[-0.8, -0.4], [0.8, -0.4], [-0.8, 0.4], [0.8, 0.4]].forEach(([dx, dz]) => addBox(0.07, 0.34, 0.07, x + dx, 0.17, z + dz, wood));
+  addBox(1.7, 0.08, 0.9, x, 0.38, z, wood); // raised, so there's room underneath
+  addBox(1.6, 0.12, 0.8, x, 0.48, z, 0x59544a);
 }
 
 function addMarkerSprite(x, y, colorHex, scale, height) {
@@ -1969,7 +1963,8 @@ function handleInteract() {
   } else if (target.type === "item") {
     const item = ITEMS.find((it) => it.id === target.id);
     state.inventory[target.id] = true;
-    if (item.note) addLog(item.pickupText);
+    if (item.note || item.id === "batteries") addLog(item.pickupText);
+    if (item.id === "batteries") state.batteryLevel = 100;
     if (target.id === "flashlight") {
       addLog("Press F to turn the flashlight on.");
     }
