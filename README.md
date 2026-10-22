@@ -4,13 +4,13 @@ A first-person horror exploration game. Plain HTML/CSS/JS — no build step, no 
 
 ## Controls
 
-- **W A S D** — move and strafe
-- **Mouse** — look around (click the view to enable)
-- **E** — interact
+- **W A S D** - move and strafe
+- **Mouse** - look around (click the view to enable)
+- **E** - interact
 - **F** - flashlight
 - **CAPS Lock** - switch item
 - **SHIFT** - inventory screen
-- **Esc** — close dialogue
+- **Esc** - close dialogue
 
 ## Project structure
 
