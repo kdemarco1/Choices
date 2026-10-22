@@ -86,6 +86,7 @@ let audioCtx = null;
 let ambientGains = [];
 let footstepTimer = 0;
 let noiseBuf = null;
+let doorCreakBuffer = null; // the recorded creak, loaded after the first click
 
 function initAudio() {
   if (audioCtx) return;
@@ -105,6 +106,17 @@ function initAudio() {
     o.start();
     ambientGains.push(g);
   });
+  // The recorded door creak. If it can't load (e.g. opened as a plain file), the
+  // synthesized creak below is used instead.
+  if (typeof fetch === "function") {
+    fetch("audio/door-creak.mp3")
+      .then((r) => r.arrayBuffer())
+      .then((buf) => audioCtx.decodeAudioData(buf))
+      .then((decoded) => {
+        doorCreakBuffer = decoded;
+      })
+      .catch(() => {});
+  }
 }
 
 function setSoundEnabled(on) {
@@ -134,9 +146,27 @@ function playFootstep(quiet) {
 // A slow, rusty hinge: two sawtooth voices pushed through a resonant filter
 // that sweeps as the door turns, chopped by a fast stick-slip pulse, with a
 // latch click at the start and a soft thud when it comes to rest.
-function playDoorCreak(pitch) {
+function playDoorCreak(door) {
   if (!audioReady()) return;
-  pitch = pitch || 1;
+  const cfg = typeof door === "number" ? { creak: door } : door || {};
+  if (doorCreakBuffer) {
+    // Same recording for every door, but each door shifts its speed (heavier
+    // doors slower and lower), darkens or brightens it, changes its loudness and
+    // starts a little way in, plus a tiny random drift so no two opens match.
+    const src = audioCtx.createBufferSource();
+    src.buffer = doorCreakBuffer;
+    src.playbackRate.value = Math.max(0.6, Math.min(1.4, (cfg.creak || 1) * (0.97 + Math.random() * 0.06)));
+    const tone = audioCtx.createBiquadFilter();
+    tone.type = "lowpass";
+    tone.frequency.value = cfg.creakTone || 8000;
+    tone.Q.value = 0.7;
+    const level = audioCtx.createGain();
+    level.gain.value = 0.7 * (cfg.creakGain || 1);
+    src.connect(tone).connect(level).connect(audioCtx.destination);
+    src.start(audioCtx.currentTime, cfg.creakStart || 0);
+    return;
+  }
+  const pitch = cfg.creak || 1;
   const t = audioCtx.currentTime;
   const dur = 1.2 + Math.random() * 0.4;
   const master = audioCtx.createGain();
@@ -1695,7 +1725,7 @@ function updateDoorAnimation(dt) {
       pivot.rotation.y = target;
       return;
     }
-    const step = DOOR_OPEN_SPEED * dt;
+    const step = DOOR_OPEN_SPEED * (door.creak || 1) * dt; // heavier doors swing slower, matching their creak
     pivot.rotation.y = target > current ? Math.min(target, current + step) : Math.max(target, current - step);
   });
 }
@@ -1872,14 +1902,14 @@ function handleInteract() {
     const door = doorList().find((d) => d.id === target.id);
     if (door.isFront) {
       state.frontDoorOpen = true;
-      playDoorCreak(door.creak);
+      playDoorCreak(door);
     } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
       playKnock();
       addLog(door.lockedText || "Locked.");
     } else {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
-      playDoorCreak(door.creak);
+      playDoorCreak(door);
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
         state.entity.timer = ENTITY_SPAWN_DELAY;

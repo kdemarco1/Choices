@@ -95,7 +95,7 @@ const FRONT_DOOR = {
   keyhole: true,
   kick: true,
   openAngle: -Math.PI * 0.5, // swings in against the recess wall
-  creak: 0.8,
+  creak: 0.8, creakTone: 4200, creakGain: 1.0, creakStart: 0, // slow and heavy
 };
 
 // Interior doors that really open. x/y is the centre of the wall cell.
@@ -104,25 +104,25 @@ const FRONT_DOOR = {
 const DOORS = [
   // lobby -> hallway: dark walnut with frosted glass, a pull handle and kick plate
   { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false,
-    style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9 },
+    style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9, creakTone: 6500, creakGain: 0.85, creakStart: 0.03 },
   // apartment 1: dark red four-panel door, brass knob, deadbolt, peephole
   { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true,
-    style: "wood4", plate: "1", baseColor: "#5a2c28", frame: "#2a1512", handle: "knob", deadbolt: true, peephole: true, metal: "#b8963a", creak: 1.0,
+    style: "wood4", plate: "1", baseColor: "#5a2c28", frame: "#2a1512", handle: "knob", deadbolt: true, peephole: true, metal: "#b8963a", creak: 1.0, creakTone: 8000, creakGain: 0.8, creakStart: 0,
     lockedText: "Locked." },
   // apartment 2: yellowed cream six-panel door, lever handle
   { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
-    style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15 },
+    style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15, creakTone: 11000, creakGain: 0.7, creakStart: 0.06 }, // light and quick
   // apartment 3: modern blue-grey flush door, steel lever and deadbolt
   { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true,
-    style: "flush", plate: "3", baseColor: "#3e4a52", frame: "#1d2327", handle: "lever", deadbolt: true, peephole: true, metal: "#c4c8cc", creak: 0.95,
+    style: "flush", plate: "3", baseColor: "#3e4a52", frame: "#1d2327", handle: "lever", deadbolt: true, peephole: true, metal: "#c4c8cc", creak: 0.95, creakTone: 5500, creakGain: 0.8, creakStart: 0.02,
     lockedText: "Locked." },
   // apartment 4 (John's): old oak door with an arched panel, brass knob and keyhole
   { id: "john", x: 14.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey",
-    style: "arch", plate: "4", baseColor: "#4c3a34", frame: "#201813", handle: "knob", keyhole: true, metal: "#b8963a", creak: 0.85,
+    style: "arch", plate: "4", baseColor: "#4c3a34", frame: "#201813", handle: "knob", keyhole: true, metal: "#b8963a", creak: 0.82, creakTone: 2800, creakGain: 1.0, creakStart: 0.04, // old, dark, slow
     unlockLabel: "Unlock Apartment 4", lockedText: "Locked. You need a key." },
   // stairwell: green steel fire door with a push bar and kick plate
   { id: "stairs", x: 18.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
-    style: "fire", baseColor: "#2f4a3c", frame: "#171f1a", handle: "pushbar", kick: true, metal: "#c8ccd0", creak: 0.7 },
+    style: "fire", baseColor: "#2f4a3c", frame: "#171f1a", handle: "pushbar", kick: true, metal: "#c8ccd0", creak: 0.7, creakTone: 3800, creakGain: 1.0, creakStart: 0 }, // heavy steel
 ];
 
 // One-sided things on the lobby wall: they look like doors but only exist on
