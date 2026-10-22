@@ -72,8 +72,13 @@ function hasFlashlightOn() {
   return !!(state.inventory.flashlight && state.held === "flashlight" && state.batteryLevel > 0 && state.flashlightOn);
 }
 
+// With the breaker on, the ground floor (lobby, hall, apartments, stairwell, staff room) is lit by ceiling fluorescents.
+function groundLit() {
+  return !!state.flags.powerOn && yawObject.position.x < 21 && yawObject.position.z < DOOR_ROW;
+}
+
 function currentLightRange() {
-  return hasFlashlightOn() ? LIT_RANGE : DARK_RANGE;
+  return hasFlashlightOn() || groundLit() ? LIT_RANGE : DARK_RANGE;
 }
 
 function isOutside() {
@@ -1535,18 +1540,19 @@ function buildWorld() {
   addBox(0.5, 0.75, 1.0, 15.45, 0.375, 2.8, 0x2e2419); // his desk
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
-  const aptLight = new THREE.PointLight(0xffbb66, 0.12 * POWER(), 3, 2);
+  const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
   aptLight.position.set(6.5, 2.4, 2.2);
   worldGroup.add(aptLight);
 
   // One weak, cold bulb in the hallway so it isn't a total void.
-  [4.5, 8.5, 12.5, 16.5].forEach((hx) => {
-    const hallLight = new THREE.PointLight(0x8fa0b8, 0.07 * POWER(), 5, 2);
+  if (!state.flags.powerOn) [8.5, 12.5, 16.5].forEach((hx) => {
+    const hallLight = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
     hallLight.position.set(hx, WALL_HEIGHT * 0.9, 5.5);
     worldGroup.add(hallLight);
   });
 
   addLevels();
+  addFluorescents();
   worldGroup.traverse((o) => { if (o.isPointLight) o.intensity *= 1.1; }); // environment 10% brighter
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
@@ -1567,7 +1573,44 @@ function buildWorld() {
   });
 }
 
-const POWER = () => (state.flags.powerOn ? 6 : 1); // the breaker brings the building lights up
+// Ceiling fluorescent tubes on the ground floor, switched on by the breaker.
+let fluoLights = [];
+const FLUORESCENTS = [
+  [3.5, 10.5], [8.5, 9.5], [13.5, 10.5], [17.5, 9.5], // lobby
+  [8.5, 6.0], [12.5, 6.0], [17.0, 6.0], // hallway
+  [6.5, 2.0], [14.5, 2.0], // apartment 2, John's room
+  [18.5, 3.4], // stairwell
+  [3.0, 6.0], // staff room
+];
+function addFluorescents() {
+  fluoLights = [];
+  if (!state.flags.powerOn) return;
+  const tubeMat = new THREE.MeshBasicMaterial({ color: 0xeaf6e0 });
+  FLUORESCENTS.forEach(([x, z]) => {
+    addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, z, 0x9a9a96); // housing
+    const tube = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.03, 0.12), tubeMat);
+    tube.position.set(x, WALL_HEIGHT - 0.07, z);
+    worldGroup.add(tube);
+    const l = new THREE.PointLight(0xe4f2dc, 20, 14, 2);
+    l.position.set(x, WALL_HEIGHT - 0.2, z);
+    worldGroup.add(l);
+    l.userData.base = 20;
+    fluoLights.push(l);
+  });
+}
+
+let fluoTimer = 0;
+function updateFluorescents(dt) {
+  if (!fluoLights.length) return;
+  fluoTimer -= dt;
+  if (fluoTimer > 0) return;
+  fluoTimer = 0.06 + Math.random() * 0.12;
+  fluoLights.forEach((l) => (l.intensity = l.userData.base * 1.1));
+  if (Math.random() < 0.05) {
+    const l = fluoLights[Math.floor(Math.random() * fluoLights.length)];
+    l.intensity = l.userData.base * 1.1 * (0.15 + Math.random() * 0.4); // a tube stutters
+  }
+}
 
 function addAxeModel(x, y, z) {
   const g = buildAxeGroup();
@@ -1601,7 +1644,7 @@ function addLevels() {
   worldGroup.add(sl);
   // faint bulbs so each level isn't a void
   [[35.5, 2.5, 3.0], [27.5, 2.5, 5.5], [24.5, 2.5, 2.5]].forEach(([x, y, z]) => {
-    const l = new THREE.PointLight(0x8fa0b8, 0.07 * POWER(), 5, 2);
+    const l = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
     l.position.set(x, y, z);
     worldGroup.add(l);
   });
@@ -1702,7 +1745,7 @@ function addStairwell(cx) {
     const plank = addBox(3.1, 0.17, 0.05, cx, y, 2.4 - (i % 2) * 0.06, 0x3a2a1c);
     plank.rotation.z = ((i % 3) - 1) * 0.06;
   });
-  const bulb = new THREE.PointLight(0xaabbaa, 0.1 * POWER(), 4, 2);
+  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
   bulb.position.set(cx, 2.5, 3.2);
   worldGroup.add(bulb);
 }
@@ -2501,7 +2544,7 @@ function updateEntity(dt) {
     if (!state.flags.entityRecoiled) {
       state.flags.entityRecoiled = true;
     }
-  } else if (hasFlashlightOn()) {
+  } else if (hasFlashlightOn() || groundLit()) {
     speed = ENTITY_SPEED_WATCHING;
   } else {
     speed = state.batteryLevel <= 0 ? ENTITY_SPEED_DEAD : ENTITY_SPEED_DARK;
@@ -2561,6 +2604,7 @@ function gameLoop() {
   checkJohnRoom();
   updateEntity(dt);
   updateDoorAnimation(dt);
+  updateFluorescents(dt);
   syncAmbient();
   updateDeskLampFlicker(dt);
   updateBrokenLamp(dt);
