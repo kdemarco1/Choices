@@ -301,7 +301,6 @@ function toggleFlashlight() {
   }
   state.flashlightOn = !state.flashlightOn;
   playClick();
-  renderHud();
 }
 
 // ---- captions: short lines at the bottom middle that fade away ----------------
@@ -460,29 +459,6 @@ document.getElementById("toggle-prompts").addEventListener("click", () => {
 
 // ---- HUD / log --------------------------------------------------------------
 
-function renderHud() {
-  const hud = document.getElementById("hud");
-  const carried = Object.keys(state.inventory).filter((id) => state.inventory[id]);
-  const carriedNames = carried
-    .map((id) => (ITEMS.find((it) => it.id === id) || {}).name || id)
-    .join(" · ");
-  const flashlightStatus = hasFlashlightOn()
-    ? "ON"
-    : state.inventory.flashlight
-    ? state.batteryLevel <= 0
-      ? "dead"
-      : "OFF (press F)"
-    : "none";
-  hud.innerHTML = `
-    <div class="portrait" style="background:${PROTAGONIST.color}">${PROTAGONIST.name.charAt(0)}</div>
-    <div>
-      <div class="hud-name">${PROTAGONIST.name}</div>
-      <div class="stat-line">Carrying: ${carriedNames || "nothing"}</div>
-      <div class="stat-line">Flashlight: ${flashlightStatus}</div>
-    </div>
-  `;
-}
-
 // ---- story screen -------------------------------------------------
 
 document.getElementById("Story-screen").addEventListener("click", () => {
@@ -506,7 +482,6 @@ function enterExplore() {
   yawObject.rotation.y = 0;
   camera.rotation.x = 0;
   buildWorld();
-  renderHud();
   clock.start();
   renderer.setAnimationLoop(gameLoop);
   renderer.domElement.requestPointerLock();
@@ -1752,7 +1727,6 @@ function updateFlashlight(dt) {
     if (state.batteryLevel <= 0) {
       state.batteryLevel = 0;
       state.flashlightOn = false;
-      renderHud();
     }
   }
 
@@ -1921,7 +1895,6 @@ function handleInteract() {
     if (target.id === "flashlight") {
       addLog("Press F to turn the flashlight on.");
     }
-    renderHud();
     buildWorld(); // remove the collected item's marker from the scene
   } else if (target.type === "npc") {
     openDialogue(target.id);
