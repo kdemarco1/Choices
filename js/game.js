@@ -528,13 +528,13 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
 
-const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 12, 0.22, 0.4, 2); // small circle of light that falls off with distance
+const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 14, 0.312, 0.4, 2); // small circle of light that falls off with distance
 flashlightLight.position.set(0, 0, 0);
 camera.add(flashlightLight);
 camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
-const FLASHLIGHT_MAX_INTENSITY = 15; // tight beam with real falloff, so it needs more punch
+const FLASHLIGHT_MAX_INTENSITY = 22; // tight beam with real falloff, so it needs more punch
 const FLASHLIGHT_RAMP_SPEED = 7; // intensity/second — fast but not an instant snap
 let flashlightCurrentIntensity = 0;
 let flashlightFlickerTimer = 0;
@@ -1435,6 +1435,7 @@ function buildWorld() {
   });
 
   addLevels();
+  worldGroup.traverse((o) => { if (o.isPointLight) o.intensity *= 1.1; }); // environment 10% brighter
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
@@ -2264,7 +2265,7 @@ function gameLoop() {
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  const ambientTarget = 0.025; // nearly none: only real lights and the beam show anything
+  const ambientTarget = 0.03; // nearly none: only real lights and the beam show anything
   ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();
