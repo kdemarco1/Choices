@@ -523,13 +523,13 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
 scene.add(ambientLight);
 
 
-const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 14, 0.3, 0.28, 1.2); // narrow cone, tight soft edge
+const flashlightLight = new THREE.SpotLight(0xfff2d0, 0, 12, 0.22, 0.4, 2); // small circle of light that falls off with distance
 flashlightLight.position.set(0, 0, 0);
 camera.add(flashlightLight);
 camera.add(flashlightLight.target);
 flashlightLight.target.position.set(0, 0, -1);
 
-const FLASHLIGHT_MAX_INTENSITY = 5.0; // narrower beam, so brighter in the middle
+const FLASHLIGHT_MAX_INTENSITY = 15; // tight beam with real falloff, so it needs more punch
 const FLASHLIGHT_RAMP_SPEED = 7; // intensity/second — fast but not an instant snap
 let flashlightCurrentIntensity = 0;
 let flashlightFlickerTimer = 0;
@@ -994,7 +994,7 @@ function updateBrokenLamp(dt) {
     brokenLampLevel = Math.random() < 0.55 ? 1 : 0.06;
     brokenLampTimer = brokenLampLevel === 1 ? 0.2 + Math.random() * 1.8 : 0.04 + Math.random() * 0.12;
   }
-  brokenLamp.intensity = 1.9 * brokenLampLevel;
+  brokenLamp.intensity = 1.3 * brokenLampLevel;
 }
 
 function addTree(x, z, s, bare) {
@@ -1249,7 +1249,7 @@ function buildWorld() {
   const cols = MAP[0].length;
   const interiorMat = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
   // No moon: the street walls and roof carry a faint cold glow of their own.
-  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95, emissive: 0x0a1020 });
+  const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95, emissive: 0x03050a });
   const lobbyWallMat = new THREE.MeshStandardMaterial({ map: lobbyWallTexture, roughness: 0.95 });
   const facadeGeo = new THREE.BoxGeometry(1, FACADE_H, 1);
   const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
@@ -1305,14 +1305,14 @@ function buildWorld() {
 
   const ceiling = new THREE.Mesh(
     new THREE.PlaneGeometry(cols, interiorRows),
-    new THREE.MeshStandardMaterial({ color: 0x16161e, side: THREE.BackSide })
+    new THREE.MeshStandardMaterial({ color: 0x16161e, roughness: 1, side: THREE.DoubleSide }) // solid from below, so no sky shows through
   );
   ceiling.rotation.x = Math.PI / 2;
   ceiling.position.set(cols / 2, WALL_HEIGHT, interiorRows / 2);
   worldGroup.add(ceiling);
 
   // Roof: a cornice that overhangs the facade, and a pitched slope behind it.
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide, emissive: 0x070912 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide, emissive: 0x020309 });
   const cornice = new THREE.Mesh(new THREE.BoxGeometry(cols, 0.35, 1.6), roofMat);
   cornice.position.set(cols / 2, FACADE_H + 0.17, doorRow + 0.6);
   worldGroup.add(cornice);
@@ -1417,13 +1417,13 @@ function buildWorld() {
   addBed(14.5, 1.6); // John's apartment
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
-  const aptLight = new THREE.PointLight(0xffbb66, 0.35, 3.5, 2);
+  const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
   aptLight.position.set(6.5, 2.4, 2.2);
   worldGroup.add(aptLight);
 
   // One weak, cold bulb in the hallway so it isn't a total void.
   [4.5, 8.5, 12.5, 16.5].forEach((hx) => {
-    const hallLight = new THREE.PointLight(0x8fa0b8, 0.3, 6, 2);
+    const hallLight = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
     hallLight.position.set(hx, WALL_HEIGHT * 0.9, 5.5);
     worldGroup.add(hallLight);
   });
@@ -1454,7 +1454,7 @@ function addStreetLight(x, z) {
   head.position.set(x, 2.62, z);
   worldGroup.add(head);
 
-  const lamp = new THREE.PointLight(0xffdca0, 1.9, 7, 2);
+  const lamp = new THREE.PointLight(0xffdca0, 1.3, 6, 2);
   lamp.position.set(x, 2.55, z);
   worldGroup.add(lamp);
   return lamp;
@@ -1503,7 +1503,7 @@ function addStairwell(cx) {
     const plank = addBox(3.1, 0.17, 0.05, cx, y, 2.4 - (i % 2) * 0.06, 0x3a2a1c);
     plank.rotation.z = ((i % 3) - 1) * 0.06;
   });
-  const bulb = new THREE.PointLight(0xaabbaa, 0.35, 5, 2);
+  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
   bulb.position.set(cx, 2.5, 3.2);
   worldGroup.add(bulb);
 }
@@ -1992,7 +1992,7 @@ const ENTITY_SPEED_DEAD = 1.2; // battery gone: it moves faster
 const ENTITY_SPEED_WATCHING = 0.25;
 const ENTITY_RETREAT_SPEED = 1.8;
 const ENTITY_CATCH_DIST = 0.8;
-const ENTITY_BEAM_COS = 0.93; // matches the tighter beam (about 21 degrees)
+const ENTITY_BEAM_COS = 0.96; // matches the small beam (about 16 degrees)
 const ENTITY_BEAM_RANGE = 9;
 const ENTITY_SPAWNS = [
   [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
@@ -2179,7 +2179,7 @@ function gameLoop() {
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  const ambientTarget = hasFlashlightOn() ? 0.1 : 0.08; // little ambient wash, so the beam stands out
+  const ambientTarget = 0.025; // nearly none: only real lights and the beam show anything
   ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();
