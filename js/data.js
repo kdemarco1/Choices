@@ -152,11 +152,10 @@ const FIXTURES = [
 
 const JOHN_ROOM = { minX: 13, maxX: 16, minY: 1, maxY: 4 };
 
-const GUEST_LOG = [
-  "Sept 02 · Apt 1 · M. Okafor · in 8:40pm",
-  "Sept 09 · Apt 3 · R. Lindqvist · in 6:15pm",
-  "Sept 14 · Apt 4 · John · \"No visitors.\"",
-  "Sept 20 · Apt 4 · John · asked for extra bulbs and a box of nails",
-  "Sept 21 · Apt 4 · John · no sign-out. Dragging sounds upstairs.",
-  "Sept 25 · Night · power cut. Staff key stays in the desk.",
-];
+const GUEST_PAPER = {
+  id: "guestLog",
+  name: "Guest Log",
+  sloppy: 0.25,
+  seed: 13,
+  paper: "GUEST LOG\nSept 02 apt 1 Okafor\nSept 09 apt 3 Lindqvist\nSept 14 apt 4 John\nSept 20 apt 4 John, nails\nSept 25 power cut\nSept 28 apt 4 John\nin 3:13am   out ----\nwho let him in? door\nwas locked. ink still wet",
+};

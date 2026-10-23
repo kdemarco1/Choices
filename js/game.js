@@ -81,7 +81,7 @@ function currentLightRange() {
   if (hasFlashlightOn() || groundLit()) return LIT_RANGE;
   // the reception lamp throws enough light that the desk reads from across the lobby
   const near = Math.hypot(yawObject.position.x - 5.7, yawObject.position.z - 11.8) < 6.5;
-  return near ? 7 : DARK_RANGE;
+  return near ? 5.5 : DARK_RANGE;
 }
 
 function isOutside() {
@@ -707,9 +707,18 @@ function updateHeldFlashlight(dt) {
   const k = Math.max(0, Math.min(1, flashlightCurrentIntensity / FLASHLIGHT_MAX_INTENSITY));
   heldLensMat.color.setRGB(0.16 + 0.84 * k, 0.2 + 0.77 * k, 0.21 + 0.55 * k);
 }
+// Furniture you can't walk through: axis-aligned footprints registered while the world is built.
+let solids = [];
+function addSolid(cx, cz, w, d) {
+  solids.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
+}
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
+let staffSignMat = null;
+let staffSignLight = null;
+const STAFF_SIGN_LEVEL = 0.9;
+let staffSignTimer = 0;
 let deskBulbMat = null;
-const DESK_LAMP_LEVEL = 10;
+const DESK_LAMP_LEVEL = 4.5;
 let deskLampFlickerLeft = 0;
 let deskLampNextFlicker = 6;
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
@@ -1371,6 +1380,9 @@ function disposeWorld() {
 function buildWorld() {
   disposeWorld();
   doorPivots = {};
+  staffSignMat = null;
+  staffSignLight = null;
+  solids = [];
   deskLamp = null;
 
   const rows = MAP.length;
@@ -1545,6 +1557,7 @@ function buildWorld() {
   FIXTURES.forEach(addFixture);
   addBed(14.5, 1.6); // John's apartment
   addBox(0.5, 0.75, 1.0, 15.45, 0.375, 2.8, 0x2e2419); // his desk
+  addSolid(15.45, 2.8, 0.5, 1.0);
   addTable(6.5, 1.5); // apartment 2, where the key is
   addChair(5.4, 2.3);
   const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
@@ -1633,6 +1646,8 @@ function addLevels() {
   addBox(0.95, 0.05, 0.05, 17.5, 0.03, 3.1, 0x2a2a2c);
   // basement: workbench, rubble blocking the corridor
   addBox(1.4, 0.8, 0.6, 35.5, 0.4, 1.5, 0x3a2a1c);
+  addSolid(35.5, 1.5, 1.4, 0.6);
+  addSolid(36.4, 4.4, 0.5, 0.5);
   addBox(0.5, 0.5, 0.5, 36.4, 0.25, 4.4, 0x2d2d2a);
   [[41.5, 3.5, 1.3], [41.3, 3.2, 0.9], [41.7, 3.8, 0.8], [41.2, 3.9, 0.6]].forEach(([x, z, s], i) => {
     const r = addBox(s, s, s, x, s / 2, z, i % 2 ? 0x3a3835 : 0x2a2927);
@@ -1641,9 +1656,19 @@ function addLevels() {
   addBox(0.9, 0.04, 0.9, 34.5, 0.02, 4.8, 0x2a2a2c);
   // upstairs: stairs down at the end of the hall
   addBox(0.9, 0.04, 0.9, 31.5, 0.02, 5.5, 0x0b0b0c);
+  // flickering STAFF sign over the staff door, on the lobby side
+  staffSignMat = new THREE.MeshBasicMaterial({ map: makeSignTexture("STAFF", "#10140f", "#d7e6a8") });
+  const staffSign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.225), staffSignMat);
+  staffSign.position.set(3.5, 2.82, 8.02);
+  worldGroup.add(staffSign);
+  staffSignLight = new THREE.PointLight(0xd7e6a8, STAFF_SIGN_LEVEL, 4, 2);
+  staffSignLight.position.set(3.5, 2.6, 8.4);
+  worldGroup.add(staffSignLight);
   // staff room (west end of the hallway): shelf, mop bucket, breaker panel
   addBox(1.2, 1.6, 0.35, 1.8, 0.8, 6.8, 0x2a2118);
   addBox(0.3, 0.3, 0.3, 4.5, 0.15, 6.5, 0x3a3a3c);
+  addSolid(1.8, 6.8, 1.2, 0.35);
+  addSolid(4.5, 6.5, 0.3, 0.3);
   addBox(0.5, 0.6, 0.12, 2.0, 1.55, 5.06, 0x4a4d4f);
   addBox(0.05, 0.22, 0.05, 2.0, 1.55, 5.15, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
   const sl = new THREE.PointLight(0xffe0b0, 0.3, 4, 2);
@@ -1685,6 +1710,8 @@ function addStreetLight(x, z) {
 // flickering lamp — barely enough light to see the desk itself, let alone
 // the room around it.
 function addReceptionDesk(x, z) {
+  addSolid(x, z, 1.72, 0.72);
+  addSolid(x - 0.2, z - 0.85, 0.5, 0.5); // its chair
   const open = state.flags.drawers || 0;
   addBox(1.6, 0.7, 0.6, x, 0.35, z, 0x4a3826);
   addBox(1.72, 0.05, 0.72, x, 0.725, z, 0x5d4631); // top
@@ -1714,9 +1741,14 @@ function addReceptionDesk(x, z) {
   addBox(0.07, 0.04, 0.07, x + 0.65, 0.77, z - 0.1, 0xb8963a);
   addBox(0.25, 0.04, 0.18, x - 0.05, 0.77, z - 0.15, 0xcfc6a8);
   addBox(0.05, 0.09, 0.05, x - 0.05, 0.8, z + 0.2, 0x222222);
-  addBox(0.4, 0.015, 0.28, x - 0.35, 0.765, z + 0.1, 0x3a1c18); // guest log, open
-  addBox(0.18, 0.025, 0.25, x - 0.45, 0.78, z + 0.1, 0xd8cfb4);
-  addBox(0.18, 0.025, 0.25, x - 0.25, 0.78, z + 0.1, 0xd8cfb4);
+  addBox(0.27, 0.012, 0.35, x - 0.35, 0.756, z + 0.1, 0x3a2a1c); // clipboard
+  const logSheet = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.22, 0.28),
+    new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), GUEST_PAPER.paper, GUEST_PAPER.sloppy, GUEST_PAPER.seed)), roughness: 1 })
+  );
+  logSheet.rotation.set(-Math.PI / 2, 0, 0.05);
+  logSheet.position.set(x - 0.35, 0.766, z + 0.1);
+  worldGroup.add(logSheet);
 
   // A proper desk lamp: round base, arm, open metal shade, glowing yellow bulb.
   const lx = x + 0.5;
@@ -1841,6 +1873,7 @@ function addMailboxes(x, z) {
 }
 
 function addSofa(x, z) {
+  addSolid(x, z, 2.0, 0.85);
   addBox(1.8, 0.4, 0.8, x, 0.2, z, 0x2b2220);
   addBox(1.8, 0.55, 0.2, x, 0.65, z + 0.35, 0x251d1b);
   addBox(0.2, 0.55, 0.8, x - 0.9, 0.45, z, 0x251d1b);
@@ -1848,6 +1881,7 @@ function addSofa(x, z) {
 }
 
 function addPlant(x, z) {
+  addSolid(x, z, 0.4, 0.4);
   addBox(0.35, 0.4, 0.35, x, 0.2, z, 0x2a2018);
   const leaves = new THREE.Mesh(
     new THREE.SphereGeometry(0.3, 8, 8),
@@ -1868,16 +1902,19 @@ function addRunner(cx, cz, length, width) {
 }
 
 function addTable(x, z) {
+  addSolid(x, z, 0.9, 0.6);
   addBox(0.9, 0.75, 0.6, x, 0.375, z, 0x2e2419);
 }
 
 function addChair(x, z) {
+  addSolid(x, z, 0.45, 0.45);
   addBox(0.42, 0.45, 0.42, x, 0.225, z, 0x241c15);
   addBox(0.42, 0.45, 0.06, x, 0.68, z + 0.18, 0x241c15);
 }
 
 // A plain, unmade bed in John's room.
 function addBed(x, z) {
+  addSolid(x, z, 1.7, 0.9);
   const wood = 0x2a2320;
   [[-0.8, -0.4], [0.8, -0.4], [-0.8, 0.4], [0.8, 0.4]].forEach(([dx, dz]) => addBox(0.07, 0.34, 0.07, x + dx, 0.17, z + dz, wood));
   addBox(1.7, 0.08, 0.9, x, 0.38, z, wood); // raised, so there's room underneath
@@ -1904,6 +1941,7 @@ function isWall(x, y) {
   const door = doorAtCell(col, row);
   if (door) return !isDoorOpen(door);
   if (BLOCKED_CELLS.some(([bc, br]) => bc === col && br === row)) return true;
+  for (const s of solids) if (x > s.minX && x < s.maxX && y > s.minZ && y < s.maxZ) return true;
   return MAP[row][col] !== 0;
 }
 
@@ -1977,6 +2015,18 @@ function updateDoorAnimation(dt) {
   });
 }
 
+function updateStaffSign(dt) {
+  if (!staffSignMat) return;
+  staffSignTimer -= dt;
+  if (staffSignTimer > 0) return;
+  // mostly steady, with bursts of stutter and the odd full blackout
+  const r = Math.random();
+  const level = r < 0.55 ? 1 : r < 0.8 ? 0.45 + Math.random() * 0.4 : r < 0.92 ? 0.12 : 0;
+  staffSignTimer = level === 1 ? 0.15 + Math.random() * 0.9 : 0.04 + Math.random() * 0.1;
+  staffSignMat.color.setRGB(level, level, level);
+  if (staffSignLight) staffSignLight.intensity = STAFF_SIGN_LEVEL * 1.1 * level;
+}
+
 function updateDeskLampFlicker(dt) {
   if (!deskLamp) return;
   deskLampNextFlicker -= dt;
@@ -1989,7 +2039,7 @@ function updateDeskLampFlicker(dt) {
     deskLampFlickerLeft -= dt;
     level = Math.random() < 0.55 ? 0.08 + Math.random() * 0.4 : 1;
   }
-  deskLamp.intensity = DESK_LAMP_LEVEL * 1.1 * level;
+  deskLamp.intensity = DESK_LAMP_LEVEL * 1.1 * (0.85 + 0.15 * level); // the room barely changes; the bulb itself does the flashing
   if (deskBulbMat) deskBulbMat.color.setRGB(1 * (0.3 + 0.7 * level), 0.82 * (0.3 + 0.7 * level), 0.48 * (0.3 + 0.7 * level));
 }
 
@@ -2219,7 +2269,7 @@ function handleInteract() {
         buildWorld();
       }
     } else if (h.id === "guestLog") {
-      openReader("Guest Log", GUEST_LOG);
+      openPaper(GUEST_PAPER);
     } else if (h.id === "breaker") {
       if (state.flags.powerOn) addLog("The power is on.");
       else {
@@ -2660,6 +2710,7 @@ function gameLoop() {
   updateFluorescents(dt);
   syncAmbient();
   updateDeskLampFlicker(dt);
+  updateStaffSign(dt);
   updateBrokenLamp(dt);
   updateFlashlight(dt);
   updateHeldFlashlight(dt);
