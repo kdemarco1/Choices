@@ -42,6 +42,7 @@ const DOOR_ROW = Math.floor(FRONT_DOOR.y); // row 6 — everything south of this
 const LIT_RANGE = 12;
 const DARK_RANGE = 2.6;
 const MOON_RANGE = 12;
+const ELEVATOR = FIXTURES.find((f) => f.id === "elevator");
 const FACADE_H = 9; // the street-facing walls are three storeys tall
 
 // Fog is decided by where a surface IS, not where the camera stands: anything
@@ -715,6 +716,9 @@ function addSolid(cx, cz, w, d) {
 }
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
 let elevPanels = [];
+let elevLight = null;
+let elevLightMat = null;
+let elevLightTimer = 0;
 let elevAnim = null; // seconds into the door-opening sequence
 let staffSignMat = null;
 let staffSignLight = null;
@@ -1384,6 +1388,8 @@ function buildWorld() {
   disposeWorld();
   doorPivots = {};
   elevPanels = [];
+  elevLight = null;
+  elevLightMat = null;
   staffSignMat = null;
   staffSignLight = null;
   solids = [];
@@ -1405,6 +1411,7 @@ function buildWorld() {
     for (let col = 0; col < cols; col++) {
       if (MAP[row][col] !== 1) continue;
       if (col > 21 && row > 12) continue;
+      if (col === Math.floor(ELEVATOR.x) && row === Math.floor(ELEVATOR.y - 0.5)) continue; // the elevator cab takes this wall block
       if (doorAtCell(col, row)) continue; // door cells are drawn separately below
       const street = row >= doorRow;
       // the facade row shows the street texture outside and plain lobby wall inside
@@ -1853,7 +1860,14 @@ function addFixture(f) {
     new THREE.MeshStandardMaterial({ color: 0x1a1a1c, roughness: 0.8 })
   );
   frame.position.set(f.x, 1.35, f.y + 0.025);
-  worldGroup.add(frame);
+  if (f.style === "elevator") {
+    // open frame, so you can see into the cab through the gap in the doors
+    [[f.x - f.width / 2 - 0.03, 1.35, 0.06, 2.7], [f.x + f.width / 2 + 0.03, 1.35, 0.06, 2.7], [f.x, 2.63, f.width + 0.12, 0.15]].forEach(([x, y, w, h]) =>
+      addBox(w, h, 0.05, x, y, f.y + 0.025, 0x1a1a1c)
+    );
+  } else {
+    worldGroup.add(frame);
+  }
   if (!fixtureTextures[f.id]) {
     fixtureTextures[f.id] = makeThreeTexture(createStyledDoorTexture(f.style, f.plate, f.baseColor));
   }
@@ -1862,7 +1876,7 @@ function addFixture(f) {
     new THREE.MeshStandardMaterial({ map: fixtureTextures[f.id], roughness: 0.6, metalness: f.style === "elevator" ? 0.3 : 0 })
   );
   if (f.style === "elevator") {
-    addBox(f.width, 2.55, 0.01, f.x, 1.275, f.y + 0.046, 0x050507); // dark shaft behind the doors
+    addElevatorCab(f);
     [-1, 1].forEach((side) => {
       const tex = fixtureTextures[f.id].clone();
       tex.needsUpdate = true;
@@ -2057,6 +2071,52 @@ function updateDoorAnimation(dt) {
 }
 
 // k = 0 closed, 1 = as far as the doors get before they jam (the right leaf jams crooked)
+// The cab sits inside the wall block behind the doors, so you can see it through the gap — but the block stays solid.
+function addElevatorCab(f) {
+  const cx = f.x;
+  const steel = 0x80858a;
+  // back wall: steel on the cab side, plain wall facing the hallway
+  const wallM = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
+  const steelM = new THREE.MeshStandardMaterial({ color: steel, roughness: 0.5, metalness: 0.3 });
+  const back = new THREE.Mesh(new THREE.BoxGeometry(1, 3, 0.08), [wallM, wallM, wallM, wallM, steelM, wallM]);
+  back.position.set(Math.floor(cx) + 0.5, 1.5, 7.04);
+  worldGroup.add(back);
+  addBox(0.03, 2.6, 0.9, cx - 0.49, 1.3, 7.5, 0x6f7479); // sides
+  addBox(0.03, 2.6, 0.9, cx + 0.49, 1.3, 7.5, 0x6f7479);
+  addBox(0.95, 0.02, 0.9, cx, 0.01, 7.5, 0x3a3a3c); // floor
+  addBox(0.95, 0.04, 0.9, cx, 2.62, 7.5, 0x9a9ea2); // cab ceiling
+  addBox(1, 0.38, 1, Math.floor(cx) + 0.5, 2.81, 7.5, 0x3a3d3f); // wall above the cab
+  addBox(0.8, 0.03, 0.03, cx, 1.0, 7.07, 0xb8963a); // handrail
+  addBox(0.02, 0.35, 0.1, cx + 0.465, 1.1, 7.7, 0x25272a); // button panel
+  addBox(0.02, 0.05, 0.05, cx + 0.455, 1.18, 7.7, 0x7a2a22);
+  elevLightMat = new THREE.MeshBasicMaterial({ color: 0xe8f2e0 });
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.02, 0.5), elevLightMat);
+  panel.position.set(cx, 2.59, 7.5);
+  worldGroup.add(panel);
+  elevLight = new THREE.PointLight(0xe0eedd, 0, 5, 2);
+  elevLight.position.set(cx, 2.3, 7.55);
+  worldGroup.add(elevLight);
+}
+
+// The cab light only comes on once the power is on and the doors have been called, and it stutters.
+function updateElevatorLight(dt) {
+  if (!elevLight) return;
+  const on = state.flags.elevatorStuck || elevAnim !== null;
+  if (!on) {
+    elevLight.intensity = 0;
+    elevLightMat.color.setRGB(0.05, 0.05, 0.05);
+    return;
+  }
+  elevLightTimer -= dt;
+  if (elevLightTimer > 0) return;
+  const r = Math.random();
+  const level = r < 0.4 ? 1 : r < 0.7 ? 0.35 + Math.random() * 0.4 : r < 0.88 ? 0.08 : 0;
+  elevLightTimer = 0.04 + Math.random() * 0.18;
+  elevLight.intensity = 7 * 1.1 * level;
+  const c = 0.1 + 0.9 * level;
+  elevLightMat.color.setRGB(c * 0.91, c * 0.95, c * 0.88);
+}
+
 function setElevatorOpen(k) {
   elevPanels.forEach((m) => {
     const open = m.userData.side < 0 ? 0.22 : 0.17;
@@ -2810,6 +2870,7 @@ function gameLoop() {
   updateDeskLampFlicker(dt);
   updateStaffSign(dt);
   updateElevator(dt);
+  updateElevatorLight(dt);
   updateBrokenLamp(dt);
   updateFlashlight(dt);
   updateHeldFlashlight(dt);
