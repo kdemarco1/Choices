@@ -2549,14 +2549,10 @@ function renderInventory() {
 let pickupTimer = null;
 function showPickup(name) {
   const el = document.getElementById("pickup-popup");
-  const holdables = HELD_ORDER.filter((id) => state.inventory[id]).length;
-  let hint = "Shift: open inventory";
-  if (name === "Batteries") hint = "Shift: open inventory, then Use";
-  else if (holdables >= 2) hint = "Caps Lock: switch item  ·  Shift: inventory";
-  el.innerHTML = `Picked up: ${name}<span class="pickup-hint">${hint}</span>`;
+  el.textContent = `Picked up: ${name}`;
   el.classList.add("show");
   clearTimeout(pickupTimer);
-  pickupTimer = setTimeout(() => el.classList.remove("show"), 4200);
+  pickupTimer = setTimeout(() => el.classList.remove("show"), 2600);
 }
 
 function openReader(title, lines) {
