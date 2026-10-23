@@ -382,6 +382,7 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 function resetRun() {
+  elevAnim = null;
   state.flags = {};
   state.log = [];
   state.inventory = {};
@@ -713,6 +714,8 @@ function addSolid(cx, cz, w, d) {
   solids.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
 }
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
+let elevPanels = [];
+let elevAnim = null; // seconds into the door-opening sequence
 let staffSignMat = null;
 let staffSignLight = null;
 const STAFF_SIGN_LEVEL = 0.9;
@@ -1380,6 +1383,7 @@ function disposeWorld() {
 function buildWorld() {
   disposeWorld();
   doorPivots = {};
+  elevPanels = [];
   staffSignMat = null;
   staffSignLight = null;
   solids = [];
@@ -1400,7 +1404,7 @@ function buildWorld() {
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       if (MAP[row][col] !== 1) continue;
-      if (col > 21 && row > 7) continue;
+      if (col > 21 && row > 12) continue;
       if (doorAtCell(col, row)) continue; // door cells are drawn separately below
       const street = row >= doorRow;
       // the facade row shows the street texture outside and plain lobby wall inside
@@ -1579,7 +1583,7 @@ function buildWorld() {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
     else if (it.id === "axe") { if (state.flags.powerOn) addAxeModel(it.x, 0.07, it.y); }
-    else if (it.id === "batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, 0.78, it.y + o - 0.03, 0x9a7a1a));
+    else if (it.name === "Batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, it.h + 0.02, it.y + o - 0.03, 0x9a7a1a));
     else if (it.note) {
       const paper = new THREE.Mesh(
         new THREE.PlaneGeometry(0.22, 0.28),
@@ -1604,7 +1608,7 @@ const FLUORESCENTS = [
 ];
 function addFluorescents() {
   fluoLights = [];
-  if (!state.flags.powerOn) return;
+  if (!state.flags.powerOn || yawObject.position.x >= 21) return;
   const tubeMat = new THREE.MeshBasicMaterial({ color: 0xeaf6e0 });
   FLUORESCENTS.forEach(([x, z]) => {
     addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, z, 0x9a9a96); // housing
@@ -1644,18 +1648,23 @@ function addLevels() {
   // cellar hatch in the stairwell floor
   addBox(0.9, 0.04, 0.9, 17.5, 0.02, 3.55, 0x0b0b0c);
   addBox(0.95, 0.05, 0.05, 17.5, 0.03, 3.1, 0x2a2a2c);
-  // basement: workbench, rubble blocking the corridor
-  addBox(1.4, 0.8, 0.6, 35.5, 0.4, 1.5, 0x3a2a1c);
-  addSolid(35.5, 1.5, 1.4, 0.6);
-  addSolid(36.4, 4.4, 0.5, 0.5);
-  addBox(0.5, 0.5, 0.5, 36.4, 0.25, 4.4, 0x2d2d2a);
-  [[41.5, 3.5, 1.3], [41.3, 3.2, 0.9], [41.7, 3.8, 0.8], [41.2, 3.9, 0.6]].forEach(([x, z, s], i) => {
+  // basement (cols 46-69): boiler room, storage room, corridor blocked by rubble
+  addBox(1.4, 0.8, 0.6, 50.5, 0.4, 1.5, 0x3a2a1c); // workbench
+  addSolid(50.5, 1.5, 1.4, 0.6);
+  addBox(1.2, 1.7, 1.2, 53.5, 0.85, 5.1, 0x2d2d2a); // boiler
+  addBox(0.3, 1.0, 0.3, 53.5, 2.2, 5.1, 0x242422);
+  addSolid(53.5, 5.1, 1.2, 1.2);
+  addBox(0.8, 0.5, 0.5, 50.5, 0.25, 9.4, 0x3a2a1c); // crate with the batteries on it
+  addSolid(50.5, 9.4, 0.8, 0.5);
+  addBox(0.7, 0.7, 0.7, 53.4, 0.35, 10.4, 0x2f2a22);
+  addSolid(53.4, 10.4, 0.7, 0.7);
+  [[59.5, 3.5, 1.3], [59.3, 3.2, 0.9], [59.7, 3.8, 0.8], [59.2, 3.9, 0.6]].forEach(([x, z, s], i) => {
     const r = addBox(s, s, s, x, s / 2, z, i % 2 ? 0x3a3835 : 0x2a2927);
     r.rotation.y = i * 0.7;
   });
-  addBox(0.9, 0.04, 0.9, 34.5, 0.02, 4.8, 0x2a2a2c);
-  // upstairs: stairs down at the end of the hall
-  addBox(0.9, 0.04, 0.9, 31.5, 0.02, 5.5, 0x0b0b0c);
+  addBox(0.9, 0.04, 0.9, 47.5, 0.02, 1.55, 0x2a2a2c); // stairs up
+  // upstairs (cols 22-45): stairs down at the west end of the corridor
+  addBox(0.9, 0.04, 0.9, 23.5, 0.02, 6.5, 0x0b0b0c);
   // flickering STAFF sign over the staff door, on the lobby side
   staffSignMat = new THREE.MeshBasicMaterial({ map: makeSignTexture("STAFF", "#10140f", "#d7e6a8") });
   const staffSign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.225), staffSignMat);
@@ -1674,9 +1683,11 @@ function addLevels() {
   const sl = new THREE.PointLight(0xffe0b0, 0.3, 4, 2);
   sl.position.set(3, 2.5, 6);
   worldGroup.add(sl);
-  // faint bulbs so each level isn't a void
-  [[35.5, 2.5, 3.0], [27.5, 2.5, 5.5], [24.5, 2.5, 2.5]].forEach(([x, y, z]) => {
-    const l = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
+  // faint bulbs so each level isn't a void (only built for the level you're on)
+  const px = yawObject.position.x;
+  const bulbs = px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
+  bulbs.forEach(([x, y, z]) => {
+    const l = new THREE.PointLight(0x8fa0b8, 0.09, 6, 2);
     l.position.set(x, y, z);
     worldGroup.add(l);
   });
@@ -1736,7 +1747,7 @@ function addReceptionDesk(cx, cz) {
     }
   }
   if (open >= 3 && !state.inventory.staffKey) {
-    addKeyModel(x + 0.45, 0.545, zf - 0.14, 2.2); // the staff key, lying in the open drawer
+    addKeyModel(x + 0.45, 0.545, zf - 0.14); // the staff key, lying in the open drawer
   }
   // things on the desk: old monitor, phone, bell, papers, pens, the guest log
   addBox(0.2, 0.03, 0.15, x - 0.55, 0.765, z - 0.15, 0x1a1a18);
@@ -1850,8 +1861,27 @@ function addFixture(f) {
     new THREE.PlaneGeometry(f.width, 2.55),
     new THREE.MeshStandardMaterial({ map: fixtureTextures[f.id], roughness: 0.6, metalness: f.style === "elevator" ? 0.3 : 0 })
   );
-  panel.position.set(f.x, 1.275, f.y + 0.052);
-  worldGroup.add(panel);
+  if (f.style === "elevator") {
+    addBox(f.width, 2.55, 0.01, f.x, 1.275, f.y + 0.046, 0x050507); // dark shaft behind the doors
+    [-1, 1].forEach((side) => {
+      const tex = fixtureTextures[f.id].clone();
+      tex.needsUpdate = true;
+      tex.repeat.set(0.5, 1);
+      tex.offset.set(side < 0 ? 0 : 0.5, 0);
+      const half = new THREE.Mesh(
+        new THREE.PlaneGeometry(f.width / 2, 2.55),
+        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0.3 })
+      );
+      half.userData = { baseX: f.x + (side * f.width) / 4, side };
+      half.position.set(half.userData.baseX, 1.275, f.y + 0.052);
+      worldGroup.add(half);
+      elevPanels.push(half);
+    });
+    setElevatorOpen(state.flags.elevatorStuck ? 1 : 0);
+  } else {
+    panel.position.set(f.x, 1.275, f.y + 0.052);
+    worldGroup.add(panel);
+  }
   if (f.style === "elevator") {
     const lamp = new THREE.Mesh(
       new THREE.BoxGeometry(0.3, 0.07, 0.03),
@@ -2026,6 +2056,44 @@ function updateDoorAnimation(dt) {
   });
 }
 
+// k = 0 closed, 1 = as far as the doors get before they jam (the right leaf jams crooked)
+function setElevatorOpen(k) {
+  elevPanels.forEach((m) => {
+    const open = m.userData.side < 0 ? 0.22 : 0.17;
+    m.position.x = m.userData.baseX + m.userData.side * open * k;
+    m.rotation.z = m.userData.side > 0 ? 0.025 * k : 0;
+  });
+}
+
+function playDing() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "sine";
+  o.frequency.value = 880;
+  g.gain.setValueAtTime(0.12, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 1.3);
+}
+
+function updateElevator(dt) {
+  if (elevAnim === null) return;
+  elevAnim += dt;
+  const k = Math.min(1, elevAnim / 1.2);
+  setElevatorOpen(k * k * (3 - 2 * k));
+  if (elevAnim >= 1.3) {
+    elevAnim = null;
+    state.flags.elevatorStuck = true;
+    setElevatorOpen(1);
+    playKnock();
+    setTimeout(playKnock, 160);
+    addLog("The doors jam.");
+  }
+}
+
 function updateStaffSign(dt) {
   if (!staffSignMat) return;
   staffSignTimer -= dt;
@@ -2178,7 +2246,7 @@ function nearestInteractable() {
     const d = Math.hypot(f.x - px, f.y + 0.5 - py);
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
-      doorTarget = { type: "fixture", id: f.id, label: f.label };
+      doorTarget = { type: "fixture", id: f.id, label: f.id === "elevator" && state.flags.elevatorStuck ? "Pry Doors" : f.label };
     }
   });
   HOTSPOTS.forEach((h) => {
@@ -2201,6 +2269,7 @@ function travel(to) {
   yawObject.position.z = to.y;
   yawObject.rotation.y = to.yaw;
   keys.clear();
+  buildWorld(); // lights are built per level
 }
 
 function capitalize(s) {
@@ -2229,6 +2298,20 @@ function handleInteract() {
 
   if (target.type === "fixture") {
     const f = FIXTURES.find((x) => x.id === target.id);
+    if (f.id === "elevator") {
+      if (elevAnim !== null) return;
+      if (state.flags.elevatorStuck) {
+        playKnock();
+        addLog("Jammed. You'd need something to pry it open.");
+      } else if (!state.flags.powerOn) {
+        playClick();
+        addLog("No power.");
+      } else {
+        playDing();
+        elevAnim = 0;
+      }
+      return;
+    }
     if (f.sound === "click") playClick();
     else playKnock();
     addLog(f.text);
@@ -2303,7 +2386,7 @@ function handleInteract() {
     state.inventory[target.id] = true;
     if (!item.note) showPickup(item.name);
     if (item.note) openPaper(item);
-    if (item.id === "batteries") state.batteries += 1;
+    if (item.name === "Batteries") state.batteries += 1;
     if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
     if (target.id === "flashlight") {
       addLog("Press F to turn the flashlight on.");
@@ -2726,6 +2809,7 @@ function gameLoop() {
   syncAmbient();
   updateDeskLampFlicker(dt);
   updateStaffSign(dt);
+  updateElevator(dt);
   updateBrokenLamp(dt);
   updateFlashlight(dt);
   updateHeldFlashlight(dt);

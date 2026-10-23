@@ -17,33 +17,33 @@
 //  rows 14-18 the front yard ('x' = hedge at the left/right edge, curb along the road at row 19);
 //             the road runs behind you past row 19 and can't be crossed
 const MAP_ROWS_TEXT = [
-  "#####################################################", // 0
-  "#...#...#...#...#...###...#...####...##########.....#", // 1  apartments 1-3 and John's (4), then the stairwell
-  "#...#...#...#...#...###...#...####...##########.....#", // 2
-  "#...#...#...#...#...###...#...####...........##.....#", // 3
-  "########################.###.#####...##########.....#", // 4  apartment + stairwell doors
-  "#....#..............###.........##...################", // 5  hallway
-  "#....#..............###.........#####################", // 6
-  "#####################################################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
-  "#...................#################################", // 8  lobby
-  "#...................#################################", // 9
-  "#...................#################################", // 10
-  "#...................#################################", // 11
-  "#...................#################################", // 12
-  "########.############################################", // 13 facade, front door at col 8
-  "x...................x################################", // 14 street
-  "x...................x################################", // 15
-  "x...................x################################", // 16
-  "x...................x################################", // 17
-  "x...................x################################", // 18 player start
-  "xxxxxxxxxxxxxxxxxxxxx################################", // 19
+  "######################################################################", // 0
+  "#...#...#...#...#...###....#....#....#....#..##........########......#", // 1  apartments 1-3 and John's (4), then the stairwell
+  "#...#...#...#...#...###....#....#....#....#..##........########......#", // 2
+  "#...#...#...#...#...###....#....#....#....#..##......................#", // 3
+  "########################.####.####.####.###.###........########......#", // 4  apartment + stairwell doors
+  "#....#..............###......................##........########......#", // 5  hallway
+  "#....#..............###......................#####.###################", // 6
+  "#######################......................#####.###################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
+  "#...................####.####.####.####.###.###........###############", // 8  lobby
+  "#...................###....#....#....#....#..##........###############", // 9
+  "#...................###....#....#....#....#..##........###############", // 10
+  "#...................###....#....#....#....#..##........###############", // 11
+  "#...................##################################################", // 12
+  "########.#############################################################", // 13 facade, front door at col 8
+  "x...................x#################################################", // 14 street
+  "x...................x#################################################", // 15
+  "x...................x#################################################", // 16
+  "x...................x#################################################", // 17
+  "x...................x#################################################", // 18 player start
+  "xxxxxxxxxxxxxxxxxxxxx#################################################", // 19
 ];
 // 0 = open, 1 = wall (drawn), 2 = invisible-solid barrier (hedge at the yard edges, curb along the road)
 const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : ch === "x" ? 2 : 0)));
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
-const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17], [41, 3]]; // + the entrance columns and four yard trees
+const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17], [59, 3]]; // + the entrance columns and four yard trees
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
@@ -72,21 +72,24 @@ const ITEMS = [
   { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 15.45, y: 3.15, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
   { id: "batteries", name: "Batteries", h: 0.76, x: 15.45, y: 2.4, pickupText: "Spare batteries." },
   { id: "staffNote", name: "Notice", note: true, x: 4.2, y: 5.7, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
-  { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 1.6, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
-  { id: "note2", name: "Letter", note: true, x: 28.5, y: 1.6, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
-  { id: "note3", name: "Scrap of Paper", note: true, x: 23.7, y: 5.5, paper: "it only stops when\nsomeone goes into {his}\nroom. the key is 4", sloppy: 0.7, seed: 9 },
+  { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 2.0, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
+  { id: "note2", name: "Letter", note: true, x: 29.5, y: 2.0, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
+  { id: "note3", name: "Scrap of Paper", note: true, x: 34.6, y: 10.4, paper: "it only stops when\nsomeone goes into {his}\nroom. the key is 4", sloppy: 0.7, seed: 9 },
+  { id: "note4", name: "Child's Note", note: true, x: 39.5, y: 2.2, paper: "mommy says the man in\nroom 4 is {sleeping}\nbut i hear him walking\nabove me at night", sloppy: 1, seed: 17 },
+  { id: "note5", name: "Work Order", note: true, x: 51.5, y: 2.4, paper: "Elevator cable frayed.\nDo NOT let anyone ride it.\nNeed a crowbar to pry\nthe doors when it jams.", sloppy: 0.3, seed: 21 },
+  { id: "batteries2", name: "Batteries", x: 50.5, y: 9.4, h: 0.5, pickupText: "Spare batteries." },
 ];
 
 // Spots you can use with E. 'go' teleports between levels.
 const HOTSPOTS = [
-  { id: "cellar", x: 17.5, y: 3.55, label: "Go Down", go: { x: 35.5, y: 3.5, yaw: -Math.PI / 2 } },
-  { id: "cellarUp", x: 34.5, y: 4.8, label: "Go Up", go: { x: 17.5, y: 3.2, yaw: 0 } },
+  { id: "cellar", x: 17.5, y: 3.55, label: "Go Down", go: { x: 48.6, y: 2.6, yaw: -Math.PI / 2 } },
+  { id: "cellarUp", x: 47.5, y: 1.55, label: "Go Up", go: { x: 17.5, y: 3.2, yaw: 0 } },
   { id: "boards", x: 18.5, y: 3.3, label: "Boards" },
-  { id: "upDown", x: 31.5, y: 5.5, label: "Go Down", go: { x: 18.5, y: 3.3, yaw: 0 } },
+  { id: "upDown", x: 23.5, y: 6.5, label: "Go Down", go: { x: 18.5, y: 3.3, yaw: 0 } },
   { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 2.0, y: 5.6, label: "Flip Breaker" },
-  { id: "rubble", x: 40.4, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
+  { id: "rubble", x: 58.5, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
 
 const PROTAGONIST = {
