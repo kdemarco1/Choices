@@ -2005,7 +2005,7 @@ const _right = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
 function tryMovePlayer(dt) {
-  if (state.activeNpc) return; // frozen mid-dialogue
+  if (state.activeNpc || state.flags.tut === "open") return; // frozen mid-dialogue
 
   let forwardInput = 0;
   if (keys.has("w") || keys.has("arrowup")) forwardInput += 1;
@@ -2306,7 +2306,7 @@ function nearestInteractable() {
     const d = Math.hypot(f.x - px, f.y + 0.5 - py);
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
-      doorTarget = { type: "fixture", id: f.id, label: f.id === "elevator" && state.flags.elevatorStuck ? "Pry Doors" : f.label };
+      doorTarget = { type: "fixture", id: f.id, label: f.id === "elevator" && state.flags.elevatorStuck ? "" : f.label };
     }
   });
   HOTSPOTS.forEach((h) => {
@@ -2316,7 +2316,7 @@ function nearestInteractable() {
       let label = h.label;
       if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? (state.inventory.staffKey ? "Empty Drawers" : "Take Key") : "Search Drawer";
       if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Flip Breaker";
-      if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : state.held === "axe" ? "Chop Boards" : "Boards";
+      if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : ""; // no prompt: you have to try things
       doorTarget = { type: "hotspot", id: h.id, label };
     }
   });
@@ -2336,7 +2336,14 @@ function capitalize(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+function updateTutorialBanner() {
+  const b = document.getElementById("tutorial-banner");
+  if (!b) return;
+  b.classList.toggle("hidden", !(state.flags.tut === "open" && state.phase === "explore"));
+}
+
 function updateInteractPrompt() {
+  updateTutorialBanner();
   const prompt = document.getElementById("interact-prompt");
   if (state.activeNpc || !state.settings.showPrompts) {
     prompt.classList.add("hidden");
@@ -2347,12 +2354,16 @@ function updateInteractPrompt() {
     prompt.classList.add("hidden");
     return;
   }
+  if (!target.label) {
+    prompt.classList.add("hidden");
+    return;
+  }
   prompt.textContent = `[E] ${target.label}`;
   prompt.classList.remove("hidden");
 }
 
 function handleInteract() {
-  if (state.activeNpc) return;
+  if (state.activeNpc || state.flags.tut === "open") return;
   const target = nearestInteractable();
   if (!target) return;
 
@@ -2362,7 +2373,7 @@ function handleInteract() {
       if (elevAnim !== null) return;
       if (state.flags.elevatorStuck) {
         playKnock();
-        addLog("Jammed. You'd need something to pry it open.");
+        addLog("Jammed.");
       } else if (!state.flags.powerOn) {
         playClick();
         addLog("No power.");
@@ -2449,7 +2460,8 @@ function handleInteract() {
     if (item.name === "Batteries") state.batteries += 1;
     if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
     if (target.id === "flashlight") {
-      addLog("Press F to turn the flashlight on.");
+      state.inventory.hands = true; // empty hands, so there's always something to switch to
+      state.flags.tut = "open"; // forced tutorial: open the inventory, then switch items
     }
     buildWorld(); // remove the collected item's marker from the scene
   } else if (target.type === "npc") {
@@ -2459,16 +2471,25 @@ function handleInteract() {
 
 // ---- held items + inventory ---------------------------------------------------
 
-const HELD_ORDER = ["flashlight", "axe"];
+const HELD_ORDER = ["flashlight", "axe", "hands"];
+const HELD_NAMES = { flashlight: "Flashlight", axe: "Axe", hands: "Empty Hands" };
 
 function equip(id) {
   if (!state.inventory[id] || state.held === id) return;
   if (state.held === "flashlight") state.flashlightOn = false;
   state.held = id;
   playClick();
+  tutorialCheck();
+}
+
+// Forced tutorial after the flashlight: open the inventory, switch away, switch back.
+function tutorialCheck() {
+  if (state.flags.tut === "switch1" && state.held !== "flashlight") state.flags.tut = "switch2";
+  else if (state.flags.tut === "switch2" && state.held === "flashlight") state.flags.tut = null;
 }
 
 function cycleHeld() {
+  if (state.phase === "inventory") setTimeout(renderInventory, 0);
   const owned = HELD_ORDER.filter((id) => state.inventory[id]);
   if (owned.length < 2) return;
   const i = owned.indexOf(state.held);
@@ -2476,6 +2497,16 @@ function cycleHeld() {
 }
 
 function renderInventory() {
+  const hint = document.getElementById("inventory-hint");
+  if (hint) {
+    const t = state.flags.tut;
+    hint.innerHTML =
+      t === "switch1"
+        ? "F turns the flashlight on and off.<br />Caps Lock changes the item in your hand.<br /><b>Press Caps Lock now.</b>"
+        : t === "switch2"
+          ? "Your hands are empty.<br /><b>Press Caps Lock again</b> to take the flashlight back out."
+          : "Caps Lock: switch item in hand<br />Shift or Esc: close";
+  }
   const list = document.getElementById("inventory-list");
   list.innerHTML = "";
   const add = (name, btnLabel, onClick, disabled) => {
@@ -2495,7 +2526,7 @@ function renderInventory() {
     list.appendChild(row);
   };
   HELD_ORDER.filter((id) => state.inventory[id]).forEach((id) => {
-    const name = id === "flashlight" ? "Flashlight" : "Axe";
+    const name = HELD_NAMES[id];
     add(name, state.held === id ? "In hand" : "Equip", () => { equip(id); renderInventory(); }, state.held === id);
   });
   if (state.batteries > 0) {
@@ -2557,6 +2588,7 @@ document.getElementById("paper-close").addEventListener("click", closeReader);
 if (document.fonts && document.fonts.load) document.fonts.load('40px "Reenie Beanie"');
 
 function openInventory() {
+  if (state.flags.tut === "open") state.flags.tut = "switch1";
   state.phase = "inventory";
   keys.clear();
   renderInventory();
@@ -2583,7 +2615,7 @@ window.addEventListener("keydown", (e) => {
     } else if (state.phase === "paused") {
       closePauseMenu();
     } else if (state.phase === "inventory") {
-      closeInventory();
+      if (!state.flags.tut) closeInventory();
     } else if (state.phase === "reading") {
       closeReader();
     }
@@ -2592,14 +2624,20 @@ window.addEventListener("keydown", (e) => {
 
   if (key === "shift" && !e.repeat) {
     if (state.phase === "explore" && !state.activeNpc) openInventory();
-    else if (state.phase === "inventory") closeInventory();
+    else if (state.phase === "inventory" && !state.flags.tut) closeInventory();
     return;
   }
   if (state.phase === "reading") {
     if (key === "e") closeReader();
     return;
   }
-  if (state.phase === "inventory") return;
+  if (state.phase === "inventory") {
+    if (key === "capslock") {
+      e.preventDefault();
+      cycleHeld();
+    }
+    return;
+  }
   if (state.phase !== "explore") return;
   if (key === "capslock") {
     e.preventDefault();
@@ -2768,7 +2806,7 @@ function caughtByEntity() {
 
 function updateEntity(dt) {
   const e = state.entity;
-  if (state.phase !== "explore") return;
+  if (state.phase !== "explore" || state.flags.tut === "open") return;
   if (yawObject.position.x > 21) {
     entityGroup.visible = false;
     setFear(0);
