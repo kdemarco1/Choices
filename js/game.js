@@ -80,7 +80,7 @@ function groundLit() {
 function currentLightRange() {
   if (hasFlashlightOn() || groundLit()) return LIT_RANGE;
   // the reception lamp throws enough light that the desk reads from across the lobby
-  const near = Math.hypot(yawObject.position.x - 5.7, yawObject.position.z - 11.8) < 6.5;
+  const near = Math.hypot(yawObject.position.x - 2.8, yawObject.position.z - 10.5) < 6.5;
   return near ? 5.5 : DARK_RANGE;
 }
 
@@ -635,7 +635,7 @@ function addKeyModel(x, y, z, scale = 1) {
   g.rotation.y = 0.6;
   g.scale.setScalar(scale);
   g.position.set(x, y, z);
-  worldGroup.add(g);
+  (buildTarget || worldGroup).add(g);
 }
 
 // The flashlight in Maria's hand: bottom right of the view, glows when on.
@@ -1546,12 +1546,12 @@ function buildWorld() {
   addOutdoors(cols, rows);
 
   // The first thing you see on the left, just past the door.
-  addReceptionDesk(5.5, 12.0);
-  addMailboxes(1.1, 8.8);
+  addReceptionDesk(3.0, 10.8);
+  addMailboxes(19.9, 8.8);
   addSofa(15.5, 11.6);
   addPlant(18.6, 8.7);
   addPlant(14.7, 8.7);
-  addPlant(1.6, 12.3);
+  addPlant(19.3, 12.3);
   addRunner(10.5, 5.5, 17, 1.1);
   addStairwell(18.5);
   FIXTURES.forEach(addFixture);
@@ -1709,9 +1709,17 @@ function addStreetLight(x, z) {
 // A creepy old reception desk: a dark, worn desk with a single dim,
 // flickering lamp — barely enough light to see the desk itself, let alone
 // the room around it.
-function addReceptionDesk(x, z) {
-  addSolid(x, z, 1.72, 0.72);
-  addSolid(x - 0.2, z - 0.85, 0.5, 0.5); // its chair
+// Built in its own frame (x along the desk, +z = customer side), then turned so the
+// customer side faces east into the lobby and the drawers/chair are on the west-wall side.
+function addReceptionDesk(cx, cz) {
+  const G = new THREE.Group();
+  G.position.set(cx, 0, cz);
+  G.rotation.y = Math.PI / 2;
+  buildTarget = G;
+  const x = 0;
+  const z = 0;
+  addSolid(cx, cz, 0.72, 1.72);
+  addSolid(cx - 0.85, cz + 0.2, 0.5, 0.5); // its chair
   const open = state.flags.drawers || 0;
   addBox(1.6, 0.7, 0.6, x, 0.35, z, 0x4a3826);
   addBox(1.72, 0.05, 0.72, x, 0.725, z, 0x5d4631); // top
@@ -1735,7 +1743,7 @@ function addReceptionDesk(x, z) {
   addBox(0.36, 0.28, 0.3, x - 0.55, 0.92, z - 0.15, 0x2a2a28);
   const screen = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.2, 0.01), new THREE.MeshStandardMaterial({ color: 0x0a0f0c, emissive: 0x08150d }));
   screen.position.set(x - 0.55, 0.93, z);
-  worldGroup.add(screen);
+  G.add(screen);
   addBox(0.16, 0.06, 0.2, x + 0.62, 0.78, z + 0.1, 0x15151a);
   addBox(0.14, 0.03, 0.04, x + 0.62, 0.82, z + 0.1, 0x0c0c10);
   addBox(0.07, 0.04, 0.07, x + 0.65, 0.77, z - 0.1, 0xb8963a);
@@ -1748,7 +1756,7 @@ function addReceptionDesk(x, z) {
   );
   logSheet.rotation.set(-Math.PI / 2, 0, 0.05);
   logSheet.position.set(x - 0.35, 0.766, z + 0.1);
-  worldGroup.add(logSheet);
+  G.add(logSheet);
 
   // A proper desk lamp: round base, arm, open metal shade, glowing yellow bulb.
   const lx = x + 0.5;
@@ -1768,11 +1776,11 @@ function addReceptionDesk(x, z) {
   deskBulbMat = new THREE.MeshBasicMaterial({ color: 0xffd27a });
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), deskBulbMat);
   bulb.position.set(lx - 0.2, 1.0, lz);
-  [lbase, lstem, larm, shade, bulb].forEach((m) => worldGroup.add(m));
+  [lbase, lstem, larm, shade, bulb].forEach((m) => G.add(m));
 
   deskLamp = new THREE.PointLight(0xffb347, DESK_LAMP_LEVEL, 8, 2);
   deskLamp.position.set(lx - 0.2, 0.96, lz);
-  worldGroup.add(deskLamp);
+  G.add(deskLamp);
 
   // RECEPTION plate on the customer-facing side
   const plate = new THREE.Mesh(
@@ -1780,29 +1788,31 @@ function addReceptionDesk(x, z) {
     new THREE.MeshStandardMaterial({ map: makePlateTexture("RECEPTION", "#b89a52", "#2a1f0c"), roughness: 0.4, metalness: 0.5 })
   );
   plate.position.set(x, 0.5, z + 0.305);
-  worldGroup.add(plate);
+  G.add(plate);
 
   // office chair pushed back behind the desk
   const seatMat = new THREE.MeshStandardMaterial({ color: 0x4a2f26, roughness: 0.9 });
-  const cz = z - 0.85;
+  const chz = z - 0.85;
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.08, 0.46), seatMat);
-  seat.position.set(x - 0.2, 0.5, cz);
+  seat.position.set(x - 0.2, 0.5, chz);
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.55, 0.07), seatMat);
-  back.position.set(x - 0.2, 0.82, cz - 0.22);
+  back.position.set(x - 0.2, 0.82, chz - 0.22);
   back.rotation.x = -0.12;
   const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8), metal);
-  pole.position.set(x - 0.2, 0.26, cz);
+  pole.position.set(x - 0.2, 0.26, chz);
   [seat, back, pole].forEach((m) => {
     m.rotation.y += 0.35;
-    worldGroup.add(m);
+    G.add(m);
   });
   for (let i = 0; i < 5; i++) {
     const leg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.04), metal);
-    leg.position.set(x - 0.2, 0.05, cz);
+    leg.position.set(x - 0.2, 0.05, chz);
     leg.rotation.y = (i * Math.PI * 2) / 5 + 0.35;
     leg.translateX(0.14);
-    worldGroup.add(leg);
+    G.add(leg);
   }
+  buildTarget = null;
+  worldGroup.add(G);
 }
 
 // Staircase filling the back of the stairwell room: steps rise to the ceiling
@@ -1856,10 +1866,11 @@ function addFixture(f) {
   }
 }
 
+let buildTarget = null; // when set, addBox/addKeyModel put meshes here instead of the world
 function addBox(w, h, d, x, y, z, color) {
   const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ color, roughness: 1 }));
   m.position.set(x, y, z);
-  worldGroup.add(m);
+  (buildTarget || worldGroup).add(m);
   return m;
 }
 

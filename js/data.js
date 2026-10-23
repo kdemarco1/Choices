@@ -53,8 +53,8 @@ const ITEMS = [
   {
     id: "flashlight",
     name: "Flashlight",
-    x: 5.7,
-    y: 12.1, // on the reception desk, just past the front door, to the left as you enter
+    x: 3.1,
+    y: 10.6, // on the reception desk, just past the front door, to the left as you enter
     color: "#c9a15c",
     height: 0.85,
     pickupText: "A flashlight, sitting on the reception desk.",
@@ -83,8 +83,8 @@ const HOTSPOTS = [
   { id: "cellarUp", x: 34.5, y: 4.8, label: "Go Up", go: { x: 17.5, y: 3.2, yaw: 0 } },
   { id: "boards", x: 18.5, y: 3.3, label: "Boards" },
   { id: "upDown", x: 31.5, y: 5.5, label: "Go Down", go: { x: 18.5, y: 3.3, yaw: 0 } },
-  { id: "drawers", x: 5.95, y: 11.4, label: "Search Drawer" },
-  { id: "guestLog", x: 5.15, y: 12.1, label: "Read Guest Log" },
+  { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
+  { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 2.0, y: 5.6, label: "Flip Breaker" },
   { id: "rubble", x: 40.4, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
@@ -147,7 +147,7 @@ const DOORS = [
 // One-sided things on the lobby wall: they look like doors but only exist on
 // the lobby side (y is the wall face the lobby sees).
 const FIXTURES = [
-  { id: "elevator", x: 5.5, y: 8.0, width: 0.95, style: "elevator", baseColor: "#8a8f95", label: "Call Elevator", text: "No power.", sound: "click" },
+  { id: "elevator", x: 11.5, y: 8.0, width: 0.95, style: "elevator", baseColor: "#8a8f95", label: "Call Elevator", text: "No power.", sound: "click" },
 ];
 
 const JOHN_ROOM = { minX: 13, maxX: 16, minY: 1, maxY: 4 };
