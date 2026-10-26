@@ -336,6 +336,7 @@ let captionBusy = false;
 let captionTimer = null;
 
 function queueCaption(text) {
+  return; // no on-screen log text any more; only the item popup and action prompts remain
   captionQueue.push(text);
   if (captionQueue.length > 3) captionQueue.shift();
   if (!captionBusy) showNextCaption();
@@ -2549,7 +2550,7 @@ function renderInventory() {
 let pickupTimer = null;
 function showPickup(name) {
   const el = document.getElementById("pickup-popup");
-  el.textContent = `Picked up: ${name}`;
+  el.textContent = name;
   el.classList.add("show");
   clearTimeout(pickupTimer);
   pickupTimer = setTimeout(() => el.classList.remove("show"), 2600);
