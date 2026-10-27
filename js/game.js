@@ -61,7 +61,7 @@ const FACADE_H = 9; // the street-facing walls are three storeys tall
   swap(
     "fog_fragment",
     "float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );",
-    "float fogFarHere = ( vFogWorld.z < 13.02 && vFogWorld.y < 3.1 ) ? fogFar : " + MOON_RANGE.toFixed(1) + ";\n\t\tfloat fogFactor = smoothstep( fogNear, fogFarHere, vFogDepth );"
+    "float fogFarHere = ( vFogWorld.z < 13.02 && vFogWorld.y < 6.5 ) ? fogFar : " + MOON_RANGE.toFixed(1) + ";\n\t\tfloat fogFactor = smoothstep( fogNear, fogFarHere, vFogDepth );"
   );
 })();
 
@@ -75,7 +75,7 @@ function hasFlashlightOn() {
 
 // With the breaker on, the ground floor (lobby, hall, apartments, stairwell, staff room) is lit by ceiling fluorescents.
 function groundLit() {
-  return !!state.flags.powerOn && yawObject.position.x < 21 && yawObject.position.z < DOOR_ROW;
+  return !!state.flags.powerOn && levelOf(yawObject.position.x) === 0 && yawObject.position.z < DOOR_ROW;
 }
 
 function currentLightRange() {
@@ -115,6 +115,36 @@ function initAudio() {
     o.start();
     ambientGains.push(g);
   });
+  // Tension music: a low dissonant drone that rises in volume and pitch as the thing gets close,
+  // with a thin shriek that only appears when it's right on top of you.
+  const tlp = audioCtx.createBiquadFilter();
+  tlp.type = "lowpass";
+  tlp.frequency.value = 250;
+  const tg = audioCtx.createGain();
+  tg.gain.value = 0;
+  tlp.connect(tg).connect(audioCtx.destination);
+  const tOscs = [[55, "sawtooth"], [58.6, "sawtooth"], [110.9, "triangle"], [164.8, "sawtooth"]].map(([f, type]) => {
+    const o = audioCtx.createOscillator();
+    o.type = type;
+    o.frequency.value = f;
+    o.connect(tlp);
+    o.start();
+    return o;
+  });
+  const hi = audioCtx.createOscillator();
+  hi.type = "sine";
+  hi.frequency.value = 1180;
+  const hg = audioCtx.createGain();
+  hg.gain.value = 0;
+  const vib = audioCtx.createOscillator();
+  vib.frequency.value = 6.5;
+  const vibDepth = audioCtx.createGain();
+  vibDepth.gain.value = 35;
+  vib.connect(vibDepth).connect(hi.frequency);
+  hi.connect(hg).connect(audioCtx.destination);
+  hi.start();
+  vib.start();
+  tensionNodes = { tg, tlp, tOscs, hi, hg };
   ambientOn = null;
   // The recorded door creak. If it can't load (e.g. opened as a plain file), the
   // synthesized creak below is used instead.
@@ -137,6 +167,34 @@ function setSoundEnabled(on) {
 // The background hum only plays while you're actually exploring — silent on the
 // title, pause, inventory, reading and caught screens.
 let ambientOn = null;
+let tensionNodes = null;
+
+function applyTension(level) {
+  if (!tensionNodes) return;
+  const want = state.settings.soundOn && state.phase === "explore" ? level : 0;
+  const t = audioCtx.currentTime;
+  const { tg, tlp, tOscs, hg } = tensionNodes;
+  tg.gain.setTargetAtTime(want * want * 0.13, t, 0.2);
+  tlp.frequency.setTargetAtTime(220 + want * 2400, t, 0.2);
+  tOscs[3].frequency.setTargetAtTime(164.8 * (1 + want * 0.6), t, 0.3);
+  tOscs[1].frequency.setTargetAtTime(58.6 + want * 6, t, 0.3);
+  hg.gain.setTargetAtTime(Math.pow(Math.max(0, want - 0.6) / 0.4, 2) * 0.035, t, 0.15);
+}
+
+function playVanish() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = "sawtooth";
+  o.frequency.setValueAtTime(720, t);
+  o.frequency.exponentialRampToValueAtTime(70, t + 0.7);
+  g.gain.setValueAtTime(0.09, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.75);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.8);
+}
 function syncAmbient() {
   const want = state.settings.soundOn && state.phase === "explore";
   if (want === ambientOn) return;
@@ -384,6 +442,7 @@ function showScreen(id) {
 // ---- title screen -----------------------------------------------------------
 
 function resetRun() {
+  state.transition = null;
   elevAnim = null;
   state.flags = {};
   state.log = [];
@@ -398,8 +457,10 @@ function resetRun() {
   flashlightFlickerTimer = 0;
   state.activeNpc = null;
   state.dialogueNode = "start";
-  state.entity = { mode: "idle", timer: 0, x: 0, z: 0, beat: 0 };
+  state.entity = { mode: "idle", timer: 0, x: 0, z: 0, beat: 0, dark: 0, path: null, repath: 0 };
+  entityGroup.scale.set(1, 1, 1);
   entityGroup.visible = false;
+  clearScares();
   setFear(0);
   keys.clear();
   clearCaptions();
@@ -651,13 +712,34 @@ heldFlashlight.visible = false;
 camera.add(heldFlashlight);
 
 function buildAxeGroup() {
+  // a fire axe: long grained handle, wrapped grip, heavy curved head with a bright edge and a back spike
   const g = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x8a1a14, roughness: 0.5, metalness: 0.5 });
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.04), wood));
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.22), steel);
-  head.position.set(0.28, 0, 0.06);
-  g.add(head);
+  const wood = new THREE.MeshStandardMaterial({ color: 0x4a2c16, roughness: 0.8 });
+  const grip = new THREE.MeshStandardMaterial({ color: 0x15110e, roughness: 1 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.45, metalness: 0.8 });
+  const edge = new THREE.MeshStandardMaterial({ color: 0xdfe6ec, roughness: 0.2, metalness: 0.9, emissive: 0x20262c });
+  const gore = new THREE.MeshStandardMaterial({ color: 0x5a0a0a, roughness: 0.6 });
+  const part = (geo, mat, x, y, z, rz) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (rz) m.rotation.z = rz;
+    g.add(m);
+    return m;
+  };
+  const handle = part(new THREE.CylinderGeometry(0.022, 0.03, 0.86, 8), wood, -0.02, 0, 0, Math.PI / 2);
+  for (let i = 0; i < 5; i++) part(new THREE.CylinderGeometry(0.034, 0.034, 0.025, 8), grip, -0.3 + i * 0.045, 0, 0, Math.PI / 2); // wrapped grip
+  part(new THREE.SphereGeometry(0.04, 8, 6), iron, -0.45, 0, 0); // pommel
+  part(new THREE.BoxGeometry(0.1, 0.07, 0.07), iron, 0.4, 0, 0); // socket where the head sits
+  for (let i = 0; i < 6; i++) {
+    // the blade fans out and curves towards the edge
+    const w = 0.07 + i * 0.022;
+    part(new THREE.BoxGeometry(w, 0.026, 0.045), iron, 0.4 + (i > 3 ? 0.012 * (i - 3) : 0), 0, 0.055 + i * 0.043);
+  }
+  part(new THREE.BoxGeometry(0.2, 0.014, 0.02), edge, 0.436, 0, 0.3); // the bright edge
+  part(new THREE.BoxGeometry(0.1, 0.03, 0.012), gore, 0.43, 0.001, 0.275); // dried blood on it
+  part(new THREE.BoxGeometry(0.07, 0.02, 0.02), gore, 0.27, 0, 0.0).rotation.y = 0.4;
+  const spike = part(new THREE.ConeGeometry(0.022, 0.2, 6), iron, 0.4, 0, -0.14); // back spike
+  spike.rotation.x = -Math.PI / 2;
   return g;
 }
 const heldAxe = buildAxeGroup();
@@ -715,6 +797,17 @@ let solids = [];
 function addSolid(cx, cz, w, d) {
   solids.push({ minX: cx - w / 2, maxX: cx + w / 2, minZ: cz - d / 2, maxZ: cz + d / 2 });
 }
+let entityBlock = []; // rectangles the creature won't path through (stairs)
+// ---- real stairs: floor height under the player ----
+function stairAt(x, z) {
+  return STAIRS.find((s) => x >= s.x0 && x < s.x1 && (z - s.z1) * (z - s.z0) <= 0);
+}
+function floorHeight(x, z) {
+  const s = stairAt(x, z);
+  if (!s) return 0;
+  const t = Math.min(1, Math.max(0, (s.z0 - z) / (s.z0 - s.z1)));
+  return (s.rise * Math.min(STAIR_STEPS, Math.floor(t * STAIR_STEPS) + 1)) / STAIR_STEPS;
+}
 let doorPivots = {}; // id -> hinge group, set in buildWorld(); drives the swing animation
 let elevPanels = [];
 let elevLight = null;
@@ -729,6 +822,10 @@ let deskBulbMat = null;
 const DESK_LAMP_LEVEL = 4.5;
 let deskLampFlickerLeft = 0;
 let deskLampNextFlicker = 6;
+let flickerLights = []; // {light, base} lights that stutter (emergency bulbs, boiler glow)
+let swayers = []; // hanging chains
+let scareActive = []; // pop-out apparitions in flight
+let scareBlackout = 0;
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
 
@@ -1388,6 +1485,7 @@ function disposeWorld() {
 function buildWorld() {
   disposeWorld();
   doorPivots = {};
+  entityBlock = [];
   elevPanels = [];
   elevLight = null;
   elevLightMat = null;
@@ -1395,6 +1493,9 @@ function buildWorld() {
   staffSignLight = null;
   solids = [];
   deskLamp = null;
+  flickerLights = [];
+  swayers = [];
+  clearScares();
 
   const rows = MAP.length;
   const cols = MAP[0].length;
@@ -1436,16 +1537,12 @@ function buildWorld() {
     }
   }
 
-  // Two floor strips — dark interior floor north of the door, cold street
-  // ground south of it — plus one continuous ceiling.
+  // Floor and ceiling are cut where stairs go down (floor) or up through (ceiling).
   const interiorRows = doorRow + 1;
-  const interiorFloor = new THREE.Mesh(
-    new THREE.PlaneGeometry(cols, interiorRows),
-    new THREE.MeshStandardMaterial({ color: 0x3a3228, roughness: 1 })
-  );
-  interiorFloor.rotation.x = -Math.PI / 2;
-  interiorFloor.position.set(cols / 2, 0, interiorRows / 2);
-  worldGroup.add(interiorFloor);
+  const holeRect = (s) => ({ x0: s.x0, x1: s.x1, z0: Math.min(s.z0, s.z1), z1: Math.max(s.z0, s.z1) });
+  const floorHoles = STAIRS.filter((s) => s.rise < 0).map(holeRect);
+  const ceilHoles = STAIRS.filter((s) => s.rise > 0).map(holeRect);
+  addPlaneWithHoles(0, -Math.PI / 2, new THREE.MeshStandardMaterial({ color: 0x3a3228, roughness: 1 }), cols, interiorRows, floorHoles);
 
   const streetRows = rows - doorRow;
   const streetFloor = new THREE.Mesh(
@@ -1456,13 +1553,8 @@ function buildWorld() {
   streetFloor.position.set(cols / 2, 0, doorRow + streetRows / 2);
   worldGroup.add(streetFloor);
 
-  const ceiling = new THREE.Mesh(
-    new THREE.PlaneGeometry(cols, interiorRows),
-    new THREE.MeshStandardMaterial({ color: 0x16161e, roughness: 1, side: THREE.DoubleSide }) // solid from below, so no sky shows through
-  );
-  ceiling.rotation.x = Math.PI / 2;
-  ceiling.position.set(cols / 2, WALL_HEIGHT, interiorRows / 2);
-  worldGroup.add(ceiling);
+  const ceilMat = new THREE.MeshStandardMaterial({ color: 0x16161e, roughness: 1, side: THREE.DoubleSide }); // solid from below, so no sky shows through
+  addPlaneWithHoles(WALL_HEIGHT, Math.PI / 2, ceilMat, cols, interiorRows, ceilHoles);
 
   // Roof: a cornice that overhangs the facade, and a pitched slope behind it.
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1, side: THREE.DoubleSide, emissive: 0x020309 });
@@ -1565,17 +1657,8 @@ function buildWorld() {
   addPlant(14.7, 8.7);
   addPlant(19.3, 12.3);
   addRunner(10.5, 5.5, 17, 1.1);
-  addStairwell(18.5);
+  addStairs();
   FIXTURES.forEach(addFixture);
-  addBed(14.5, 1.6); // John's apartment
-  addBox(0.5, 0.75, 1.0, 15.45, 0.375, 2.8, 0x2e2419); // his desk
-  addSolid(15.45, 2.8, 0.5, 1.0);
-  addTable(6.5, 1.5); // apartment 2, where the key is
-  addChair(5.4, 2.3);
-  const aptLight = new THREE.PointLight(0xffbb66, 0.12, 3, 2);
-  aptLight.position.set(6.5, 2.4, 2.2);
-  worldGroup.add(aptLight);
-
   // One weak, cold bulb in the hallway so it isn't a total void.
   if (!state.flags.powerOn) [8.5, 12.5, 16.5].forEach((hx) => {
     const hallLight = new THREE.PointLight(0x8fa0b8, 0.07, 5, 2);
@@ -1584,10 +1667,15 @@ function buildWorld() {
   });
 
   addLevels();
+  {
+    const inApt = APT_DEFS.find((a) => yawObject.position.x >= a.ox && yawObject.position.x < a.ox + APT_W);
+    if (inApt) addApartment(inApt);
+  }
+  if (levelOf(yawObject.position.x) === 2) addBasementDecor();
   addFluorescents();
   worldGroup.traverse((o) => { if (o.isPointLight) o.intensity *= 1.1; }); // environment 10% brighter
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
-  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
+  ITEMS.filter((it) => !state.inventory[it.id] && !it.hidden).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
     else if (it.id === "axe") { if (state.flags.powerOn) addAxeModel(it.x, 0.07, it.y); }
@@ -1616,17 +1704,27 @@ const FLUORESCENTS = [
 ];
 function addFluorescents() {
   fluoLights = [];
-  if (!state.flags.powerOn || yawObject.position.x >= 21) return;
+  const px = yawObject.position.x;
+  if (!state.flags.powerOn || (px >= 21 && px < APT_X0)) return;
+  let spots = FLUORESCENTS;
+  let power = 20;
+  let reach = 14;
+  if (px >= APT_X0) {
+    const a = APT_DEFS.find((d) => px >= d.ox && px < d.ox + APT_W);
+    spots = a ? [[a.ox + 10, 3.0], [a.ox + 7, 7.4]] : [];
+    power = 12;
+    reach = 7.5;
+  }
   const tubeMat = new THREE.MeshBasicMaterial({ color: 0xeaf6e0 });
-  FLUORESCENTS.forEach(([x, z]) => {
+  spots.forEach(([x, z]) => {
     addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, z, 0x9a9a96); // housing
     const tube = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.03, 0.12), tubeMat);
     tube.position.set(x, WALL_HEIGHT - 0.07, z);
     worldGroup.add(tube);
-    const l = new THREE.PointLight(0xe4f2dc, 20, 14, 2);
+    const l = new THREE.PointLight(0xe4f2dc, power, reach, 2);
     l.position.set(x, WALL_HEIGHT - 0.2, z);
     worldGroup.add(l);
-    l.userData.base = 20;
+    l.userData.base = power;
     fluoLights.push(l);
   });
 }
@@ -1651,11 +1749,215 @@ function addAxeModel(x, y, z) {
   worldGroup.add(g);
 }
 
+
+// ---- the apartments --------------------------------------------------------------------
+let tileTex = null;
+function getTileTexture() {
+  if (tileTex) return tileTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const x = c.getContext("2d");
+  x.fillStyle = "#5a574d";
+  x.fillRect(0, 0, 64, 64);
+  x.fillStyle = "#48453c";
+  x.fillRect(0, 0, 32, 32);
+  x.fillRect(32, 32, 32, 32);
+  x.strokeStyle = "#25231f";
+  x.lineWidth = 3;
+  x.strokeRect(0, 0, 64, 64);
+  x.beginPath();
+  x.moveTo(32, 0); x.lineTo(32, 64); x.moveTo(0, 32); x.lineTo(64, 32);
+  x.stroke();
+  tileTex = new THREE.CanvasTexture(c);
+  tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping;
+  return tileTex;
+}
+function flatTiles(x0, z0, w, d) {
+  const t = getTileTexture().clone();
+  t.repeat.set(w / 0.7, d / 0.7);
+  t.needsUpdate = true;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x0 + w / 2, 0.006, z0 + d / 2);
+  worldGroup.add(m);
+}
+
+function addApartment(a) {
+  const ox = a.ox;
+  const dmg = APT_DAMAGE[a.id];
+  let seed = (ox * 7919) % 2147483647 || 17;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // furniture group: local origin = centre on the floor, faces +z (south) at rot 0
+  const furn = (rx, rz, rot, solid, build) => {
+    const G = new THREE.Group();
+    G.position.set(ox + rx, 0, rz);
+    G.rotation.y = rot || 0;
+    worldGroup.add(G);
+    buildTarget = G;
+    build((w, h, d, x, y, z, c) => addBox(w, h, d, x, y, z, c));
+    buildTarget = null;
+    if (solid) addSolid(ox + rx, rz, solid[0], solid[1]);
+    return G;
+  };
+  const wood = 0x4a3524, darkwood = 0x2f2218, white = 0xb4b0a2, grime = 0x2c2a26;
+  const chair = (rx, rz, rot) => furn(rx, rz, rot, [0.4, 0.4], (b) => {
+    b(0.4, 0.04, 0.4, 0, 0.45, 0, darkwood);
+    b(0.4, 0.45, 0.04, 0, 0.7, -0.18, darkwood);
+    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([cx, cz]) => b(0.04, 0.45, 0.04, cx, 0.22, cz, darkwood));
+  });
+
+  flatTiles(ox + 7, 1, 6, 4); // kitchen floor
+
+  // ---- kitchen (north wall: counter, stove, counter, fridge; cabinets above)
+  furn(8.0, 1.35, 0, [1.6, 0.6], (b) => {
+    b(1.6, 0.85, 0.6, 0, 0.43, 0, wood);
+    b(1.64, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
+    b(0.55, 0.03, 0.4, -0.2, 0.9, 0.02, 0x15150f); // sink
+    b(0.04, 0.22, 0.04, -0.2, 1.0, -0.2, 0x8a8a86);
+    b(0.12, 0.03, 0.04, -0.2, 1.1, -0.12, 0x8a8a86);
+    [-0.5, 0.3, 0.6].forEach((x) => b(0.02, 0.5, 0.02, x, 0.42, 0.31, grime));
+  });
+  furn(9.25, 1.4, 0, [0.8, 0.7], (b) => {
+    b(0.78, 0.88, 0.66, 0, 0.44, 0, white);
+    [[-0.2, -0.15], [0.2, -0.15], [-0.2, 0.15], [0.2, 0.15]].forEach(([x, z]) => b(0.2, 0.02, 0.2, x, 0.9, z, 0x1a1a1a));
+    b(0.62, 0.34, 0.02, 0, 0.42, 0.34, 0x151515); // oven window
+    [-0.25, 0, 0.25].forEach((x) => b(0.05, 0.05, 0.03, x, 0.78, 0.34, 0x8a8a86));
+    b(0.82, 0.22, 0.55, 0, 2.0, -0.05, 0x8a8a84); // range hood
+    b(0.26, 0.5, 0.26, 0, 2.36, -0.18, 0x7a7a76);
+  });
+  furn(10.3, 1.35, 0, [1.2, 0.6], (b) => {
+    b(1.2, 0.85, 0.6, 0, 0.43, 0, wood);
+    b(1.24, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
+    [-0.3, 0.3].forEach((x) => b(0.02, 0.4, 0.02, x, 0.5, 0.31, grime));
+  });
+  furn(11.4, 1.45, 0, [0.8, 0.75], (b) => {
+    b(0.76, 1.75, 0.7, 0, 0.88, 0, 0xa7a597);
+    b(0.78, 0.02, 0.02, 0, 1.15, 0.36, 0x333330);
+    b(0.03, 0.4, 0.04, 0.3, 1.45, 0.38, 0x77756e);
+    b(0.03, 0.3, 0.04, 0.3, 0.8, 0.38, 0x77756e);
+  });
+  [[8.0, 1.6, 0], [10.3, 1.2, 0.3]].forEach(([x, w, ajar]) => furn(x, 1.2, 0, null, (b) => {
+    b(w, 0.75, 0.36, 0, 1.95, 0, wood);
+    for (let i = 0; i < Math.round(w / 0.5); i++) b(0.012, 0.7, 0.02, -w / 2 + 0.5 * (i + 1), 1.95, 0.19, darkwood);
+    if (ajar) { const door = b(0.45, 0.7, 0.03, w / 2 + 0.05, 1.95, 0.35, wood); door.rotation.y = 0.9; } // a door hanging open
+  }));
+  furn(11.0, 3.6, 0, [1.2, 0.8], (b) => {
+    b(1.2, 0.05, 0.8, 0, 0.75, 0, 0x4d3a28);
+    [[-0.55, -0.35], [0.55, -0.35], [-0.55, 0.35], [0.55, 0.35]].forEach(([x, z]) => b(0.05, 0.75, 0.05, x, 0.37, z, darkwood));
+  });
+  chair(9.8, 3.6, -Math.PI / 2);
+  chair(12.2, 3.6, Math.PI / 2);
+  furn(12.5, 4.6, 0, null, () => {
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.3, 10), new THREE.MeshStandardMaterial({ color: 0x6a6c70, roughness: 0.7 }));
+    bucket.position.y = 0.15;
+    buildTarget.add(bucket);
+  });
+
+  // ---- bedroom: a small bed, nightstand, dresser, desk
+  furn(1.75, 2.1, 0, [1.0, 1.9], (b) => {
+    [[-0.4, -0.85], [0.4, -0.85], [-0.4, 0.85], [0.4, 0.85]].forEach(([x, z]) => b(0.05, 0.3, 0.05, x, 0.15, z, darkwood));
+    b(1.0, 0.07, 1.9, 0, 0.32, 0, darkwood);
+    b(0.92, 0.15, 1.8, 0, 0.44, 0, 0x6a665a); // stained mattress
+    b(0.45, 0.1, 0.34, 0, 0.57, -0.65, 0x8a8678);
+    b(0.92, 0.06, 1.0, 0, 0.54, 0.35, 0x4a2a2a);
+    b(1.02, 0.7, 0.06, 0, 0.65, -0.95, darkwood);
+  });
+  furn(3.0, 1.5, 0, [0.5, 0.5], (b) => {
+    b(0.5, 0.55, 0.5, 0, 0.28, 0, wood);
+    b(0.4, 0.14, 0.02, 0, 0.38, 0.26, darkwood);
+    b(0.04, 0.04, 0.03, 0, 0.38, 0.28, 0x8a8a76);
+  });
+  furn(4.8, 1.4, 0, [0.9, 0.5], (b) => {
+    b(0.9, 0.9, 0.5, 0, 0.45, 0, wood);
+    [0.2, 0.5, 0.78].forEach((y) => { b(0.8, 0.012, 0.02, 0, y, 0.26, darkwood); b(0.05, 0.03, 0.03, 0, y - 0.1, 0.27, 0x8a8a76); });
+  });
+  furn(1.4, 4.0, Math.PI / 2, [0.6, 1.2], (b) => { // desk against the west wall
+    b(1.2, 0.05, 0.6, 0, 0.74, 0, wood);
+    b(0.04, 0.72, 0.56, -0.56, 0.36, 0, darkwood);
+    b(0.04, 0.72, 0.56, 0.56, 0.36, 0, darkwood);
+    b(0.5, 0.4, 0.5, 0.28, 0.5, 0, darkwood); // drawers
+  });
+  chair(2.3, 4.0, -Math.PI / 2);
+  addBox(1.8, 0.012, 1.3, ox + 4.2, 0.009, 3.8, 0x3b2323); // rug
+
+  // ---- living room: couch, coffee table, TV stand, shelf
+  furn(6.0, 6.6, 0, [2.0, 0.9], (b) => {
+    b(2.0, 0.4, 0.9, 0, 0.24, 0, 0x4a4036);
+    b(2.0, 0.5, 0.22, 0, 0.62, -0.34, 0x4a4036);
+    b(0.2, 0.55, 0.9, -0.9, 0.38, 0, 0x3e362e);
+    b(0.2, 0.55, 0.9, 0.9, 0.38, 0, 0x3e362e);
+    b(0.8, 0.1, 0.6, -0.3, 0.48, 0.08, 0x554a3e);
+    b(0.8, 0.1, 0.6, 0.45, 0.48, 0.08, 0x554a3e);
+  });
+  furn(6.0, 8.1, 0, [1.0, 0.5], (b) => {
+    b(1.0, 0.04, 0.5, 0, 0.4, 0, darkwood);
+    [[-0.45, -0.2], [0.45, -0.2], [-0.45, 0.2], [0.45, 0.2]].forEach(([x, z]) => b(0.04, 0.4, 0.04, x, 0.2, z, darkwood));
+  });
+  furn(9.5, 8.6, Math.PI, [1.2, 0.5], (b) => {
+    b(1.2, 0.5, 0.45, 0, 0.25, 0, wood);
+    b(0.62, 0.5, 0.46, 0, 0.78, 0, 0x1c1c1e); // old TV
+    b(0.5, 0.36, 0.02, 0, 0.78, 0.24, 0x0c0e0d);
+    b(0.04, 0.3, 0.04, 0.15, 1.15, 0, 0x555552);
+  });
+  furn(1.4, 7.4, Math.PI / 2, [0.35, 1.3], (b) => {
+    b(1.3, 1.7, 0.35, 0, 0.85, -0.01, darkwood);
+    [0.3, 0.7, 1.1, 1.5].forEach((y) => {
+      b(1.2, 0.03, 0.34, 0, y, 0.02, wood);
+      for (let i = 0; i < 5; i++) b(0.05, 0.22 + rnd() * 0.08, 0.2, -0.5 + i * 0.22 + rnd() * 0.05, y + 0.13, 0.02, [0x5a2a2a, 0x2a3a4a, 0x3a4a2a, 0x4a3a2a][i % 4]);
+    });
+  });
+  addBox(2.4, 0.012, 1.4, ox + 7.0, 0.009, 7.7, 0x2e2630); // rug
+
+  // ---- the front door (inside face), south wall of the living room
+  const door = DOORS.find((dr) => dr.id === a.door);
+  const dtex = makeThreeTexture(createStyledDoorTexture(door.style, door.plate, door.baseColor, true));
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.55), new THREE.MeshStandardMaterial({ map: dtex, roughness: 0.6 }));
+  panel.rotation.y = Math.PI;
+  panel.position.set(ox + 3.5, 1.28, 8.96);
+  worldGroup.add(panel);
+  addBox(1.14, 2.7, 0.05, ox + 3.5, 1.35, 8.98, 0x1c1814);
+
+  // ---- writing on the wall
+  WALL_WRITING.filter((w) => w.apt === a.id).forEach((w) => {
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.95, 1.15),
+      new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), w.paper, w.sloppy, w.seed)), roughness: 1 })
+    );
+    m.rotation.y = w.rot;
+    m.position.set(ox + w.rx, 1.6, w.rz);
+    worldGroup.add(m);
+  });
+
+  // ---- damage: holes in the floor and ceiling
+  (dmg.holes || []).forEach(([x, z, w, d]) => {
+    addBox(w, 0.02, d, ox + x, 0.012, z, 0x030303);
+    for (let i = 0; i < 5; i++) {
+      const s = addBox(0.05, 0.03, 0.4 + rnd() * 0.3, ox + x + (rnd() - 0.5) * w, 0.03, z + (rnd() - 0.5) * d, 0x3a2a1c);
+      s.rotation.y = rnd() * 3;
+      s.rotation.z = (rnd() - 0.5) * 0.8;
+    }
+    addSolid(ox + x, z, w, d);
+  });
+  (dmg.ceil || []).forEach(([x, z, w, d]) => {
+    addBox(w, 0.02, d, ox + x, WALL_HEIGHT - 0.012, z, 0x020202);
+    const flap = addBox(0.6, 0.03, 0.5, ox + x + w / 2, WALL_HEIGHT - 0.25, z, 0x5a5448);
+    flap.rotation.z = 0.7;
+  });
+
+  // ---- mess on the floor
+  const mess = [0x4a463e, 0x5a5448, 0x6a6558, 0x3a2a1c, 0x2c2c2a];
+  for (let i = 0; i < dmg.mess; i++) {
+    const rx = 1.3 + rnd() * (APT_W - 2.6);
+    const rz = 1.3 + rnd() * 7.4;
+    if (isWall(ox + rx, rz) || solids.some((s) => ox + rx > s.minX - 0.1 && ox + rx < s.maxX + 0.1 && rz > s.minZ - 0.1 && rz < s.maxZ + 0.1)) continue;
+    const s = 0.05 + rnd() * 0.13;
+    const m = addBox(s, s * (0.2 + rnd() * 0.5), s * (0.6 + rnd()), ox + rx, s * 0.15, rz, rnd() < 0.3 ? 0x9a9688 : mess[i % mess.length]);
+    m.rotation.y = rnd() * 3;
+  }
+}
+
 // Basement, upstairs: the extra levels live in the far east of the map.
 function addLevels() {
-  // cellar hatch in the stairwell floor
-  addBox(0.9, 0.04, 0.9, 17.5, 0.02, 3.55, 0x0b0b0c);
-  addBox(0.95, 0.05, 0.05, 17.5, 0.03, 3.1, 0x2a2a2c);
   // basement (cols 46-69): boiler room, storage room, corridor blocked by rubble
   addBox(1.4, 0.8, 0.6, 50.5, 0.4, 1.5, 0x3a2a1c); // workbench
   addSolid(50.5, 1.5, 1.4, 0.6);
@@ -1670,9 +1972,6 @@ function addLevels() {
     const r = addBox(s, s, s, x, s / 2, z, i % 2 ? 0x3a3835 : 0x2a2927);
     r.rotation.y = i * 0.7;
   });
-  addBox(0.9, 0.04, 0.9, 47.5, 0.02, 1.55, 0x2a2a2c); // stairs up
-  // upstairs (cols 22-45): stairs down at the west end of the corridor
-  addBox(0.9, 0.04, 0.9, 23.5, 0.02, 6.5, 0x0b0b0c);
   // flickering STAFF sign over the staff door, on the lobby side
   staffSignMat = new THREE.MeshBasicMaterial({ map: makeSignTexture("STAFF", "#10140f", "#d7e6a8") });
   const staffSign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.225), staffSignMat);
@@ -1693,7 +1992,7 @@ function addLevels() {
   worldGroup.add(sl);
   // faint bulbs so each level isn't a void (only built for the level you're on)
   const px = yawObject.position.x;
-  const bulbs = px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
+  const bulbs = px >= APT_X0 ? [] : px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
   bulbs.forEach(([x, y, z]) => {
     const l = new THREE.PointLight(0x8fa0b8, 0.09, 6, 2);
     l.position.set(x, y, z);
@@ -1836,23 +2135,164 @@ function addReceptionDesk(cx, cz) {
 
 // Staircase filling the back of the stairwell room: steps rise to the ceiling
 // where the way up is boarded over.
-function addStairwell(cx) {
-  const steps = 8;
-  const zFront = 3.0;
-  const depth = 0.25;
-  for (let i = 0; i < steps; i++) {
-    const h = (i + 1) * (WALL_HEIGHT / steps);
-    addBox(3, h, depth, cx, h / 2, zFront - depth * (i + 0.5), 0x2c2c2e);
+// A horizontal plane covering cols x depth, with axis-aligned rectangular holes cut out of it.
+function addPlaneWithHoles(y, rotX, mat, width, depth, holes) {
+  const zs = [0, depth];
+  holes.forEach((h) => zs.push(h.z0, h.z1));
+  const zlist = [...new Set(zs.filter((z) => z >= 0 && z <= depth))].sort((a, b) => a - b);
+  for (let i = 0; i < zlist.length - 1; i++) {
+    const za = zlist[i];
+    const zb = zlist[i + 1];
+    const cuts = holes.filter((h) => h.z0 <= za + 1e-6 && h.z1 >= zb - 1e-6).sort((a, b) => a.x0 - b.x0);
+    let x = 0;
+    const segs = [];
+    cuts.forEach((h) => {
+      if (h.x0 > x) segs.push([x, h.x0]);
+      x = Math.max(x, h.x1);
+    });
+    if (x < width) segs.push([x, width]);
+    segs.forEach(([xa, xb]) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(xb - xa, zb - za), mat);
+      m.rotation.x = rotX;
+      m.position.set((xa + xb) / 2, y, (za + zb) / 2);
+      worldGroup.add(m);
+    });
   }
-  // Boards nailed across the stairs, a few steps up.
-  if (!state.flags.boardsChopped) [1.35, 1.7, 2.05, 2.4, 2.75].forEach((y, i) => {
-    const plank = addBox(3.1, 0.17, 0.05, cx, y, 2.4 - (i % 2) * 0.06, 0x3a2a1c);
-    plank.rotation.z = ((i % 3) - 1) * 0.06;
-  });
-  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
-  bulb.position.set(cx, 2.5, 3.2);
-  worldGroup.add(bulb);
 }
+
+// Every staircase: solid steps (or steps cut down below the floor), railings, tall shafts for the ones that climb.
+function addStairs() {
+  const N = STAIR_STEPS;
+  const stone = 0x34343a;
+  STAIRS.forEach((s) => {
+    const dz = (s.z1 - s.z0) / N;
+    const depth = Math.abs(dz);
+    const w = s.x1 - s.x0;
+    const cx = (s.x0 + s.x1) / 2;
+    const zlo = Math.min(s.z0, s.z1);
+    const zhi = Math.max(s.z0, s.z1);
+    for (let i = 0; i < N; i++) {
+      const zmid = s.z0 + dz * (i + 0.5);
+      const top = (s.rise * (i + 1)) / N;
+      if (s.rise > 0) addBox(w, top, depth, cx, top / 2, zmid, stone);
+      else {
+        const bottom = s.rise - 0.1;
+        addBox(w, top - bottom, depth, cx, (top + bottom) / 2, zmid, stone);
+      }
+    }
+    // worn steps: a lighter nosing on every tread, and a banister with posts down each side
+    for (let i = 0; i < N; i++) {
+      const top = (s.rise * (i + 1)) / N;
+      addBox(w - 0.04, 0.03, 0.05, cx, top + 0.015, s.z0 + dz * i + (dz < 0 ? -0.025 : 0.025), 0x55555c);
+    }
+    const run = zhi - zlo;
+    const len = Math.hypot(run, s.rise);
+    [s.x0 + 0.05, s.x1 - 0.05].forEach((rx) => {
+      const rail = addBox(0.05, 0.05, len, rx, s.rise / 2 + 0.95, (s.z0 + s.z1) / 2, 0x2a1a10);
+      rail.rotation.x = Math.atan2(s.rise, run);
+      for (let i = 0; i <= 4; i++) {
+        const pz = s.z0 + ((s.z1 - s.z0) * i) / 4;
+        const ph = (s.rise * i) / 4;
+        addBox(0.04, 0.95, 0.04, rx, ph + 0.48, pz, 0x2a1a10);
+      }
+    });
+    // railings you can't walk through
+    addSolid(s.x0 - 0.03, (zlo + zhi) / 2, 0.06, zhi - zlo);
+    addSolid(s.x1 + 0.03, (zlo + zhi) / 2, 0.06, zhi - zlo);
+    entityBlock.push({ minX: s.x0 - 0.2, maxX: s.x1 + 0.2, minZ: zlo - 0.2, maxZ: zhi + 0.4 });
+    if (s.rise < 0) {
+      // the shaft below the floor
+      const d = -s.rise + 0.1;
+      addBox(0.1, d, zhi - zlo + 0.1, s.x0 - 0.05, -d / 2, (zlo + zhi) / 2, 0x1c1c1e);
+      addBox(0.1, d, zhi - zlo + 0.1, s.x1 + 0.05, -d / 2, (zlo + zhi) / 2, 0x1c1c1e);
+      addBox(w + 0.2, d, 0.1, cx, -d / 2, zlo - 0.05, 0x1c1c1e);
+    } else {
+      // a walled shaft rising through the ceiling, capped above
+      const top = WALL_HEIGHT + s.rise + 0.4;
+      addBox(0.1, top, zhi - zlo + 0.1, s.x0 - 0.05, top / 2, (zlo + zhi) / 2, 0x2b2a2c);
+      addBox(0.1, top, zhi - zlo + 0.1, s.x1 + 0.05, top / 2, (zlo + zhi) / 2, 0x2b2a2c);
+      addBox(w + 0.2, top, 0.1, cx, top / 2, zlo - 0.05, 0x2b2a2c);
+      addBox(w + 0.2, top - WALL_HEIGHT, 0.1, cx, (top + WALL_HEIGHT) / 2, zhi + 0.05, 0x2b2a2c);
+      const cap = new THREE.Mesh(new THREE.PlaneGeometry(w + 0.2, zhi - zlo + 0.2), new THREE.MeshStandardMaterial({ color: 0x16161e, side: THREE.DoubleSide }));
+      cap.rotation.x = Math.PI / 2;
+      cap.position.set(cx, top, (zlo + zhi) / 2);
+      worldGroup.add(cap);
+    }
+  });
+  // Boards nailed across the ground-floor flight, until they're chopped.
+  const up = STAIRS[0];
+  if (!state.flags.boardsChopped) {
+    const zb = 2.5;
+    const base = floorHeight(17.75, zb);
+    [0.3, 0.62, 0.94, 1.26].forEach((dy, i) => {
+      const plank = addBox(1.6, 0.17, 0.05, (up.x0 + up.x1) / 2, base + dy, zb - (i % 2) * 0.05, 0x3a2a1c);
+      plank.rotation.z = ((i % 3) - 1) * 0.07;
+    });
+    addSolid((up.x0 + up.x1) / 2, zb, up.x1 - up.x0, 0.35);
+  }
+  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
+  bulb.position.set(17.75, 2.5, 3.4);
+  worldGroup.add(bulb);
+  // a failing red emergency lamp on the stairwell wall
+  const lvl = levelOf(yawObject.position.x);
+  if (yawObject.position.x < 21) {
+    addBox(0.2, 0.12, 0.1, 18.5, 2.7, 1.2, 0x400808);
+    const red = new THREE.PointLight(0xff1a0a, 0.9, 5, 2);
+    red.position.set(18.5, 2.5, 1.9);
+    worldGroup.add(red);
+    flickerLights.push({ light: red, base: 0.9, phase: Math.random() * 9 });
+  }
+}
+
+// The basement: pipes, chains, a glowing boiler, stains and a cage, so it feels lived-in and wrong.
+function addBasementDecor() {
+  const rust = 0x4a2e1c;
+  [2.0, 9.0].forEach((z) => addBox(8.2, 0.12, 0.12, 50.8, 2.75, z, 0x2a2624)); // ceiling pipes
+  addBox(0.12, 0.12, 8.5, 53.9, 2.6, 6.5, 0x2a2624);
+  addBox(0.25, 0.25, 0.25, 51.5, 2.75, 2.0, rust); // pipe joints
+  addBox(0.25, 0.25, 0.25, 54.0, 2.6, 5.0, rust);
+  // chains hanging from hooks, swaying
+  [[52.2, 2.6], [48.6, 9.6], [51.4, 6.2]].forEach(([x, z], i) => {
+    const grp = new THREE.Group();
+    grp.position.set(x, 2.9, z);
+    for (let k = 0; k < 7; k++) {
+      const link = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.09, 0.04), new THREE.MeshStandardMaterial({ color: 0x55534f, metalness: 0.6, roughness: 0.5 }));
+      link.position.y = -k * 0.1;
+      grp.add(link);
+    }
+    const hook = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0x55534f, metalness: 0.6 }));
+    hook.position.y = -0.72;
+    grp.add(hook);
+    worldGroup.add(grp);
+    swayers.push({ grp, phase: i * 2.1 });
+  });
+  // dried stains on the floor, a smeared trail towards the dark
+  [[49.8, 3.6, 0.9, 0.5], [50.9, 4.4, 0.6, 0.35], [50.4, 6.9, 0.5, 0.9], [52.0, 10.0, 1.0, 0.7]].forEach(([x, z, w, d], i) => {
+    const s = addBox(w, 0.012, d, x, 0.008, z, 0x330808);
+    s.rotation.y = i * 0.9;
+  });
+  // a rusted cage and shelving, both solid
+  addBox(0.05, 1.5, 1.2, 47.3, 0.75, 10.5, rust);
+  addBox(1.0, 0.05, 1.2, 47.8, 1.5, 10.5, rust);
+  [10.0, 10.5, 11.0].forEach((z) => addBox(0.04, 1.5, 0.04, 48.3, 0.75, z, rust));
+  addSolid(47.8, 10.5, 1.0, 1.2);
+  addBox(0.5, 1.7, 1.4, 54.6, 0.85, 10.2, 0x2a2018);
+  [0.5, 1.0, 1.5].forEach((h) => addBox(0.45, 0.04, 1.4, 54.6, h, 10.2, 0x3a2c1e));
+  [[0.65, 9.8], [1.15, 10.3], [0.65, 10.6]].forEach(([h, z]) => addBox(0.18, 0.25, 0.18, 54.6, h + 0.1, z, 0x6a7a5a)); // jars
+  addSolid(54.6, 10.2, 0.5, 1.4);
+  // the boiler still glows, as if it were burning
+  const fire = new THREE.PointLight(0xff6a1a, 1.4, 6, 2);
+  fire.position.set(53.5, 1.0, 5.9);
+  worldGroup.add(fire);
+  flickerLights.push({ light: fire, base: 1.4, phase: 3 });
+  addBox(0.5, 0.35, 0.05, 53.5, 0.6, 5.72, 0xff7a20); // the grate
+  // a red emergency bulb over the stair
+  const red = new THREE.PointLight(0xff1a0a, 0.7, 5, 2);
+  red.position.set(48.0, 2.6, 4.6);
+  worldGroup.add(red);
+  flickerLights.push({ light: red, base: 0.7, phase: 7 });
+}
+
 
 // A door-looking panel stuck to the lobby side of a wall (nothing behind it).
 function addFixture(f) {
@@ -2006,7 +2446,7 @@ const _right = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 
 function tryMovePlayer(dt) {
-  if (state.activeNpc || state.flags.tut === "open") return; // frozen mid-dialogue
+  if (state.activeNpc || state.flags.tut === "open" || state.transition) return; // frozen mid-dialogue
 
   let forwardInput = 0;
   if (keys.has("w") || keys.has("arrowup")) forwardInput += 1;
@@ -2050,9 +2490,11 @@ function checkJohnRoom() {
   const p = yawObject.position;
   if (p.x > JOHN_ROOM.minX && p.x < JOHN_ROOM.maxX && p.z > JOHN_ROOM.minY && p.z < JOHN_ROOM.maxY) {
     state.flags.enteredJohnRoom = true;
-    state.entity.mode = "done";
-    entityGroup.visible = false;
-    setFear(0);
+    if (!state.flags.powerOn) {
+      state.entity.mode = "done"; // ends the ground-floor chase (the other floors are separate)
+      entityGroup.visible = false;
+      setFear(0);
+    }
   }
 }
 
@@ -2199,7 +2641,7 @@ function updateFlashlight(dt) {
     }
   }
 
-  let targetIntensity = hasFlashlightOn() ? FLASHLIGHT_MAX_INTENSITY : 0;
+  let targetIntensity = hasFlashlightOn() && scareBlackout <= 0 ? FLASHLIGHT_MAX_INTENSITY : 0;
 
   if (hasFlashlightOn() && state.batteryLevel < 20) {
     flashlightFlickerTimer += dt;
@@ -2276,7 +2718,7 @@ function nearestInteractable() {
   });
 
   ITEMS.forEach((item) => {
-    if (state.inventory[item.id]) return;
+    if (state.inventory[item.id] || item.hidden) return;
     if (item.id === "axe" && !state.flags.powerOn) return;
     const d = Math.hypot(item.x - px, item.y - py);
     if (d < closestDist) {
@@ -2311,17 +2753,57 @@ function nearestInteractable() {
     }
   });
   HOTSPOTS.forEach((h) => {
+    if (h.id === "boards" && state.flags.boardsChopped) return;
     const d = Math.hypot(h.x - px, h.y - py);
     if (d < 1.4 && d < doorDist) {
       doorDist = d;
       let label = h.label;
       if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? (state.inventory.staffKey ? "Empty Drawers" : "Take Key") : "Search Drawer";
       if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Flip Breaker";
-      if (h.id === "boards") label = state.flags.boardsChopped ? "Go Upstairs" : ""; // no prompt: you have to try things
+      if (h.id === "boards") label = ""; // no prompt: you have to try things
+      if (h.loot && (state.flags.looted || {})[h.id]) label = ""; // already searched
       doorTarget = { type: "hotspot", id: h.id, label };
     }
   });
   return doorTarget;
+}
+
+// Walking on stairs: the camera follows the steps; reaching the far end fades out and moves you to the next level.
+function updatePlayerHeight(dt) {
+  const p = yawObject.position;
+  if (state.transition) {
+    state.transition.t += dt;
+    const tr = state.transition;
+    if (!tr.done && tr.t >= 0.3) {
+      tr.done = true;
+      travel(tr.to);
+      p.y = EYE_HEIGHT + floorHeight(p.x, p.z);
+    }
+    if (tr.t >= 0.65) {
+      state.transition = null;
+      document.getElementById("transition-fade").classList.remove("active");
+    }
+    return;
+  }
+  const target = EYE_HEIGHT + floorHeight(p.x, p.z);
+  p.y += (target - p.y) * Math.min(1, dt * 10);
+  const s = stairAt(p.x, p.z);
+  if (s && s.to && state.phase === "explore") {
+    const t = (s.z0 - p.z) / (s.z0 - s.z1);
+    if (t >= 0.94) startTransition(s.to);
+  }
+  // step through an open apartment door and you are inside the flat
+  if (state.phase === "explore" && !state.transition) {
+    const pt = PORTALS.find((q) => state.doorsOpen[q.door] && p.x >= q.x0 && p.x < q.x1 && p.z > 3.5 && p.z < q.z);
+    if (pt) startTransition(pt.to);
+  }
+}
+function startTransition(to) {
+  state.transition = { t: 0, to, done: false };
+  keys.clear();
+  const f = document.getElementById("transition-fade");
+  f.classList.remove("hidden");
+  f.classList.add("active");
 }
 
 function travel(to) {
@@ -2329,6 +2811,7 @@ function travel(to) {
   yawObject.position.x = to.x;
   yawObject.position.z = to.y;
   yawObject.rotation.y = to.yaw;
+  yawObject.position.y = EYE_HEIGHT;
   keys.clear();
   buildWorld(); // lights are built per level
 }
@@ -2407,8 +2890,7 @@ function handleInteract() {
   } else if (target.type === "hotspot") {
     const h = HOTSPOTS.find((x) => x.id === target.id);
     if (h.id === "boards") {
-      if (state.flags.boardsChopped) travel({ x: 29.5, y: 5.9, yaw: Math.PI / 2 });
-      else if (state.held === "axe") {
+      if (state.held === "axe") {
         state.flags.boardsChopped = true;
         playKnock();
         setTimeout(playKnock, 220);
@@ -2416,7 +2898,7 @@ function handleInteract() {
         buildWorld();
       } else {
         playKnock();
-        addLog(state.inventory.axe ? "Need the axe in hand." : "Nailed shut.");
+        addLog("Nailed shut.");
       }
     } else if (h.id === "drawers") {
       const n = state.flags.drawers || 0;
@@ -2440,34 +2922,55 @@ function handleInteract() {
       if (state.flags.powerOn) addLog("The power is on.");
       else {
         state.flags.powerOn = true;
-        state.entity.mode = "done"; // the light drives it out of the building
-        entityGroup.visible = false;
-        setFear(0);
+        if (state.entity.mode === "active" && levelOf(yawObject.position.x) === 0) {
+          state.entity.mode = "vanishing"; // the light burns it off the ground floor
+          state.entity.timer = 0.9;
+          playVanish();
+        } else {
+          state.entity.mode = "gone"; // gone from here; it will turn up upstairs or below
+          state.entity.timer = 14;
+        }
         playClick();
         setTimeout(playKnock, 200);
         addLog("Power restored.");
         buildWorld();
       }
+    } else if (h.exit) {
+      const pt = PORTALS.find((p) => p.door === h.exit);
+      playDoorCreak(DOORS.find((dr) => dr.id === h.exit));
+      startTransition(pt.back);
+    } else if (h.paper) {
+      openPaper(h.paper);
+    } else if (h.loot) {
+      if (!state.flags.looted) state.flags.looted = {};
+      if (state.flags.looted[h.id]) return;
+      state.flags.looted[h.id] = true;
+      playClick();
+      if (h.loot !== "none") collectItem(h.loot);
     } else if (h.go) travel(h.go);
     else {
       playKnock();
       addLog(h.text);
     }
   } else if (target.type === "item") {
-    const item = ITEMS.find((it) => it.id === target.id);
-    state.inventory[target.id] = true;
-    if (!item.note) showPickup(item.name);
-    if (item.note) openPaper(item);
-    if (item.name === "Batteries") state.batteries += 1;
-    if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
-    if (target.id === "flashlight") {
-      state.inventory.hands = true; // empty hands, so there's always something to switch to
-      state.flags.tut = "open"; // forced tutorial: open the inventory, then switch items
-    }
-    buildWorld(); // remove the collected item's marker from the scene
-  } else if (target.type === "npc") {
+    collectItem(target.id);
+    } else if (target.type === "npc") {
     openDialogue(target.id);
   }
+}
+
+function collectItem(id) {
+  const item = ITEMS.find((it) => it.id === id);
+  state.inventory[id] = true;
+  if (!item.note) showPickup(item.name);
+  if (item.note) openPaper(item);
+  if (item.name === "Batteries") state.batteries += 1;
+  if (id === "flashlight" || (id === "axe" && !state.held)) state.held = id;
+  if (id === "flashlight") {
+    state.inventory.hands = true; // empty hands, so there's always something to switch to
+    state.flags.tut = "open"; // forced tutorial: open the inventory, then switch items
+  }
+  buildWorld(); // remove the collected item's marker from the scene
 }
 
 // ---- held items + inventory ---------------------------------------------------
@@ -2543,7 +3046,8 @@ function renderInventory() {
     document.getElementById("inventory-overlay").classList.add("hidden");
     openPaper(it);
   }));
-  ["johnKey", "staffKey"].filter((id) => state.inventory[id]).forEach((id) => add(id === "johnKey" ? "Brass Key" : "Staff Key", null));
+  if (state.inventory.staffKey) add("Staff Key", null);
+  ITEMS.filter((it) => (it.key || it.trinket) && state.inventory[it.id]).forEach((it) => add(it.name, null));
   if (!list.children.length) add("Empty", null);
 }
 
@@ -2708,45 +3212,148 @@ function chooseDialogueOption(choice) {
 document.getElementById("dialogue-exit").addEventListener("click", closeDialogue);
 
 // ---- the presence ---------------------------------------------------------------
-// Something moves through the building (it ignores walls). Light off or dead:
-// it closes in. Light on but not pointed at it: it hangs back. Light on it:
-// it recoils. If it reaches you in the dark, the run ends.
+// Something walks the building (it can't pass walls or closed doors). In the dark it
+// closes in, faster the longer you stay there. Light on but not on it: it hangs back.
+// Light on it: it recoils. Switching the power on drives it out for good.
 
 const ENTITY_SPAWN_DELAY = 12; // seconds after the hall door opens
-const ENTITY_SPEED_DARK = 0.9;
-const ENTITY_SPEED_DEAD = 1.2; // battery gone: it moves faster
+const ENTITY_SPEED_DARK = 0.9; // how fast it creeps when you've only just lost the light
+const ENTITY_SPEED_RUSH = 5.6; // where it ends up if you stay in the dark: far faster than you
+const ENTITY_DARK_RAMP = 9; // seconds in the dark to reach full rush
 const ENTITY_SPEED_WATCHING = 0.25;
 const ENTITY_RETREAT_SPEED = 1.8;
-const ENTITY_CATCH_DIST = 0.8;
+const ENTITY_CATCH_DIST = 0.85;
 const ENTITY_BEAM_COS = 0.96; // matches the small beam (about 16 degrees)
 const ENTITY_BEAM_RANGE = 9;
-const ENTITY_SPAWNS = [
-  [3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 11.5],
-  [17.5, 10.5], [7.5, 5.5], [12.5, 6.0], [17.5, 6.0],
+const ENTITY_SPAWNS_BY_LEVEL = [
+  [[3.0, 9.5], [13.5, 9.5], [8.5, 9.0], [2.0, 12.0], [17.5, 10.5], [7.5, 5.5], [12.5, 6.0], [17.5, 6.0]], // ground floor
+  [[27.5, 6.5], [33.5, 6.5], [39.5, 6.5], [44.5, 6.5], [30.5, 2.5], [40.5, 2.5], [30.5, 10.5], [40.5, 10.5]], // second floor
+  [[52.5, 3.5], [57.5, 3.5], [51.5, 9.5], [53.0, 10.8], [51.5, 3.0]], // basement
 ];
+const ENTITY_SPAWNS = ENTITY_SPAWNS_BY_LEVEL[0];
+// 0 = ground floor, 1 = second floor, 2 = basement (they sit side by side on the map)
+function levelOf(x) {
+  return x < 21 || x >= APT_X0 ? 0 : x < 46 ? 1 : 2; // the apartments (x >= 70) belong to the ground floor
+}
 
+// ---- the model: a tall, starved figure in a ragged coat, hunched, arms to its knees ----
 const entityGroup = new THREE.Group();
+const entityParts = {};
 (function buildEntityMesh() {
-  const dark = new THREE.MeshStandardMaterial({ color: 0x0f0f12, roughness: 1 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.45, 0.26), dark);
-  body.position.set(0, 0.75, 0);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 8), dark);
-  head.position.set(0, 1.65, 0);
-  const armGeo = new THREE.BoxGeometry(0.09, 1.15, 0.09);
-  const armL = new THREE.Mesh(armGeo, dark);
-  armL.position.set(-0.3, 0.9, 0);
-  const armR = new THREE.Mesh(armGeo, dark);
-  armR.position.set(0.3, 0.9, 0);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xcc2222 });
-  const eyeGeo = new THREE.SphereGeometry(0.03, 6, 6);
-  const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-  eyeL.position.set(-0.07, 1.68, 0.15);
-  const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-  eyeR.position.set(0.07, 1.68, 0.15);
-  [body, head, armL, armR, eyeL, eyeR].forEach((m) => entityGroup.add(m));
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb4b09f, roughness: 0.9 });
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x0c0c0e, roughness: 1, side: THREE.DoubleSide });
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc9b4, roughness: 0.8 });
+  const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const glow = new THREE.MeshBasicMaterial({ color: 0xff2a14 });
+  const box = (w, h, d, mat, x, y, z, parent) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    parent.add(m);
+    return m;
+  };
+
+  const legL = new THREE.Group();
+  legL.position.set(-0.1, 0.8, 0);
+  const legR = new THREE.Group();
+  legR.position.set(0.1, 0.8, 0);
+  [legL, legR].forEach((l) => {
+    box(0.07, 0.8, 0.07, cloth, 0, -0.4, 0, l);
+    box(0.09, 0.05, 0.2, cloth, 0, -0.8, 0.06, l);
+    entityGroup.add(l);
+  });
+
+  const spine = new THREE.Group();
+  spine.position.set(0, 0.8, 0);
+  spine.rotation.x = 0.32; // hunched forward
+  entityGroup.add(spine);
+  box(0.34, 0.75, 0.2, cloth, 0, 0.38, 0, spine); // torso
+  for (let i = 0; i < 6; i++) {
+    // ragged coat tails
+    const t = box(0.07, 0.55 + (i % 3) * 0.12, 0.02, cloth, -0.14 + i * 0.056, -0.2, 0.1 - (i % 2) * 0.2, spine);
+    t.rotation.z = (i - 2.5) * 0.04;
+  }
+  for (let i = 0; i < 5; i++) box(0.3, 0.018, 0.02, boneMat, 0, 0.2 + i * 0.1, 0.105, spine); // ribs showing
+
+  const neck = box(0.06, 0.34, 0.06, skin, 0, 0.9, 0.04, spine);
+  neck.rotation.x = 0.25;
+
+  const head = new THREE.Group();
+  head.position.set(0, 1.12, 0.14);
+  spine.add(head);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), skin);
+  skull.scale.set(0.78, 1.55, 0.9);
+  head.add(skull);
+  [-0.05, 0.05].forEach((x) => {
+    const socket = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), black);
+    socket.scale.set(1, 1.3, 0.6);
+    socket.position.set(x, 0.07, 0.11);
+    head.add(socket);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 6), glow);
+    eye.position.set(x, 0.07, 0.135);
+    head.add(eye);
+  });
+  box(0.03, 0.07, 0.03, black, 0, -0.02, 0.125, head); // nose hole
+  const jaw = new THREE.Group();
+  jaw.position.set(0, -0.12, 0.04);
+  head.add(jaw);
+  box(0.1, 0.13, 0.08, skin, 0, -0.07, 0.03, jaw);
+  box(0.075, 0.1, 0.02, black, 0, -0.04, 0.075, jaw); // open mouth
+  for (let i = 0; i < 6; i++) box(0.01, 0.045, 0.01, boneMat, -0.03 + i * 0.012, -0.01, 0.08, jaw); // teeth
+  const eyeLight = new THREE.PointLight(0xff2200, 0.5, 3.2, 2);
+  eyeLight.position.set(0, 0.07, 0.2);
+  head.add(eyeLight);
+
+  const makeArm = (side) => {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(side * 0.22, 0.7, 0);
+    spine.add(shoulder);
+    box(0.05, 0.6, 0.05, skin, 0, -0.3, 0, shoulder);
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -0.6, 0);
+    shoulder.add(elbow);
+    box(0.04, 0.62, 0.04, skin, 0, -0.31, 0, elbow);
+    for (let f = 0; f < 4; f++) {
+      const finger = box(0.012, 0.26, 0.012, boneMat, (f - 1.5) * 0.02, -0.74, 0.01, elbow);
+      finger.rotation.x = 0.15 + f * 0.05;
+    }
+    return { shoulder, elbow };
+  };
+  const armL = makeArm(-1);
+  const armR = makeArm(1);
+
+  Object.assign(entityParts, { spine, head, jaw, legL, legR, armL, armR });
   entityGroup.visible = false;
   scene.add(entityGroup);
 })();
+
+let entityAnimT = 0;
+let entityTwitch = 0;
+let entityTwitchTarget = 0;
+let entityTension = 0; // 0-1, drives the building music
+
+function animateEntity(dt, speed, near) {
+  const p = entityParts;
+  entityAnimT += dt;
+  const gait = entityAnimT * (2.2 + speed * 2.4);
+  const stride = Math.min(0.7, 0.12 + speed * 0.22);
+  p.legL.rotation.x = Math.sin(gait) * stride;
+  p.legR.rotation.x = -Math.sin(gait) * stride;
+  p.spine.rotation.z = Math.sin(entityAnimT * 1.3) * 0.05 + Math.sin(gait) * 0.03;
+  p.spine.rotation.x = 0.32 + near * 0.18 + Math.sin(gait * 2) * 0.02;
+  p.armL.shoulder.rotation.x = -0.15 + Math.sin(gait + Math.PI) * stride * 0.6 - near * 0.55;
+  p.armR.shoulder.rotation.x = -0.15 + Math.sin(gait) * stride * 0.6 - near * 0.55;
+  p.armL.shoulder.rotation.z = -0.08;
+  p.armR.shoulder.rotation.z = 0.08;
+  p.armL.elbow.rotation.x = -0.25 - near * 0.6;
+  p.armR.elbow.rotation.x = -0.25 - near * 0.6;
+  // the head twitches and snaps to one side now and then
+  if (Math.random() < dt * 1.2) entityTwitchTarget = (Math.random() - 0.5) * 1.0;
+  entityTwitch += (entityTwitchTarget - entityTwitch) * Math.min(1, dt * 14);
+  p.head.rotation.z = entityTwitch;
+  p.head.rotation.y = entityTwitch * 0.5;
+  p.head.rotation.x = 0.15 + near * 0.2;
+  p.jaw.rotation.x = 0.2 + near * 0.55 + Math.max(0, Math.sin(entityAnimT * 34)) * 0.08 * near;
+}
 
 function setFear(v) {
   document.getElementById("fear-vignette").style.opacity = v.toFixed(2);
@@ -2778,17 +3385,76 @@ function entityInBeam(e) {
   return dot > ENTITY_BEAM_COS && hasLineOfSight(p.x, p.z, e.x, e.z);
 }
 
+// ---- it walks, it doesn't phase: breadth-first search over the ground-floor grid ----
+function cellFree(c, r) {
+  if (r < 1 || r > 12 || c < 1 || c >= MAP[0].length - 1) return false;
+  if (isWall(c + 0.5, r + 0.5)) return false;
+  if (entityBlock.some((s) => s.maxX > c && s.minX < c + 1 && s.maxZ > r && s.minZ < r + 1)) return false;
+  return !solids.some((s) => s.maxX > c && s.minX < c + 1 && s.maxZ > r && s.minZ < r + 1); // no furniture in the cell
+}
+
+// Returns the list of cells from (sx,sz) to (gx,gz), or null if it can't get there (closed doors, etc.).
+function entityPath(sx, sz, gx, gz) {
+  const sc = Math.floor(sx);
+  const sr = Math.floor(sz);
+  const gc = Math.floor(gx);
+  const gr = Math.floor(gz);
+  const key = (c, r) => r * 256 + c;
+  const prev = new Map([[key(sc, sr), null]]);
+  const queue = [[sc, sr]];
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  while (queue.length) {
+    const [c, r] = queue.shift();
+    if (c === gc && r === gr) {
+      const path = [];
+      let k = key(c, r);
+      let cur = [c, r];
+      while (cur) {
+        path.push(cur);
+        cur = prev.get(key(cur[0], cur[1]));
+      }
+      return path.reverse();
+    }
+    for (const [dc, dr] of dirs) {
+      const nc = c + dc;
+      const nr = r + dr;
+      const k2 = key(nc, nr);
+      if (prev.has(k2)) continue;
+      const isGoal = nc === gc && nr === gr;
+      if (!isGoal && !cellFree(nc, nr)) continue;
+      if (dc && dr && !(cellFree(c + dc, r) && cellFree(c, r + dr))) continue; // no cutting corners
+      prev.set(k2, [c, r]);
+      queue.push([nc, nr]);
+    }
+  }
+  return null;
+}
+
 function spawnEntity() {
   const p = yawObject.position;
-  const far = ENTITY_SPAWNS.filter(([x, z]) => Math.hypot(x - p.x, z - p.z) >= 6);
-  const pool = far.length ? far : ENTITY_SPAWNS;
-  const [x, z] = pool[Math.floor(Math.random() * pool.length)];
-  state.entity.x = x;
-  state.entity.z = z;
-  state.entity.mode = "active";
-  if (!state.flags.entitySeen) {
-    state.flags.entitySeen = true;
+  let best = null;
+  const lvl = levelOf(p.x);
+  const options = ENTITY_SPAWNS_BY_LEVEL[lvl].filter(([x, z]) => cellFree(Math.floor(x), Math.floor(z)));
+  options.sort(() => Math.random() - 0.5);
+  for (const [x, z] of options) {
+    const path = entityPath(x, z, p.x, p.z);
+    if (!path) continue;
+    if (path.length >= 8) {
+      best = [x, z];
+      break;
+    }
+    if (!best) best = [x, z];
   }
+  if (!best) return false; // nowhere it can reach you from yet
+  state.entity.x = best[0];
+  state.entity.z = best[1];
+  state.entity.mode = "active";
+  state.entity.level = lvl;
+  state.entity.dark = 0;
+  state.entity.repath = 0;
+  state.entity.path = null;
+  if (!state.flags.entitySeen) state.flags.entitySeen = true;
+  return true;
 }
 
 function caughtByEntity() {
@@ -2797,17 +3463,61 @@ function caughtByEntity() {
   keys.clear();
   playSting();
   setFear(1);
+  entityTension = 0;
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   document.getElementById("caught-overlay").classList.remove("hidden");
 }
 
+// Move with wall collision (per axis, like the player), so it can never end up inside a wall.
+function entityStep(e, mx, mz) {
+  const r = 0.22;
+  if (!isWall(e.x + mx + Math.sign(mx || 1) * r, e.z)) e.x += mx;
+  if (!isWall(e.x, e.z + mz + Math.sign(mz || 1) * r)) e.z += mz;
+}
+
 function updateEntity(dt) {
   const e = state.entity;
+  entityTension = 0;
   if (state.phase !== "explore" || state.flags.tut === "open") return;
-  if (yawObject.position.x > 21) {
+  if (e.mode === "vanishing") {
+    // the lights came on: it flickers, shrinks and is gone
+    e.timer -= dt;
+    entityGroup.visible = Math.random() > 0.35 && e.timer > 0;
+    entityGroup.scale.y = Math.max(0.05, e.timer / 0.9);
+    setFear(Math.max(0, e.timer / 0.9) * 0.5);
+    if (e.timer <= 0) {
+      e.mode = "gone";
+      e.timer = 14; // it will find you again upstairs or in the basement
+      entityGroup.visible = false;
+      entityGroup.scale.set(1, 1, 1);
+      setFear(0);
+    }
+    return;
+  }
+  // Before the power is on it haunts the ground floor. Once the lights are on it can only be
+  // upstairs or in the basement.
+  if (yawObject.position.x >= APT_X0) {
+    entityGroup.visible = false; // the flats are safe; it waits outside
+    setFear(0);
+    return;
+  }
+  const lvl = levelOf(yawObject.position.x);
+  const haunted = state.flags.powerOn ? lvl >= 1 : lvl === 0;
+  if (!haunted) {
     entityGroup.visible = false;
     setFear(0);
-    return; // it stays on the ground floor
+    if (e.mode === "active") {
+      e.mode = "gone"; // you left its floor; it loses you
+      e.timer = 8 + Math.random() * 6;
+    }
+    return;
+  }
+  if (e.mode === "active" && e.level !== lvl) {
+    entityGroup.visible = false;
+    setFear(0);
+    e.mode = "gone";
+    e.timer = 6 + Math.random() * 6;
+    return;
   }
   if (e.mode === "idle" || e.mode === "done") {
     entityGroup.visible = false;
@@ -2817,7 +3527,7 @@ function updateEntity(dt) {
     entityGroup.visible = false;
     setFear(0);
     e.timer -= dt;
-    if (e.timer <= 0) spawnEntity();
+    if (e.timer <= 0 && !spawnEntity()) e.timer = 2; // try again shortly
     return;
   }
 
@@ -2828,25 +3538,66 @@ function updateEntity(dt) {
     return;
   }
   const p = yawObject.position;
-  const dx = p.x - e.x;
-  const dz = p.z - e.z;
-  const d = Math.hypot(dx, dz) || 0.0001;
   const inBeam = entityInBeam(e);
+  const lit = hasFlashlightOn() || groundLit();
+
+  // the longer you stay in the dark, the faster it comes
+  if (inBeam) e.dark = Math.max(0, (e.dark || 0) - dt * 3);
+  else if (!lit) e.dark = (e.dark || 0) + dt;
+  else e.dark = Math.max(0, (e.dark || 0) - dt);
+  const k = Math.min(1, e.dark / ENTITY_DARK_RAMP);
+
   let speed;
   let dir = 1;
   if (inBeam) {
     speed = ENTITY_RETREAT_SPEED;
     dir = -1;
-    if (!state.flags.entityRecoiled) {
-      state.flags.entityRecoiled = true;
-    }
-  } else if (hasFlashlightOn() || groundLit()) {
-    speed = ENTITY_SPEED_WATCHING;
+    state.flags.entityRecoiled = true;
+  } else if (lit) {
+    speed = ENTITY_SPEED_WATCHING + k * 0.5;
   } else {
-    speed = state.batteryLevel <= 0 ? ENTITY_SPEED_DEAD : ENTITY_SPEED_DARK;
+    speed = ENTITY_SPEED_DARK + k * k * (ENTITY_SPEED_RUSH - ENTITY_SPEED_DARK);
   }
-  e.x = Math.max(1.3, Math.min(19.7, e.x + (dir * dx / d) * speed * dt));
-  e.z = Math.max(1.3, Math.min(12.7, e.z + (dir * dz / d) * speed * dt));
+
+  const step = speed * dt;
+  let faceX = p.x - e.x;
+  let faceZ = p.z - e.z;
+  if (dir < 0) {
+    // recoil straight back, still blocked by walls
+    const d0 = Math.hypot(faceX, faceZ) || 1;
+    entityStep(e, (-faceX / d0) * step, (-faceZ / d0) * step);
+  } else {
+    // follow a path around walls, doors and furniture
+    e.repath = (e.repath || 0) - dt;
+    if (e.repath <= 0 || !e.path) {
+      e.path = entityPath(e.x, e.z, p.x, p.z);
+      e.repath = 0.2;
+    }
+    let tx = p.x;
+    let tz = p.z;
+    if (e.path && e.path.length > 1) {
+      // aim for the centre of the next cell; when close to the last one, go straight for the player
+      const next = e.path[1];
+      tx = next[0] + 0.5;
+      tz = next[1] + 0.5;
+      if (e.path.length === 2 && Math.hypot(p.x - e.x, p.z - e.z) < 1.2) {
+        tx = p.x;
+        tz = p.z;
+      }
+    } else if (!e.path) {
+      tx = e.x; // no way through right now (a closed door): it waits
+      tz = e.z;
+    }
+    const mx = tx - e.x;
+    const mz = tz - e.z;
+    const md = Math.hypot(mx, mz);
+    if (md > 0.02) {
+      const s = Math.min(step, md);
+      entityStep(e, (mx / md) * s, (mz / md) * s);
+      faceX = mx;
+      faceZ = mz;
+    }
+  }
 
   const nd = Math.hypot(p.x - e.x, p.z - e.z);
   if (inBeam && nd > ENTITY_BEAM_RANGE) {
@@ -2856,24 +3607,25 @@ function updateEntity(dt) {
     setFear(0);
     return;
   }
-  if (nd < ENTITY_CATCH_DIST && !inBeam) {
+  const near = Math.max(0, Math.min(1, 1 - (nd - ENTITY_CATCH_DIST) / 6));
+  entityGroup.position.set(e.x, 0, e.z);
+  entityGroup.rotation.y = Math.atan2(p.x - e.x, p.z - e.z);
+  entityGroup.scale.set(1, 1, 1);
+  entityGroup.visible = true;
+  animateEntity(dt, speed, near);
+
+  if (nd < ENTITY_CATCH_DIST && !inBeam && hasLineOfSight(p.x, p.z, e.x, e.z)) {
     caughtByEntity();
-    entityGroup.position.set(e.x, 0, e.z);
-    entityGroup.rotation.y = Math.atan2(p.x - e.x, p.z - e.z);
-    entityGroup.visible = true;
     return;
   }
 
-  entityGroup.position.set(e.x, 0, e.z);
-  entityGroup.rotation.y = Math.atan2(p.x - e.x, p.z - e.z);
-  entityGroup.visible = true;
-
-  const fear = Math.max(0, Math.min(1, 1 - (nd - ENTITY_CATCH_DIST) / 7)) * (inBeam ? 0.6 : 1);
+  const fear = near * (inBeam ? 0.6 : 1);
   setFear(fear);
+  entityTension = Math.min(1, near * 1.05 + k * 0.25);
   e.beat -= dt;
   if (e.beat <= 0 && fear > 0.05) {
     playHeartbeat(fear);
-    e.beat = 1.3 - fear * 0.85;
+    e.beat = 1.3 - fear * 0.85 - k * 0.2;
   }
 }
 
@@ -2890,6 +3642,231 @@ document.getElementById("caught-leave-button").addEventListener("click", () => {
   showScreen("screen-title");
 });
 
+// ---- pop-out scares -----------------------------------------------------------------
+function clearScares() {
+  scareActive.forEach((a) => scene.remove(a.mesh));
+  scareActive = [];
+  scareBlackout = 0;
+}
+function playBang() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource();
+  const lp = audioCtx.createBiquadFilter();
+  const ng = audioCtx.createGain();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  lp.type = "lowpass";
+  lp.frequency.value = 900;
+  ng.gain.setValueAtTime(0.5, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  n.connect(lp).connect(ng).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.5);
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.frequency.setValueAtTime(90, t);
+  o.frequency.exponentialRampToValueAtTime(30, t + 0.35);
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.45);
+}
+function playSkitter() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  for (let i = 0; i < 9; i++) {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "square";
+    o.frequency.value = 1500 + Math.random() * 1800;
+    const at = t + i * 0.07 + Math.random() * 0.03;
+    g.gain.setValueAtTime(0.05, at);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.04);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(at);
+    o.stop(at + 0.05);
+  }
+}
+
+// a pale, tall figure in a dark shroud; always turns to face you
+function makeApparition() {
+  const g = new THREE.Group();
+  const shroud = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 1, side: THREE.DoubleSide });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xc8c4b4, roughness: 0.8, emissive: 0x1c1c1a });
+  const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.7, 10, 1, true), shroud);
+  body.position.y = 0.85;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), skin);
+  head.scale.set(0.8, 1.5, 0.9);
+  head.position.set(0, 1.85, 0.05);
+  g.add(head);
+  [-0.05, 0.05].forEach((x) => {
+    const sock = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), black);
+    sock.position.set(x, 1.9, 0.15);
+    g.add(sock);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.01, 6, 6), eyeMat);
+    eye.position.set(x, 1.9, 0.18);
+    g.add(eye);
+  });
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.02), black);
+  mouth.position.set(0, 1.74, 0.15);
+  g.add(mouth);
+  [-1, 1].forEach((s) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.035, 1.25, 0.035), skin);
+    arm.position.set(s * 0.26, 1.15, 0.12);
+    arm.rotation.z = s * 0.08;
+    g.add(arm);
+  });
+  return g;
+}
+function makeCrawler() {
+  const g = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb8b4a4, roughness: 0.8, emissive: 0x161614 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.6), skin);
+  body.position.y = 0.3;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), skin);
+  head.position.set(0, 0.34, 0.42);
+  g.add(head);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff2a14 }));
+  eye.position.set(0, 0.37, 0.5);
+  g.add(eye);
+  g.userData.limbs = [];
+  [[-1, 0.2], [1, 0.2], [-1, -0.2], [1, -0.2]].forEach(([s, z]) => {
+    const limb = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.4, 0.03), skin);
+    limb.position.set(s * 0.22, 0.2, z);
+    limb.rotation.z = s * 0.5;
+    g.add(limb);
+    g.userData.limbs.push(limb);
+  });
+  return g;
+}
+function makeSack() {
+  const g = new THREE.Group();
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x6a665a, roughness: 1 });
+  const bundle = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.3), cloth);
+  g.add(bundle);
+  const rope = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.2, 0.02), new THREE.MeshStandardMaterial({ color: 0x2a2018 }));
+  rope.position.y = 1.0;
+  g.add(rope);
+  const hand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.05), new THREE.MeshStandardMaterial({ color: 0xc4bfae }));
+  hand.position.set(0.24, -0.35, 0);
+  g.add(hand);
+  return g;
+}
+
+function startScare(sc) {
+  const a = { sc, t: 0, state: "wait", vy: 0 };
+  const floorY = floorHeight(sc.at.x, sc.at.z);
+  if (sc.kind === "lurker" || sc.kind === "slam") {
+    a.mesh = makeApparition();
+    a.mesh.position.set(sc.at.x, floorY, sc.at.z);
+    a.mesh.visible = false;
+    if (sc.kind === "slam") {
+      playBang();
+      scareBlackout = sc.delay || 0.8;
+    }
+  } else if (sc.kind === "crawler") {
+    a.mesh = makeCrawler();
+    a.mesh.position.set(sc.at.x, floorY, sc.at.z);
+    playSkitter();
+  } else {
+    a.mesh = makeSack();
+    a.mesh.position.set(sc.at.x, 2.35, sc.at.z);
+    a.state = "hang";
+  }
+  scene.add(a.mesh);
+  scareActive.push(a);
+}
+
+function updateScares(dt) {
+  if (state.phase !== "explore") return;
+  const p = yawObject.position;
+  const lvl = levelOf(p.x);
+  scareBlackout = Math.max(0, scareBlackout - dt);
+  if (state.flags.powerOn && !state.transition) {
+    if (!state.flags.scares) state.flags.scares = {};
+    SCARES.forEach((sc) => {
+      if (sc.level !== lvl || state.flags.scares[sc.id]) return;
+      if (Math.hypot(p.x - sc.trigger.x, p.z - sc.trigger.z) < sc.trigger.r) {
+        state.flags.scares[sc.id] = true;
+        startScare(sc);
+      }
+    });
+  }
+  for (let i = scareActive.length - 1; i >= 0; i--) {
+    const a = scareActive[i];
+    const sc = a.sc;
+    a.t += dt;
+    const m = a.mesh;
+    let dead = false;
+    if (sc.kind === "lurker" || sc.kind === "slam") {
+      const d = Math.hypot(p.x - sc.at.x, p.z - sc.at.z);
+      if (a.state === "wait" && a.t >= (sc.delay || 0)) {
+        a.state = "shown";
+        a.shownAt = a.t;
+        m.visible = true;
+      }
+      if (a.state === "shown") {
+        m.rotation.y = Math.atan2(p.x - sc.at.x, p.z - sc.at.z);
+        if (d < (sc.near || 2.8) || a.t - a.shownAt > (sc.life || 5)) {
+          a.state = "going";
+          a.goneAt = a.t;
+          if (d < (sc.near || 2.8) + 0.5) playSting();
+        }
+      }
+      if (a.state === "going") {
+        // it flickers out
+        const k = (a.t - a.goneAt) / 0.3;
+        m.visible = Math.random() > k;
+        if (k >= 1) dead = true;
+      }
+      if (lvl !== sc.level) dead = true;
+    } else if (sc.kind === "crawler") {
+      const k = Math.min(1, a.t / sc.dur);
+      m.position.x = sc.at.x + (sc.to.x - sc.at.x) * k;
+      m.position.z = sc.at.z + (sc.to.z - sc.at.z) * k;
+      m.rotation.y = Math.atan2(sc.to.x - sc.at.x, sc.to.z - sc.at.z);
+      m.userData.limbs.forEach((l, j) => (l.rotation.x = Math.sin(a.t * 30 + j * 1.6) * 0.7));
+      if (k >= 1) dead = true;
+    } else {
+      // drop
+      if (a.state === "hang") {
+        m.rotation.y += Math.sin(a.t * 2) * dt * 0.5;
+        if (Math.hypot(p.x - sc.at.x, p.z - sc.at.z) < 2.0 || a.t > 9) a.state = "fall";
+      } else if (a.state === "fall") {
+        a.vy -= 16 * dt;
+        m.position.y += a.vy * dt;
+        if (m.position.y <= 0.55) {
+          m.position.y = 0.55;
+          m.rotation.z = 1.35; // it lands on its side
+          a.state = "down";
+          a.downAt = a.t;
+          playBang();
+        }
+      } else if (a.t - a.downAt > 7) dead = true;
+    }
+    if (dead) {
+      scene.remove(m);
+      scareActive.splice(i, 1);
+    }
+  }
+  // flickering emergency lights and swaying chains
+  const T = performance.now() / 1000;
+  flickerLights.forEach((f) => {
+    const n = Math.sin(T * 23 + f.phase) * Math.sin(T * 7.3 + f.phase * 2);
+    f.light.intensity = f.base * (n > 0.55 ? 0.1 : 0.75 + 0.25 * Math.sin(T * 3 + f.phase));
+  });
+  swayers.forEach((s) => {
+    s.grp.rotation.z = Math.sin(T * 0.9 + s.phase) * 0.08;
+    s.grp.rotation.x = Math.sin(T * 0.7 + s.phase * 1.7) * 0.06;
+  });
+}
+
 // ---- main loop -----------------------------------------------------------------
 
 const clock = new THREE.Clock();
@@ -2899,12 +3876,15 @@ function gameLoop() {
   tryMovePlayer(dt);
   checkJohnRoom();
   updateEntity(dt);
+  updateScares(dt);
+  applyTension(entityTension);
   updateDoorAnimation(dt);
   updateFluorescents(dt);
   syncAmbient();
   updateDeskLampFlicker(dt);
   updateStaffSign(dt);
   updateElevator(dt);
+  updatePlayerHeight(dt);
   updateElevatorLight(dt);
   updateBrokenLamp(dt);
   updateFlashlight(dt);
