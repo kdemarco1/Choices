@@ -75,7 +75,7 @@ function hasFlashlightOn() {
 
 // With the breaker on, the ground floor (lobby, hall, apartments, stairwell, staff room) is lit by ceiling fluorescents.
 function groundLit() {
-  return !!state.flags.powerOn && yawObject.position.x < 21 && yawObject.position.z < DOOR_ROW;
+  return !!state.flags.powerOn && levelOf(yawObject.position.x) === 0 && yawObject.position.z < DOOR_ROW;
 }
 
 function currentLightRange() {
@@ -460,6 +460,7 @@ function resetRun() {
   state.entity = { mode: "idle", timer: 0, x: 0, z: 0, beat: 0, dark: 0, path: null, repath: 0 };
   entityGroup.scale.set(1, 1, 1);
   entityGroup.visible = false;
+  clearScares();
   setFear(0);
   keys.clear();
   clearCaptions();
@@ -711,13 +712,34 @@ heldFlashlight.visible = false;
 camera.add(heldFlashlight);
 
 function buildAxeGroup() {
+  // a fire axe: long grained handle, wrapped grip, heavy curved head with a bright edge and a back spike
   const g = new THREE.Group();
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a20, roughness: 0.9 });
-  const steel = new THREE.MeshStandardMaterial({ color: 0x8a1a14, roughness: 0.5, metalness: 0.5 });
-  g.add(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.04, 0.04), wood));
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.05, 0.22), steel);
-  head.position.set(0.28, 0, 0.06);
-  g.add(head);
+  const wood = new THREE.MeshStandardMaterial({ color: 0x4a2c16, roughness: 0.8 });
+  const grip = new THREE.MeshStandardMaterial({ color: 0x15110e, roughness: 1 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.45, metalness: 0.8 });
+  const edge = new THREE.MeshStandardMaterial({ color: 0xdfe6ec, roughness: 0.2, metalness: 0.9, emissive: 0x20262c });
+  const gore = new THREE.MeshStandardMaterial({ color: 0x5a0a0a, roughness: 0.6 });
+  const part = (geo, mat, x, y, z, rz) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    if (rz) m.rotation.z = rz;
+    g.add(m);
+    return m;
+  };
+  const handle = part(new THREE.CylinderGeometry(0.022, 0.03, 0.86, 8), wood, -0.02, 0, 0, Math.PI / 2);
+  for (let i = 0; i < 5; i++) part(new THREE.CylinderGeometry(0.034, 0.034, 0.025, 8), grip, -0.3 + i * 0.045, 0, 0, Math.PI / 2); // wrapped grip
+  part(new THREE.SphereGeometry(0.04, 8, 6), iron, -0.45, 0, 0); // pommel
+  part(new THREE.BoxGeometry(0.1, 0.07, 0.07), iron, 0.4, 0, 0); // socket where the head sits
+  for (let i = 0; i < 6; i++) {
+    // the blade fans out and curves towards the edge
+    const w = 0.07 + i * 0.022;
+    part(new THREE.BoxGeometry(w, 0.026, 0.045), iron, 0.4 + (i > 3 ? 0.012 * (i - 3) : 0), 0, 0.055 + i * 0.043);
+  }
+  part(new THREE.BoxGeometry(0.2, 0.014, 0.02), edge, 0.436, 0, 0.3); // the bright edge
+  part(new THREE.BoxGeometry(0.1, 0.03, 0.012), gore, 0.43, 0.001, 0.275); // dried blood on it
+  part(new THREE.BoxGeometry(0.07, 0.02, 0.02), gore, 0.27, 0, 0.0).rotation.y = 0.4;
+  const spike = part(new THREE.ConeGeometry(0.022, 0.2, 6), iron, 0.4, 0, -0.14); // back spike
+  spike.rotation.x = -Math.PI / 2;
   return g;
 }
 const heldAxe = buildAxeGroup();
@@ -800,6 +822,10 @@ let deskBulbMat = null;
 const DESK_LAMP_LEVEL = 4.5;
 let deskLampFlickerLeft = 0;
 let deskLampNextFlicker = 6;
+let flickerLights = []; // {light, base} lights that stutter (emergency bulbs, boiler glow)
+let swayers = []; // hanging chains
+let scareActive = []; // pop-out apparitions in flight
+let scareBlackout = 0;
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
 let deskLampFlickerTimer = 0;
 
@@ -1467,6 +1493,9 @@ function buildWorld() {
   staffSignLight = null;
   solids = [];
   deskLamp = null;
+  flickerLights = [];
+  swayers = [];
+  clearScares();
 
   const rows = MAP.length;
   const cols = MAP[0].length;
@@ -1647,10 +1676,15 @@ function buildWorld() {
   });
 
   addLevels();
+  {
+    const inApt = APT_DEFS.find((a) => yawObject.position.x >= a.ox && yawObject.position.x < a.ox + 20);
+    if (inApt) addApartment(inApt);
+  }
+  if (levelOf(yawObject.position.x) === 2) addBasementDecor();
   addFluorescents();
   worldGroup.traverse((o) => { if (o.isPointLight) o.intensity *= 1.1; }); // environment 10% brighter
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
-  ITEMS.filter((it) => !state.inventory[it.id]).forEach((it) => {
+  ITEMS.filter((it) => !state.inventory[it.id] && !it.hidden).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
     else if (it.id === "axe") { if (state.flags.powerOn) addAxeModel(it.x, 0.07, it.y); }
@@ -1679,17 +1713,27 @@ const FLUORESCENTS = [
 ];
 function addFluorescents() {
   fluoLights = [];
-  if (!state.flags.powerOn || yawObject.position.x >= 21) return;
+  const px = yawObject.position.x;
+  if (!state.flags.powerOn || (px >= 21 && px < APT_X0)) return;
+  let spots = FLUORESCENTS;
+  let power = 20;
+  let reach = 14;
+  if (px >= APT_X0) {
+    const a = APT_DEFS.find((d) => px >= d.ox && px < d.ox + 20);
+    spots = a ? [[a.ox + 14.5, 3.6], [a.ox + 17, 10]] : [];
+    power = 13;
+    reach = 9;
+  }
   const tubeMat = new THREE.MeshBasicMaterial({ color: 0xeaf6e0 });
-  FLUORESCENTS.forEach(([x, z]) => {
+  spots.forEach(([x, z]) => {
     addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, z, 0x9a9a96); // housing
     const tube = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.03, 0.12), tubeMat);
     tube.position.set(x, WALL_HEIGHT - 0.07, z);
     worldGroup.add(tube);
-    const l = new THREE.PointLight(0xe4f2dc, 20, 14, 2);
+    const l = new THREE.PointLight(0xe4f2dc, power, reach, 2);
     l.position.set(x, WALL_HEIGHT - 0.2, z);
     worldGroup.add(l);
-    l.userData.base = 20;
+    l.userData.base = power;
     fluoLights.push(l);
   });
 }
@@ -1712,6 +1756,235 @@ function addAxeModel(x, y, z) {
   g.position.set(x, y, z);
   g.rotation.y = 0.5;
   worldGroup.add(g);
+}
+
+
+// ---- the apartments --------------------------------------------------------------------
+let tileTex = null;
+function getTileTexture() {
+  if (tileTex) return tileTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const x = c.getContext("2d");
+  x.fillStyle = "#5a574d";
+  x.fillRect(0, 0, 64, 64);
+  x.fillStyle = "#48453c";
+  x.fillRect(0, 0, 32, 32);
+  x.fillRect(32, 32, 32, 32);
+  x.strokeStyle = "#25231f";
+  x.lineWidth = 3;
+  x.strokeRect(0, 0, 64, 64);
+  x.beginPath();
+  x.moveTo(32, 0); x.lineTo(32, 64); x.moveTo(0, 32); x.lineTo(64, 32);
+  x.stroke();
+  tileTex = new THREE.CanvasTexture(c);
+  tileTex.wrapS = tileTex.wrapT = THREE.RepeatWrapping;
+  return tileTex;
+}
+function flatTiles(x0, z0, w, d) {
+  const t = getTileTexture().clone();
+  t.repeat.set(w / 0.7, d / 0.7);
+  t.needsUpdate = true;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x0 + w / 2, 0.006, z0 + d / 2);
+  worldGroup.add(m);
+}
+
+function addApartment(a) {
+  const ox = a.ox;
+  const dmg = APT_DAMAGE[a.id];
+  let seed = (ox * 7919) % 2147483647 || 17;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  // furniture group: local origin = centre on the floor, faces +z (south) at rot 0
+  const furn = (rx, rz, rot, solid, build) => {
+    const G = new THREE.Group();
+    G.position.set(ox + rx, 0, rz);
+    G.rotation.y = rot || 0;
+    worldGroup.add(G);
+    buildTarget = G;
+    build((w, h, d, x, y, z, c) => addBox(w, h, d, x, y, z, c));
+    buildTarget = null;
+    if (solid) addSolid(ox + rx, rz, solid[0], solid[1]);
+    return G;
+  };
+  const wood = 0x4a3524, darkwood = 0x2f2218, white = 0xb4b0a2, grime = 0x2c2a26;
+
+  // tiled floors in the kitchen and bathroom
+  flatTiles(ox + 10, 1, 9, 6);
+  flatTiles(ox + 15, 8, 4, 4);
+
+  // ---- kitchen (north wall: counter, stove, counter, fridge; cabinets above)
+  furn(11.4, 1.35, 0, [2.2, 0.6], (b) => {
+    b(2.2, 0.85, 0.6, 0, 0.43, 0, wood);
+    b(2.24, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
+    b(0.55, 0.03, 0.4, -0.3, 0.9, 0.02, 0x15150f); // sink
+    b(0.04, 0.22, 0.04, -0.3, 1.0, -0.2, 0x8a8a86);
+    b(0.12, 0.03, 0.04, -0.3, 1.1, -0.12, 0x8a8a86);
+    [-0.7, 0.2, 0.7].forEach((x) => b(0.02, 0.5, 0.02, x, 0.42, 0.31, grime));
+  });
+  furn(13.0, 1.4, 0, [0.8, 0.7], (b) => {
+    b(0.78, 0.88, 0.66, 0, 0.44, 0, white);
+    [[-0.2, -0.15], [0.2, -0.15], [-0.2, 0.15], [0.2, 0.15]].forEach(([x, z]) => b(0.2, 0.02, 0.2, x, 0.9, z, 0x1a1a1a));
+    b(0.62, 0.34, 0.02, 0, 0.42, 0.34, 0x151515); // oven window
+    [-0.25, 0, 0.25].forEach((x) => b(0.05, 0.05, 0.03, x, 0.78, 0.34, 0x8a8a86));
+    b(0.82, 0.22, 0.55, 0, 2.0, -0.05, 0x8a8a84); // range hood
+    b(0.26, 0.5, 0.26, 0, 2.36, -0.18, 0x7a7a76);
+  });
+  furn(14.2, 1.35, 0, [1.6, 0.6], (b) => {
+    b(1.6, 0.85, 0.6, 0, 0.43, 0, wood);
+    b(1.64, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
+    [-0.4, 0.4].forEach((x) => b(0.02, 0.4, 0.02, x, 0.5, 0.31, grime));
+  });
+  furn(15.6, 1.45, 0, [0.8, 0.75], (b) => {
+    b(0.76, 1.75, 0.7, 0, 0.88, 0, 0xa7a597);
+    b(0.78, 0.02, 0.02, 0, 1.15, 0.36, 0x333330); // seam between the doors
+    b(0.03, 0.4, 0.04, 0.3, 1.45, 0.38, 0x77756e);
+    b(0.03, 0.3, 0.04, 0.3, 0.8, 0.38, 0x77756e);
+  });
+  [[11.4, 2.2, 0], [14.2, 2.0, 0.3]].forEach(([x, w, ajar]) => furn(x, 1.2, 0, null, (b) => {
+    b(w, 0.75, 0.36, 0, 1.95, 0, wood);
+    for (let i = 0; i < Math.round(w / 0.5); i++) b(0.012, 0.7, 0.02, -w / 2 + 0.5 * (i + 1), 1.95, 0.19, darkwood);
+    if (ajar) { const door = b(0.45, 0.7, 0.03, w / 2 + 0.05, 1.95, 0.35, wood); door.rotation.y = 0.9; } // a door hanging open
+  }));
+  // table with two chairs
+  furn(16.5, 4.4, 0, [1.2, 0.8], (b) => {
+    b(1.2, 0.05, 0.8, 0, 0.75, 0, 0x4d3a28);
+    [[-0.55, -0.35], [0.55, -0.35], [-0.55, 0.35], [0.55, 0.35]].forEach(([x, z]) => b(0.05, 0.75, 0.05, x, 0.37, z, darkwood));
+  });
+  [[15.3, 4.4, -Math.PI / 2], [17.7, 4.4, Math.PI / 2]].forEach(([x, z, r]) => furn(x, z, r, [0.4, 0.4], (b) => {
+    b(0.4, 0.04, 0.4, 0, 0.45, 0, darkwood);
+    b(0.4, 0.45, 0.04, 0, 0.7, -0.18, darkwood);
+    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([cx, cz]) => b(0.04, 0.45, 0.04, cx, 0.22, cz, darkwood));
+  }));
+  furn(18.3, 6.4, 0, null, () => {
+    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.3, 10), new THREE.MeshStandardMaterial({ color: 0x6a6c70, roughness: 0.7 }));
+    bucket.position.y = 0.15;
+    buildTarget.add(bucket);
+  });
+
+  // ---- bedroom
+  furn(6.5, 2.3, 0, [1.4, 2.0], (b) => {
+    [[-0.65, -0.95], [0.65, -0.95], [-0.65, 0.95], [0.65, 0.95]].forEach(([x, z]) => b(0.06, 0.32, 0.06, x, 0.16, z, darkwood));
+    b(1.4, 0.08, 2.0, 0, 0.34, 0, darkwood);
+    b(1.3, 0.16, 1.9, 0, 0.46, 0, 0x6a665a); // stained mattress
+    b(0.55, 0.1, 0.36, 0, 0.6, -0.65, 0x8a8678);
+    b(1.3, 0.06, 1.1, 0, 0.56, 0.3, 0x4a2a2a);
+    b(1.42, 0.75, 0.06, 0, 0.7, -1.0, darkwood);
+  });
+  furn(8.0, 1.5, 0, [0.5, 0.5], (b) => {
+    b(0.5, 0.55, 0.5, 0, 0.28, 0, wood);
+    b(0.4, 0.14, 0.02, 0, 0.38, 0.26, darkwood);
+    b(0.04, 0.04, 0.03, 0, 0.38, 0.28, 0x8a8a76);
+  });
+  furn(2.0, 1.6, 0, [1.0, 0.5], (b) => {
+    b(1.0, 0.9, 0.5, 0, 0.45, 0, wood);
+    [0.2, 0.5, 0.78].forEach((y) => { b(0.9, 0.012, 0.02, 0, y, 0.26, darkwood); b(0.05, 0.03, 0.03, 0, y - 0.1, 0.27, 0x8a8a76); });
+  });
+  furn(4.3, 1.5, 0, [1.2, 0.6], (b) => {
+    b(1.2, 0.05, 0.6, 0, 0.74, 0, wood);
+    b(0.04, 0.72, 0.56, -0.56, 0.36, 0, darkwood);
+    b(0.04, 0.72, 0.56, 0.56, 0.36, 0, darkwood);
+    b(0.5, 0.4, 0.5, 0.28, 0.5, 0, darkwood); // drawers
+  });
+  furn(4.3, 2.4, Math.PI, [0.4, 0.4], (b) => {
+    b(0.4, 0.04, 0.4, 0, 0.45, 0, darkwood);
+    b(0.4, 0.45, 0.04, 0, 0.7, -0.18, darkwood);
+    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([cx, cz]) => b(0.04, 0.45, 0.04, cx, 0.22, cz, darkwood));
+  });
+  furn(1.5, 5.4, Math.PI / 2, [0.6, 1.3], (b) => {
+    b(1.3, 1.95, 0.6, 0, 0.98, 0, wood);
+    b(0.012, 1.8, 0.02, 0, 0.98, 0.31, darkwood);
+    b(0.04, 0.1, 0.04, -0.08, 1.0, 0.33, 0x8a8a76);
+    b(0.04, 0.1, 0.04, 0.08, 1.0, 0.33, 0x8a8a76);
+  });
+  const rug = (rx, rz, w, d, c) => addBox(w, 0.012, d, ox + rx, 0.009, rz, c);
+  rug(4.8, 4.6, 2.4, 1.7, 0x3b2323);
+
+  // ---- living room
+  furn(8.2, 8.55, 0, [2.0, 0.9], (b) => {
+    b(2.0, 0.4, 0.9, 0, 0.24, 0, 0x4a4036);
+    b(2.0, 0.5, 0.22, 0, 0.62, -0.34, 0x4a4036);
+    b(0.2, 0.55, 0.9, -0.9, 0.38, 0, 0x3e362e);
+    b(0.2, 0.55, 0.9, 0.9, 0.38, 0, 0x3e362e);
+    b(0.8, 0.1, 0.6, -0.3, 0.48, 0.08, 0x554a3e);
+    b(0.8, 0.1, 0.6, 0.45, 0.48, 0.08, 0x554a3e);
+  });
+  furn(8.2, 10.2, 0, [1.0, 0.5], (b) => {
+    b(1.0, 0.04, 0.5, 0, 0.4, 0, darkwood);
+    [[-0.45, -0.2], [0.45, -0.2], [-0.45, 0.2], [0.45, 0.2]].forEach(([x, z]) => b(0.04, 0.4, 0.04, x, 0.2, z, darkwood));
+  });
+  furn(11.0, 11.5, Math.PI, [1.2, 0.5], (b) => {
+    b(1.2, 0.5, 0.45, 0, 0.25, 0, wood);
+    b(0.62, 0.5, 0.46, 0, 0.78, 0, 0x1c1c1e); // old TV
+    b(0.5, 0.36, 0.02, 0, 0.78, 0.24, 0x0c0e0d);
+    b(0.04, 0.3, 0.04, 0.15, 1.15, 0, 0x555552);
+  });
+  furn(1.5, 10.2, Math.PI / 2, [0.35, 1.4], (b) => {
+    b(1.4, 1.7, 0.35, 0, 0.85, -0.01, darkwood);
+    [0.3, 0.7, 1.1, 1.5].forEach((y) => {
+      b(1.3, 0.03, 0.34, 0, y, 0.02, wood);
+      for (let i = 0; i < 6; i++) b(0.05, 0.22 + rnd() * 0.08, 0.2, -0.55 + i * 0.2 + rnd() * 0.05, y + 0.13, 0.02, [0x5a2a2a, 0x2a3a4a, 0x3a4a2a, 0x4a3a2a][i % 4]);
+    });
+  });
+  furn(1.6, 8.6, 0, [0.4, 0.4], (b) => b(0.4, 0.55, 0.4, 0, 0.28, 0, wood));
+  rug(8.0, 10.0, 3.2, 2.0, 0x2e2630);
+
+  // ---- bathroom
+  furn(18.4, 11.4, 0, [0.45, 0.7], (b) => {
+    b(0.4, 0.45, 0.5, 0, 0.23, -0.05, 0xc2beb0);
+    b(0.38, 0.04, 0.46, 0, 0.47, -0.05, 0x9a968a);
+    b(0.4, 0.4, 0.2, 0, 0.62, 0.25, 0xc2beb0); // tank
+    b(0.06, 0.04, 0.04, 0.1, 0.84, 0.25, 0x8a8a86);
+  });
+  furn(18.5, 9.0, 0, [0.8, 1.7], (b) => {
+    b(0.8, 0.5, 1.7, 0, 0.25, 0, 0xb8b4a6);
+    b(0.62, 0.04, 1.5, 0, 0.51, 0, 0x242820); // stained water line
+    b(0.04, 0.2, 0.04, 0, 0.62, -0.8, 0x8a8a86);
+  });
+  furn(16.5, 11.6, 0, [0.6, 0.45], (b) => {
+    b(0.2, 0.7, 0.2, 0, 0.35, 0, 0xb4b0a2);
+    b(0.55, 0.16, 0.4, 0, 0.8, 0, 0xc2beb0);
+    b(0.04, 0.12, 0.04, 0, 0.94, -0.12, 0x8a8a86);
+  });
+  const mirror = addBox(0.55, 0.75, 0.02, ox + 16.5, 1.55, 11.97, 0x1a2224); // cracked mirror
+  [[0.2, 0.01], [-0.1, 0.01]].forEach(([x], i) => { const c = addBox(0.01, 0.5, 0.01, ox + 16.5 + x, 1.55, 11.95, 0x8a9a9a); c.rotation.z = i ? 0.5 : -0.4; });
+
+  // ---- the front door (inside face), south wall of the living room
+  const door = DOORS.find((dr) => dr.id === a.door);
+  const dtex = makeThreeTexture(createStyledDoorTexture(door.style, door.plate, door.baseColor, true));
+  const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.55), new THREE.MeshStandardMaterial({ map: dtex, roughness: 0.6 }));
+  panel.rotation.y = Math.PI;
+  panel.position.set(ox + 3.5, 1.28, 11.96);
+  worldGroup.add(panel);
+  addBox(1.14, 2.7, 0.05, ox + 3.5, 1.35, 11.98, 0x1c1814);
+
+  // ---- damage: holes in the floor and ceiling
+  (dmg.holes || []).forEach(([x, z, w, d]) => {
+    addBox(w, 0.02, d, ox + x, 0.012, z, 0x030303);
+    for (let i = 0; i < 6; i++) {
+      const s = addBox(0.05, 0.03, 0.4 + rnd() * 0.3, ox + x + (rnd() - 0.5) * w, 0.03, z + (rnd() - 0.5) * d, 0x3a2a1c);
+      s.rotation.y = rnd() * 3;
+      s.rotation.z = (rnd() - 0.5) * 0.8;
+    }
+    addSolid(ox + x, z, w, d);
+  });
+  (dmg.ceil || []).forEach(([x, z, w, d]) => {
+    addBox(w, 0.02, d, ox + x, WALL_HEIGHT - 0.012, z, 0x020202);
+    const flap = addBox(0.6, 0.03, 0.5, ox + x + w / 2, WALL_HEIGHT - 0.25, z, 0x5a5448);
+    flap.rotation.z = 0.7;
+  });
+
+  // ---- mess on the floor
+  const mess = [0x4a463e, 0x5a5448, 0x6a6558, 0x3a2a1c, 0x2c2c2a];
+  for (let i = 0; i < dmg.mess; i++) {
+    const rx = 1.3 + rnd() * 17.4;
+    const rz = 1.3 + rnd() * 10.4;
+    if (isWall(ox + rx, rz) || solids.some((s) => ox + rx > s.minX - 0.1 && ox + rx < s.maxX + 0.1 && rz > s.minZ - 0.1 && rz < s.maxZ + 0.1)) continue;
+    const s = 0.05 + rnd() * 0.13;
+    const m = addBox(s, s * (0.2 + rnd() * 0.5), s * (0.6 + rnd()), ox + rx, s * 0.15, rz, rnd() < 0.3 ? 0x9a9688 : mess[i % mess.length]);
+    m.rotation.y = rnd() * 3;
+  }
 }
 
 // Basement, upstairs: the extra levels live in the far east of the map.
@@ -1750,7 +2023,7 @@ function addLevels() {
   worldGroup.add(sl);
   // faint bulbs so each level isn't a void (only built for the level you're on)
   const px = yawObject.position.x;
-  const bulbs = px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
+  const bulbs = px >= APT_X0 ? [] : px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
   bulbs.forEach(([x, y, z]) => {
     const l = new THREE.PointLight(0x8fa0b8, 0.09, 6, 2);
     l.position.set(x, y, z);
@@ -1938,6 +2211,22 @@ function addStairs() {
         addBox(w, top - bottom, depth, cx, (top + bottom) / 2, zmid, stone);
       }
     }
+    // worn steps: a lighter nosing on every tread, and a banister with posts down each side
+    for (let i = 0; i < N; i++) {
+      const top = (s.rise * (i + 1)) / N;
+      addBox(w - 0.04, 0.03, 0.05, cx, top + 0.015, s.z0 + dz * i + (dz < 0 ? -0.025 : 0.025), 0x55555c);
+    }
+    const run = zhi - zlo;
+    const len = Math.hypot(run, s.rise);
+    [s.x0 + 0.05, s.x1 - 0.05].forEach((rx) => {
+      const rail = addBox(0.05, 0.05, len, rx, s.rise / 2 + 0.95, (s.z0 + s.z1) / 2, 0x2a1a10);
+      rail.rotation.x = Math.atan2(s.rise, run);
+      for (let i = 0; i <= 4; i++) {
+        const pz = s.z0 + ((s.z1 - s.z0) * i) / 4;
+        const ph = (s.rise * i) / 4;
+        addBox(0.04, 0.95, 0.04, rx, ph + 0.48, pz, 0x2a1a10);
+      }
+    });
     // railings you can't walk through
     addSolid(s.x0 - 0.03, (zlo + zhi) / 2, 0.06, zhi - zlo);
     addSolid(s.x1 + 0.03, (zlo + zhi) / 2, 0.06, zhi - zlo);
@@ -1975,6 +2264,64 @@ function addStairs() {
   const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
   bulb.position.set(17.75, 2.5, 3.4);
   worldGroup.add(bulb);
+  // a failing red emergency lamp on the stairwell wall
+  const lvl = levelOf(yawObject.position.x);
+  if (yawObject.position.x < 21) {
+    addBox(0.2, 0.12, 0.1, 18.5, 2.7, 1.2, 0x400808);
+    const red = new THREE.PointLight(0xff1a0a, 0.9, 5, 2);
+    red.position.set(18.5, 2.5, 1.9);
+    worldGroup.add(red);
+    flickerLights.push({ light: red, base: 0.9, phase: Math.random() * 9 });
+  }
+}
+
+// The basement: pipes, chains, a glowing boiler, stains and a cage, so it feels lived-in and wrong.
+function addBasementDecor() {
+  const rust = 0x4a2e1c;
+  [2.0, 9.0].forEach((z) => addBox(8.2, 0.12, 0.12, 50.8, 2.75, z, 0x2a2624)); // ceiling pipes
+  addBox(0.12, 0.12, 8.5, 53.9, 2.6, 6.5, 0x2a2624);
+  addBox(0.25, 0.25, 0.25, 51.5, 2.75, 2.0, rust); // pipe joints
+  addBox(0.25, 0.25, 0.25, 54.0, 2.6, 5.0, rust);
+  // chains hanging from hooks, swaying
+  [[52.2, 2.6], [48.6, 9.6], [51.4, 6.2]].forEach(([x, z], i) => {
+    const grp = new THREE.Group();
+    grp.position.set(x, 2.9, z);
+    for (let k = 0; k < 7; k++) {
+      const link = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.09, 0.04), new THREE.MeshStandardMaterial({ color: 0x55534f, metalness: 0.6, roughness: 0.5 }));
+      link.position.y = -k * 0.1;
+      grp.add(link);
+    }
+    const hook = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.05, 0.05), new THREE.MeshStandardMaterial({ color: 0x55534f, metalness: 0.6 }));
+    hook.position.y = -0.72;
+    grp.add(hook);
+    worldGroup.add(grp);
+    swayers.push({ grp, phase: i * 2.1 });
+  });
+  // dried stains on the floor, a smeared trail towards the dark
+  [[49.8, 3.6, 0.9, 0.5], [50.9, 4.4, 0.6, 0.35], [50.4, 6.9, 0.5, 0.9], [52.0, 10.0, 1.0, 0.7]].forEach(([x, z, w, d], i) => {
+    const s = addBox(w, 0.012, d, x, 0.008, z, 0x330808);
+    s.rotation.y = i * 0.9;
+  });
+  // a rusted cage and shelving, both solid
+  addBox(0.05, 1.5, 1.2, 47.3, 0.75, 10.5, rust);
+  addBox(1.0, 0.05, 1.2, 47.8, 1.5, 10.5, rust);
+  [10.0, 10.5, 11.0].forEach((z) => addBox(0.04, 1.5, 0.04, 48.3, 0.75, z, rust));
+  addSolid(47.8, 10.5, 1.0, 1.2);
+  addBox(0.5, 1.7, 1.4, 54.6, 0.85, 10.2, 0x2a2018);
+  [0.5, 1.0, 1.5].forEach((h) => addBox(0.45, 0.04, 1.4, 54.6, h, 10.2, 0x3a2c1e));
+  [[0.65, 9.8], [1.15, 10.3], [0.65, 10.6]].forEach(([h, z]) => addBox(0.18, 0.25, 0.18, 54.6, h + 0.1, z, 0x6a7a5a)); // jars
+  addSolid(54.6, 10.2, 0.5, 1.4);
+  // the boiler still glows, as if it were burning
+  const fire = new THREE.PointLight(0xff6a1a, 1.4, 6, 2);
+  fire.position.set(53.5, 1.0, 5.9);
+  worldGroup.add(fire);
+  flickerLights.push({ light: fire, base: 1.4, phase: 3 });
+  addBox(0.5, 0.35, 0.05, 53.5, 0.6, 5.72, 0xff7a20); // the grate
+  // a red emergency bulb over the stair
+  const red = new THREE.PointLight(0xff1a0a, 0.7, 5, 2);
+  red.position.set(48.0, 2.6, 4.6);
+  worldGroup.add(red);
+  flickerLights.push({ light: red, base: 0.7, phase: 7 });
 }
 
 
@@ -2325,7 +2672,7 @@ function updateFlashlight(dt) {
     }
   }
 
-  let targetIntensity = hasFlashlightOn() ? FLASHLIGHT_MAX_INTENSITY : 0;
+  let targetIntensity = hasFlashlightOn() && scareBlackout <= 0 ? FLASHLIGHT_MAX_INTENSITY : 0;
 
   if (hasFlashlightOn() && state.batteryLevel < 20) {
     flashlightFlickerTimer += dt;
@@ -2402,7 +2749,7 @@ function nearestInteractable() {
   });
 
   ITEMS.forEach((item) => {
-    if (state.inventory[item.id]) return;
+    if (state.inventory[item.id] || item.hidden) return;
     if (item.id === "axe" && !state.flags.powerOn) return;
     const d = Math.hypot(item.x - px, item.y - py);
     if (d < closestDist) {
@@ -2445,6 +2792,7 @@ function nearestInteractable() {
       if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? (state.inventory.staffKey ? "Empty Drawers" : "Take Key") : "Search Drawer";
       if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Flip Breaker";
       if (h.id === "boards") label = ""; // no prompt: you have to try things
+      if (h.loot && (state.flags.looted || {})[h.id]) label = ""; // already searched
       doorTarget = { type: "hotspot", id: h.id, label };
     }
   });
@@ -2473,14 +2821,20 @@ function updatePlayerHeight(dt) {
   const s = stairAt(p.x, p.z);
   if (s && s.to && state.phase === "explore") {
     const t = (s.z0 - p.z) / (s.z0 - s.z1);
-    if (t >= 0.94) {
-      state.transition = { t: 0, to: s.to, done: false };
-      keys.clear();
-      const f = document.getElementById("transition-fade");
-      f.classList.remove("hidden");
-      f.classList.add("active");
-    }
+    if (t >= 0.94) startTransition(s.to);
   }
+  // step through an open apartment door and you are inside the flat
+  if (state.phase === "explore" && !state.transition) {
+    const pt = PORTALS.find((q) => state.doorsOpen[q.door] && p.x >= q.x0 && p.x < q.x1 && p.z > 3.5 && p.z < q.z);
+    if (pt) startTransition(pt.to);
+  }
+}
+function startTransition(to) {
+  state.transition = { t: 0, to, done: false };
+  keys.clear();
+  const f = document.getElementById("transition-fade");
+  f.classList.remove("hidden");
+  f.classList.add("active");
 }
 
 function travel(to) {
@@ -2612,26 +2966,40 @@ function handleInteract() {
         addLog("Power restored.");
         buildWorld();
       }
+    } else if (h.exit) {
+      const pt = PORTALS.find((p) => p.door === h.exit);
+      playDoorCreak(DOORS.find((dr) => dr.id === h.exit));
+      startTransition(pt.back);
+    } else if (h.loot) {
+      if (!state.flags.looted) state.flags.looted = {};
+      if (state.flags.looted[h.id]) return;
+      state.flags.looted[h.id] = true;
+      playClick();
+      if (h.loot !== "none") collectItem(h.loot);
     } else if (h.go) travel(h.go);
     else {
       playKnock();
       addLog(h.text);
     }
   } else if (target.type === "item") {
-    const item = ITEMS.find((it) => it.id === target.id);
-    state.inventory[target.id] = true;
-    if (!item.note) showPickup(item.name);
-    if (item.note) openPaper(item);
-    if (item.name === "Batteries") state.batteries += 1;
-    if (target.id === "flashlight" || (target.id === "axe" && !state.held)) state.held = target.id;
-    if (target.id === "flashlight") {
-      state.inventory.hands = true; // empty hands, so there's always something to switch to
-      state.flags.tut = "open"; // forced tutorial: open the inventory, then switch items
-    }
-    buildWorld(); // remove the collected item's marker from the scene
-  } else if (target.type === "npc") {
+    collectItem(target.id);
+    } else if (target.type === "npc") {
     openDialogue(target.id);
   }
+}
+
+function collectItem(id) {
+  const item = ITEMS.find((it) => it.id === id);
+  state.inventory[id] = true;
+  if (!item.note) showPickup(item.name);
+  if (item.note) openPaper(item);
+  if (item.name === "Batteries") state.batteries += 1;
+  if (id === "flashlight" || (id === "axe" && !state.held)) state.held = id;
+  if (id === "flashlight") {
+    state.inventory.hands = true; // empty hands, so there's always something to switch to
+    state.flags.tut = "open"; // forced tutorial: open the inventory, then switch items
+  }
+  buildWorld(); // remove the collected item's marker from the scene
 }
 
 // ---- held items + inventory ---------------------------------------------------
@@ -2707,7 +3075,8 @@ function renderInventory() {
     document.getElementById("inventory-overlay").classList.add("hidden");
     openPaper(it);
   }));
-  ["johnKey", "staffKey"].filter((id) => state.inventory[id]).forEach((id) => add(id === "johnKey" ? "Brass Key" : "Staff Key", null));
+  if (state.inventory.staffKey) add("Staff Key", null);
+  ITEMS.filter((it) => (it.key || it.trinket) && state.inventory[it.id]).forEach((it) => add(it.name, null));
   if (!list.children.length) add("Empty", null);
 }
 
@@ -2893,7 +3262,7 @@ const ENTITY_SPAWNS_BY_LEVEL = [
 const ENTITY_SPAWNS = ENTITY_SPAWNS_BY_LEVEL[0];
 // 0 = ground floor, 1 = second floor, 2 = basement (they sit side by side on the map)
 function levelOf(x) {
-  return x < 21 ? 0 : x < 46 ? 1 : 2;
+  return x < 21 || x >= APT_X0 ? 0 : x < 46 ? 1 : 2; // the apartments (x >= 70) belong to the ground floor
 }
 
 // ---- the model: a tall, starved figure in a ragged coat, hunched, arms to its knees ----
@@ -3047,7 +3416,7 @@ function entityInBeam(e) {
 
 // ---- it walks, it doesn't phase: breadth-first search over the ground-floor grid ----
 function cellFree(c, r) {
-  if (r < 1 || r > 12 || c < 1 || c > 69) return false;
+  if (r < 1 || r > 12 || c < 1 || c >= MAP[0].length - 1) return false;
   if (isWall(c + 0.5, r + 0.5)) return false;
   if (entityBlock.some((s) => s.maxX > c && s.minX < c + 1 && s.maxZ > r && s.minZ < r + 1)) return false;
   return !solids.some((s) => s.maxX > c && s.minX < c + 1 && s.maxZ > r && s.minZ < r + 1); // no furniture in the cell
@@ -3059,7 +3428,7 @@ function entityPath(sx, sz, gx, gz) {
   const sr = Math.floor(sz);
   const gc = Math.floor(gx);
   const gr = Math.floor(gz);
-  const key = (c, r) => r * 128 + c;
+  const key = (c, r) => r * 256 + c;
   const prev = new Map([[key(sc, sr), null]]);
   const queue = [[sc, sr]];
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
@@ -3156,6 +3525,11 @@ function updateEntity(dt) {
   }
   // Before the power is on it haunts the ground floor. Once the lights are on it can only be
   // upstairs or in the basement.
+  if (yawObject.position.x >= APT_X0) {
+    entityGroup.visible = false; // the flats are safe; it waits outside
+    setFear(0);
+    return;
+  }
   const lvl = levelOf(yawObject.position.x);
   const haunted = state.flags.powerOn ? lvl >= 1 : lvl === 0;
   if (!haunted) {
@@ -3297,6 +3671,231 @@ document.getElementById("caught-leave-button").addEventListener("click", () => {
   showScreen("screen-title");
 });
 
+// ---- pop-out scares -----------------------------------------------------------------
+function clearScares() {
+  scareActive.forEach((a) => scene.remove(a.mesh));
+  scareActive = [];
+  scareBlackout = 0;
+}
+function playBang() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource();
+  const lp = audioCtx.createBiquadFilter();
+  const ng = audioCtx.createGain();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  lp.type = "lowpass";
+  lp.frequency.value = 900;
+  ng.gain.setValueAtTime(0.5, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  n.connect(lp).connect(ng).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.5);
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.frequency.setValueAtTime(90, t);
+  o.frequency.exponentialRampToValueAtTime(30, t + 0.35);
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(g).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.45);
+}
+function playSkitter() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  for (let i = 0; i < 9; i++) {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "square";
+    o.frequency.value = 1500 + Math.random() * 1800;
+    const at = t + i * 0.07 + Math.random() * 0.03;
+    g.gain.setValueAtTime(0.05, at);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.04);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(at);
+    o.stop(at + 0.05);
+  }
+}
+
+// a pale, tall figure in a dark shroud; always turns to face you
+function makeApparition() {
+  const g = new THREE.Group();
+  const shroud = new THREE.MeshStandardMaterial({ color: 0x0a0a0c, roughness: 1, side: THREE.DoubleSide });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xc8c4b4, roughness: 0.8, emissive: 0x1c1c1a });
+  const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.7, 10, 1, true), shroud);
+  body.position.y = 0.85;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), skin);
+  head.scale.set(0.8, 1.5, 0.9);
+  head.position.set(0, 1.85, 0.05);
+  g.add(head);
+  [-0.05, 0.05].forEach((x) => {
+    const sock = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 6), black);
+    sock.position.set(x, 1.9, 0.15);
+    g.add(sock);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.01, 6, 6), eyeMat);
+    eye.position.set(x, 1.9, 0.18);
+    g.add(eye);
+  });
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.16, 0.02), black);
+  mouth.position.set(0, 1.74, 0.15);
+  g.add(mouth);
+  [-1, 1].forEach((s) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.035, 1.25, 0.035), skin);
+    arm.position.set(s * 0.26, 1.15, 0.12);
+    arm.rotation.z = s * 0.08;
+    g.add(arm);
+  });
+  return g;
+}
+function makeCrawler() {
+  const g = new THREE.Group();
+  const skin = new THREE.MeshStandardMaterial({ color: 0xb8b4a4, roughness: 0.8, emissive: 0x161614 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.6), skin);
+  body.position.y = 0.3;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), skin);
+  head.position.set(0, 0.34, 0.42);
+  g.add(head);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.02, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff2a14 }));
+  eye.position.set(0, 0.37, 0.5);
+  g.add(eye);
+  g.userData.limbs = [];
+  [[-1, 0.2], [1, 0.2], [-1, -0.2], [1, -0.2]].forEach(([s, z]) => {
+    const limb = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.4, 0.03), skin);
+    limb.position.set(s * 0.22, 0.2, z);
+    limb.rotation.z = s * 0.5;
+    g.add(limb);
+    g.userData.limbs.push(limb);
+  });
+  return g;
+}
+function makeSack() {
+  const g = new THREE.Group();
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x6a665a, roughness: 1 });
+  const bundle = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 0.3), cloth);
+  g.add(bundle);
+  const rope = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.2, 0.02), new THREE.MeshStandardMaterial({ color: 0x2a2018 }));
+  rope.position.y = 1.0;
+  g.add(rope);
+  const hand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.4, 0.05), new THREE.MeshStandardMaterial({ color: 0xc4bfae }));
+  hand.position.set(0.24, -0.35, 0);
+  g.add(hand);
+  return g;
+}
+
+function startScare(sc) {
+  const a = { sc, t: 0, state: "wait", vy: 0 };
+  const floorY = floorHeight(sc.at.x, sc.at.z);
+  if (sc.kind === "lurker" || sc.kind === "slam") {
+    a.mesh = makeApparition();
+    a.mesh.position.set(sc.at.x, floorY, sc.at.z);
+    a.mesh.visible = false;
+    if (sc.kind === "slam") {
+      playBang();
+      scareBlackout = sc.delay || 0.8;
+    }
+  } else if (sc.kind === "crawler") {
+    a.mesh = makeCrawler();
+    a.mesh.position.set(sc.at.x, floorY, sc.at.z);
+    playSkitter();
+  } else {
+    a.mesh = makeSack();
+    a.mesh.position.set(sc.at.x, 2.35, sc.at.z);
+    a.state = "hang";
+  }
+  scene.add(a.mesh);
+  scareActive.push(a);
+}
+
+function updateScares(dt) {
+  if (state.phase !== "explore") return;
+  const p = yawObject.position;
+  const lvl = levelOf(p.x);
+  scareBlackout = Math.max(0, scareBlackout - dt);
+  if (state.flags.powerOn && !state.transition) {
+    if (!state.flags.scares) state.flags.scares = {};
+    SCARES.forEach((sc) => {
+      if (sc.level !== lvl || state.flags.scares[sc.id]) return;
+      if (Math.hypot(p.x - sc.trigger.x, p.z - sc.trigger.z) < sc.trigger.r) {
+        state.flags.scares[sc.id] = true;
+        startScare(sc);
+      }
+    });
+  }
+  for (let i = scareActive.length - 1; i >= 0; i--) {
+    const a = scareActive[i];
+    const sc = a.sc;
+    a.t += dt;
+    const m = a.mesh;
+    let dead = false;
+    if (sc.kind === "lurker" || sc.kind === "slam") {
+      const d = Math.hypot(p.x - sc.at.x, p.z - sc.at.z);
+      if (a.state === "wait" && a.t >= (sc.delay || 0)) {
+        a.state = "shown";
+        a.shownAt = a.t;
+        m.visible = true;
+      }
+      if (a.state === "shown") {
+        m.rotation.y = Math.atan2(p.x - sc.at.x, p.z - sc.at.z);
+        if (d < (sc.near || 2.8) || a.t - a.shownAt > (sc.life || 5)) {
+          a.state = "going";
+          a.goneAt = a.t;
+          if (d < (sc.near || 2.8) + 0.5) playSting();
+        }
+      }
+      if (a.state === "going") {
+        // it flickers out
+        const k = (a.t - a.goneAt) / 0.3;
+        m.visible = Math.random() > k;
+        if (k >= 1) dead = true;
+      }
+      if (lvl !== sc.level) dead = true;
+    } else if (sc.kind === "crawler") {
+      const k = Math.min(1, a.t / sc.dur);
+      m.position.x = sc.at.x + (sc.to.x - sc.at.x) * k;
+      m.position.z = sc.at.z + (sc.to.z - sc.at.z) * k;
+      m.rotation.y = Math.atan2(sc.to.x - sc.at.x, sc.to.z - sc.at.z);
+      m.userData.limbs.forEach((l, j) => (l.rotation.x = Math.sin(a.t * 30 + j * 1.6) * 0.7));
+      if (k >= 1) dead = true;
+    } else {
+      // drop
+      if (a.state === "hang") {
+        m.rotation.y += Math.sin(a.t * 2) * dt * 0.5;
+        if (Math.hypot(p.x - sc.at.x, p.z - sc.at.z) < 2.0 || a.t > 9) a.state = "fall";
+      } else if (a.state === "fall") {
+        a.vy -= 16 * dt;
+        m.position.y += a.vy * dt;
+        if (m.position.y <= 0.55) {
+          m.position.y = 0.55;
+          m.rotation.z = 1.35; // it lands on its side
+          a.state = "down";
+          a.downAt = a.t;
+          playBang();
+        }
+      } else if (a.t - a.downAt > 7) dead = true;
+    }
+    if (dead) {
+      scene.remove(m);
+      scareActive.splice(i, 1);
+    }
+  }
+  // flickering emergency lights and swaying chains
+  const T = performance.now() / 1000;
+  flickerLights.forEach((f) => {
+    const n = Math.sin(T * 23 + f.phase) * Math.sin(T * 7.3 + f.phase * 2);
+    f.light.intensity = f.base * (n > 0.55 ? 0.1 : 0.75 + 0.25 * Math.sin(T * 3 + f.phase));
+  });
+  swayers.forEach((s) => {
+    s.grp.rotation.z = Math.sin(T * 0.9 + s.phase) * 0.08;
+    s.grp.rotation.x = Math.sin(T * 0.7 + s.phase * 1.7) * 0.06;
+  });
+}
+
 // ---- main loop -----------------------------------------------------------------
 
 const clock = new THREE.Clock();
@@ -3306,6 +3905,7 @@ function gameLoop() {
   tryMovePlayer(dt);
   checkJohnRoom();
   updateEntity(dt);
+  updateScares(dt);
   applyTension(entityTension);
   updateDoorAnimation(dt);
   updateFluorescents(dt);

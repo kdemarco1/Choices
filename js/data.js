@@ -18,9 +18,9 @@
 //             the road runs behind you past row 19 and can't be crossed
 const MAP_ROWS_TEXT = [
   "######################################################################", // 0
-  "#...#...#...#...#...###....#....#....#....#..##........########......#", // 1  apartments 1-3 and John's (4), then the stairwell
-  "#...#...#...#...#...###....#....#....#....#..##........########......#", // 2
-  "#...#...#...#...#...###....#....#....#....#..##......................#", // 3
+  "#################...###....#....#....#....#..##........########......#", // 1  apartments 1-3 and John's (4), then the stairwell
+  "#################...###....#....#....#....#..##........########......#", // 2
+  "#################...###....#....#....#....#..##......................#", // 3
   "########################.####.####.####.###.###........########......#", // 4  apartment + stairwell doors
   "#....#..............###......................##........########......#", // 5  hallway
   "#....#..............###......................#####.###################", // 6
@@ -39,7 +39,33 @@ const MAP_ROWS_TEXT = [
   "xxxxxxxxxxxxxxxxxxxxx#################################################", // 19
 ];
 // 0 = open, 1 = wall (drawn), 2 = invisible-solid barrier (hedge at the yard edges, curb along the road)
-const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : ch === "x" ? 2 : 0)));
+// ---- the apartments: each one is a big furnished flat of its own, east of the basement (cols 70+).
+// You step through the apartment's door in the hallway and the screen fades into it. Layout (20 x 13):
+//  bedroom (NW), kitchen (NE), living room (SW, with the exit door on the south wall), bathroom (SE).
+const APT_ROWS = [
+  "####################",
+  "#........#.........#",
+  "#........#.........#",
+  "#..................#",
+  "#..................#",
+  "#........#.........#",
+  "#........#.........#",
+  "###...#####...######",
+  "#.............#....#",
+  "#..................#",
+  "#..................#",
+  "#.............#....#",
+  "####################",
+];
+const APT_DEFS = [
+  { id: "apt1", door: "apt1", ox: 70 },
+  { id: "apt2", door: "apt2", ox: 90 },
+  { id: "apt3", door: "apt3", ox: 110 },
+  { id: "john", door: "john", ox: 130 },
+];
+const APT_X0 = 70;
+const MAP_ROWS_FULL = MAP_ROWS_TEXT.map((row, i) => row + APT_DEFS.map(() => (i < APT_ROWS.length ? APT_ROWS[i] : "#".repeat(20))).join(""));
+const MAP = MAP_ROWS_FULL.map((row) => Array.from(row).map((ch) => (ch === "#" ? 1 : ch === "x" ? 2 : 0)));
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
@@ -61,16 +87,17 @@ const ITEMS = [
   },
   {
     id: "johnKey",
-    name: "Brass Key",
-    x: 6.5,
-    y: 1.7, // on the table inside Apartment 2
+    name: "Key 4",
+    key: true,
+    x: 106.5,
+    y: 4.4, // on the kitchen table inside Apartment 2
     color: "#d4b04a",
     height: 0.9,
     pickupText: "A brass key on a paper tag: 4.",
   },
-  { id: "axe", name: "Axe", x: 14.5, y: 1.6, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
-  { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 15.45, y: 3.15, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
-  { id: "batteries", name: "Batteries", h: 0.76, x: 15.45, y: 2.4, pickupText: "Spare batteries." },
+  { id: "axe", name: "Axe", x: 136.6, y: 2.6, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
+  { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 138.0, y: 1.5, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
+  { id: "batteries", name: "Batteries", h: 0.55, x: 138.0, y: 2.2, pickupText: "Spare batteries." },
   { id: "staffNote", name: "Notice", note: true, x: 4.2, y: 5.7, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
   { id: "note1", name: "Torn Page", note: true, x: 26.2, y: 2.2, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
   { id: "note2", name: "Letter", note: true, x: 29.5, y: 2.0, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
@@ -124,13 +151,17 @@ const DOORS = [
   // lobby -> hallway: dark walnut with frosted glass, a pull handle and kick plate
   { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false,
     style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9, creakTone: 6500, creakGain: 0.85, creakStart: 0.03 },
+  // apartment 1: faded green door, brass number, a chain-less deadbolt
+  { id: "apt1", x: 2.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "apt1Key",
+    style: "wood6", plate: "1", baseColor: "#4d5e4a", frame: "#232b22", handle: "lever", deadbolt: true, peephole: true, metal: "#9a8a50", creak: 1.0, creakTone: 7000, creakGain: 0.8, creakStart: 0.04,
+    unlockLabel: "Unlock Apartment 1", lockedText: "Locked." },
   // apartment 2: yellowed cream six-panel door, lever handle
   { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
     style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15, creakTone: 11000, creakGain: 0.7, creakStart: 0.06 }, // light and quick
   // apartment 3: modern blue-grey flush door, steel lever and deadbolt
-  { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true,
+  { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "apt3Key",
     style: "flush", plate: "3", baseColor: "#3e4a52", frame: "#1d2327", handle: "lever", deadbolt: true, peephole: true, metal: "#c4c8cc", creak: 0.95, creakTone: 5500, creakGain: 0.8, creakStart: 0.02,
-    lockedText: "Locked." },
+    unlockLabel: "Unlock Apartment 3", lockedText: "Locked." },
   // apartment 4 (John's): old oak door with an arched panel, brass knob and keyhole
   { id: "john", x: 14.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "johnKey",
     style: "arch", plate: "4", baseColor: "#4c3a34", frame: "#201813", handle: "knob", keyhole: true, metal: "#b8963a", creak: 0.82, creakTone: 2800, creakGain: 1.0, creakStart: 0.04, // old, dark, slow
@@ -150,7 +181,7 @@ const FIXTURES = [
   { id: "elevator", x: 11.5, y: 8.0, width: 0.95, style: "elevator", baseColor: "#8a8f95", label: "Call Elevator", text: "No power.", sound: "click" },
 ];
 
-const JOHN_ROOM = { minX: 13, maxX: 16, minY: 1, maxY: 4 };
+const JOHN_ROOM = { minX: 130, maxX: 150, minY: 0, maxY: 13 }; // all of John's apartment
 
 const GUEST_PAPER = {
   id: "guestLog",
@@ -169,3 +200,99 @@ const STAIRS = [
   { id: "bUp", x0: 47.2, x1: 48.6, z0: 5.8, z1: 3.15, rise: 3.0, to: { x: 19.25, y: 3.65, yaw: Math.PI } },
 ];
 const STAIR_STEPS = 12;
+
+// Things that pop out at you once the lights are on. Each fires once per run.
+// kind: lurker (a figure that stands there until you get close), crawler (runs across your view),
+// slam (a bang and the flashlight dies, then a figure), drop (something falls from the ceiling).
+const SCARES = [
+  // second floor
+  { id: "upLurk", level: 1, kind: "lurker", trigger: { x: 27, z: 5.5, r: 1.2 }, at: { x: 38.5, z: 5.5 }, life: 6 },
+  { id: "upSlam", level: 1, kind: "slam", trigger: { x: 33, z: 5.5, r: 1.0 }, at: { x: 36.8, z: 5.9 }, delay: 0.8, life: 1.6 },
+  { id: "upCrawl", level: 1, kind: "crawler", trigger: { x: 40.5, z: 5.5, r: 1.0 }, at: { x: 44.2, z: 5.6 }, to: { x: 38.0, z: 5.9 }, dur: 1.2 },
+  { id: "upDrop", level: 1, kind: "drop", trigger: { x: 29.5, z: 9.6, r: 0.9 }, at: { x: 29.7, z: 10.3 } },
+  // basement
+  { id: "baseLurk", level: 2, kind: "lurker", trigger: { x: 50.5, z: 4.6, r: 1.2 }, at: { x: 53.0, z: 2.8 }, delay: 0.4, life: 6 },
+  { id: "baseSlam", level: 2, kind: "slam", trigger: { x: 55.5, z: 3.4, r: 0.8 }, at: { x: 57.0, z: 3.5 }, delay: 0.9, life: 1.6 },
+  { id: "baseCrawl", level: 2, kind: "crawler", trigger: { x: 50.5, z: 7.4, r: 1.0 }, at: { x: 53.6, z: 10.8 }, to: { x: 51.0, z: 8.9 }, dur: 1.0 },
+  { id: "baseDrop", level: 2, kind: "drop", trigger: { x: 51.8, z: 9.6, r: 1.1 }, at: { x: 52.4, z: 9.0 } },
+  // on the stairs themselves
+  { id: "downStairs", level: 0, kind: "lurker", trigger: { x: 19.25, z: 3.5, r: 0.7 }, at: { x: 19.25, z: 1.7 }, delay: 0.2, life: 4, near: 1.0 },
+  { id: "upStairs", level: 2, kind: "lurker", trigger: { x: 47.9, z: 5.5, r: 0.7 }, at: { x: 47.9, z: 3.5 }, delay: 0.2, life: 4, near: 1.0 },
+];
+
+// ---- things to find inside the apartments ------------------------------------------------
+// Items with `hidden: true` are only found by searching furniture (see LOOT / APT_SPOTS below).
+// `trinket: true` items are just things to keep (they show up in the inventory).
+const apt = (id) => APT_DEFS.find((a) => a.id === id).ox;
+const note = (id, name, paper, sloppy, seed) => ITEMS.push({ id, name, note: true, hidden: true, paper, sloppy, seed });
+const trinket = (id, name) => ITEMS.push({ id, name, trinket: true, hidden: true });
+ITEMS.push({ id: "apt3Key", name: "Key 3", key: true, hidden: true });
+ITEMS.push({ id: "apt1Key", name: "Key 1", key: true, hidden: true });
+["a2Batt", "a3Batt", "a3Batt2", "a1Batt", "a1Batt2", "jBatt"].forEach((id) => ITEMS.push({ id, name: "Batteries", hidden: true }));
+// apartment 2 (the family that left in a hurry)
+note("a2List", "Grocery List", "milk\nbread\ncandles - lots\n{don't open the door\nat night}", 0.4, 31);
+note("a2Draw", "Child's Drawing", "mommy  me  daddy\nand the {tall man}\nhe has no face", 1, 33);
+trinket("a2Photo", "Family Photo");
+trinket("a2Coin", "Old Coin");
+trinket("a2Pills", "Pill Bottle");
+// apartment 3 (someone who stopped trusting the building)
+note("a3Tape", "Taped Page", "they knock 3 times.\nthen the lights {go out}.\nit hates the light.\nkeep it ON", 0.6, 41);
+note("a3Journal", "Journal Page", "day 9\nit doesn't come in while i\nhold the flashlight.\nthe bathtub is {safest}", 0.7, 43);
+note("a3Map", "Sketch", "{the cellar door}\ni drew what i heard\nunder the floor.\nit is not the boiler", 0.9, 45);
+trinket("a3Box", "Music Box");
+trinket("a3Photo", "Torn Photo");
+// apartment 1 (nobody lives here now)
+note("a1Memo", "Memo", "To all tenants:\nthe cellar door has been\n{sealed}. do not open it.\n- management", 0.2, 51);
+note("a1Last", "Last Page", "the front door won't\nopen from inside {anymore}\nwe are all still here", 0.9, 53);
+trinket("a1Ring", "Wedding Ring");
+trinket("a1Locket", "Rusty Locket");
+// apartment 4 (John's)
+note("jJ1", "Journal Page", "Sept 3\nmoved in. quiet building.\ngood rent. the manager\nlooked scared of me", 0.2, 61);
+note("jJ2", "Journal Page", "Sept 14\nheard steps in the ceiling.\nnobody lives above me.\nnobody lives up there", 0.5, 63);
+trinket("jTag", "Dog Tag");
+
+// Furniture you can search: position inside an apartment (x, z), prompt.
+const APT_SPOTS = [
+  { k: "fridge", rx: 15.6, rz: 2.3, label: "Open Fridge" },
+  { k: "under", rx: 11.4, rz: 2.3, label: "Search Cabinet" },
+  { k: "drawer", rx: 14.2, rz: 2.3, label: "Search Drawer" },
+  { k: "dresser", rx: 2.0, rz: 2.3, label: "Search Dresser" },
+  { k: "desk", rx: 4.3, rz: 2.2, label: "Search Desk" },
+  { k: "nightstand", rx: 8.0, rz: 2.2, label: "Search Nightstand" },
+  { k: "bed", rx: 6.5, rz: 3.7, label: "Search Bed" },
+  { k: "wardrobe", rx: 2.3, rz: 5.4, label: "Open Wardrobe" },
+  { k: "couch", rx: 8.2, rz: 9.3, label: "Search Couch" },
+  { k: "tv", rx: 11.0, rz: 10.9, label: "Search TV Stand" },
+  { k: "shelf", rx: 2.1, rz: 10.2, label: "Search Shelf" },
+  { k: "tank", rx: 18.4, rz: 10.6, label: "Search Toilet Tank" },
+  { k: "cabinet", rx: 16.5, rz: 10.8, label: "Open Medicine Cabinet" },
+];
+// What each spot holds: an item id, or null (empty, you only find that out by looking).
+const LOOT = {
+  apt2: { fridge: "a2List", under: "a2Batt", dresser: "apt3Key", nightstand: "a2Draw", couch: "a2Coin", shelf: "a2Photo", cabinet: "a2Pills", drawer: null, wardrobe: null, desk: null },
+  apt3: { tank: "apt1Key", wardrobe: "a3Batt", desk: "a3Batt2", bed: "a3Tape", nightstand: "a3Journal", shelf: "a3Map", tv: "a3Box", dresser: "a3Photo", fridge: null, under: null, couch: null },
+  apt1: { dresser: "a1Memo", nightstand: "a1Last", cabinet: "a1Ring", couch: "a1Locket", under: "a1Batt", wardrobe: "a1Batt2", tank: null, fridge: null, drawer: null },
+  john: { dresser: "jJ1", desk: "jJ2", wardrobe: "jTag", under: "jBatt", fridge: null, couch: null, nightstand: null, cabinet: null },
+};
+APT_DEFS.forEach((a) => {
+  APT_SPOTS.forEach((s) => {
+    if (!(s.k in LOOT[a.id])) return;
+    HOTSPOTS.push({ id: a.id + "_" + s.k, x: a.ox + s.rx, y: s.rz, label: s.label, loot: LOOT[a.id][s.k] || "none" });
+  });
+  // the apartment's own front door, on the south wall of the living room
+  HOTSPOTS.push({ id: "exit_" + a.id, x: a.ox + 3.5, y: 11.4, label: "Open Door", exit: a.door });
+});
+
+// Walking through an open apartment door (in the hallway, or the staff room for apartment 1) fades into the flat.
+const PORTALS = APT_DEFS.map((a) => {
+  const door = DOORS.find((dr) => dr.id === a.door);
+  return { id: a.id, door: a.door, x0: Math.floor(door.x), x1: Math.floor(door.x) + 1, z: 4.4, to: { x: a.ox + 3.5, y: 11.1, yaw: 0 }, back: { x: door.x, y: 5.45, yaw: Math.PI } };
+});
+
+// Damage and clutter that differs between apartments: holes in the floor/ceiling, extra mess.
+const APT_DAMAGE = {
+  apt1: { holes: [[12.5, 5.2, 1.5, 1.1], [4.0, 10.0, 1.2, 0.9]], ceil: [[13.5, 3.5, 1.4, 1.0]], mess: 70 },
+  apt2: { holes: [], ceil: [], mess: 25 },
+  apt3: { holes: [[17.0, 4.0, 1.3, 1.0]], ceil: [[6.0, 4.0, 1.2, 1.0]], mess: 55 },
+  john: { holes: [[11.0, 5.5, 1.0, 0.9]], ceil: [], mess: 45 },
+};
