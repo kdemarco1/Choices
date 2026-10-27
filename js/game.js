@@ -308,6 +308,7 @@ function playDoorCreak(door) {
   thud.start(t + dur * 0.95);
 }
 
+let doorShake = 0; // a tiny camera jolt while a locked handle rattles
 function playClick() {
   if (!audioReady()) return;
   const t = audioCtx.currentTime;
@@ -365,6 +366,83 @@ function playSting() {
   n.stop(t + 0.65);
 }
 
+function playWhoosh() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.Q.value = 1.2;
+  bp.frequency.setValueAtTime(2600, t);
+  bp.frequency.exponentialRampToValueAtTime(420, t + 0.28);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.32, t + 0.06);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+  n.connect(bp).connect(g).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.32);
+}
+function playWoodCrack() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = "highpass";
+  hp.frequency.value = 700;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.5, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  n.connect(hp).connect(g).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.25);
+  const o = audioCtx.createOscillator();
+  const og = audioCtx.createGain();
+  o.frequency.setValueAtTime(140, t);
+  o.frequency.exponentialRampToValueAtTime(45, t + 0.18);
+  og.gain.setValueAtTime(0.45, t);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
+  o.connect(og).connect(audioCtx.destination);
+  o.start(t);
+  o.stop(t + 0.22);
+}
+// Someone rattling a locked door handle: a latch clunk, then a few tinny jingles, then nothing.
+function playJingle() {
+  if (!audioReady()) return;
+  const t0 = audioCtx.currentTime;
+  const clink = (at, f, v) => {
+    [1, 1.51, 2.3].forEach((m, i) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = i ? "sine" : "triangle";
+      o.frequency.value = f * m;
+      g.gain.setValueAtTime(v / (i + 1), at);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.07 + i * 0.02);
+      o.connect(g).connect(audioCtx.destination);
+      o.start(at);
+      o.stop(at + 0.14);
+    });
+  };
+  const clunk = (at) => {
+    const n = audioCtx.createBufferSource();
+    n.buffer = noiseBuf;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 400;
+    const g = audioCtx.createGain();
+    g.gain.value = 0.25;
+    n.connect(lp).connect(g).connect(audioCtx.destination);
+    n.start(at);
+  };
+  clunk(t0);
+  [0.02, 0.1, 0.17, 0.3, 0.37, 0.52].forEach((dt, i) => clink(t0 + dt, 1900 + Math.random() * 1300, 0.05));
+  clunk(t0 + 0.3);
+  doorShake = 0.4;
+}
 function playKnock() {
   playFootstep(false);
   setTimeout(() => playFootstep(false), 140);
@@ -461,6 +539,7 @@ function resetRun() {
   entityGroup.scale.set(1, 1, 1);
   entityGroup.visible = false;
   clearScares();
+  state.swing = null;
   setFear(0);
   keys.clear();
   clearCaptions();
@@ -776,12 +855,83 @@ let heldBobTime = 0;
   scene.add(moon);
 })();
 
+// The axe swing: wind up, chop across and down, recover.
+const AXE_REST = { p: [0.22, -0.2, -0.45], r: [0.5, 1.2, 0.9] };
+const AXE_WIND = { p: [0.3, 0.12, -0.32], r: [0.2, 1.1, 2.3] };
+const AXE_HIT = { p: [-0.05, -0.34, -0.7], r: [1.0, 1.35, -0.55] };
+const SWING_TIME = { wind: 0.22, hit: 0.14, back: 0.3 };
+function swingAxe() {
+  if (state.phase !== "explore" || state.activeNpc || state.transition || state.flags.tut === "open") return;
+  if (state.held !== "axe" || !state.inventory.axe || state.swing) return;
+  state.swing = { t: 0, hit: false };
+  state.flags.axeSwung = true;
+  playClick();
+}
+function mixPose(a, b, k) {
+  return { p: a.p.map((v, i) => v + (b.p[i] - v) * k), r: a.r.map((v, i) => v + (b.r[i] - v) * k) };
+}
+function updateSwing(dt) {
+  const s = state.swing;
+  if (!s) return;
+  s.t += dt;
+  const { wind, hit, back } = SWING_TIME;
+  let pose;
+  if (s.t < wind) {
+    const k = s.t / wind;
+    pose = mixPose(AXE_REST, AXE_WIND, k * k * (3 - 2 * k));
+  } else if (s.t < wind + hit) {
+    if (!s.whoosh) {
+      s.whoosh = true;
+      playWhoosh();
+    }
+    const k = (s.t - wind) / hit;
+    pose = mixPose(AXE_WIND, AXE_HIT, k * k);
+  } else {
+    if (!s.hit) {
+      s.hit = true;
+      swingImpact();
+    }
+    const k = Math.min(1, (s.t - wind - hit) / back);
+    pose = mixPose(AXE_HIT, AXE_REST, k * k * (3 - 2 * k));
+  }
+  heldAxe.position.set(...pose.p);
+  heldAxe.rotation.set(...pose.r);
+  if (s.t >= wind + hit + back) {
+    state.swing = null;
+    heldAxe.position.set(...AXE_REST.p);
+    heldAxe.rotation.set(...AXE_REST.r);
+  }
+}
+// What the blade hits at the bottom of the swing: boards if they're right in front of you.
+function swingImpact() {
+  const p = yawObject.position;
+  const boards = HOTSPOTS.find((h) => h.id === "boards");
+  const fx = -Math.sin(yawObject.rotation.y);
+  const fz = -Math.cos(yawObject.rotation.y);
+  const bx = boards ? boards.x - p.x : 0;
+  const bz = boards ? boards.y - p.z : 0;
+  const bd = Math.hypot(bx, bz) || 1;
+  if (boards && !state.flags.boardsChopped && bd < 1.7 && (bx * fx + bz * fz) / bd > 0.5) {
+    state.flags.boardsChopped = true;
+    playWoodCrack();
+    setTimeout(playWoodCrack, 240);
+    setTimeout(playWoodCrack, 520);
+    setTimeout(() => buildWorld(), 600);
+  } else {
+    // a dull thud into the air or a wall
+    playFootstep(false);
+  }
+}
+
 function updateHeldFlashlight(dt) {
   heldAxe.visible = state.held === "axe" && !!state.inventory.axe;
   if (heldAxe.visible) {
-    heldBobTime += dt * 2;
-    heldAxe.position.y = -0.2 + Math.sin(heldBobTime) * 0.004;
-  }
+    if (state.swing) updateSwing(dt);
+    else {
+      heldBobTime += dt * 2;
+      heldAxe.position.y = -0.2 + Math.sin(heldBobTime) * 0.004;
+    }
+  } else state.swing = null;
   heldFlashlight.visible = state.held === "flashlight" && !!state.inventory.flashlight;
   if (!heldFlashlight.visible) return;
   const moving = keys.has("w") || keys.has("a") || keys.has("s") || keys.has("d");
@@ -2631,6 +2781,9 @@ function onMouseMove(e) {
 
 document.addEventListener("pointerlockchange", onPointerLockChange);
 document.addEventListener("mousemove", onMouseMove);
+document.addEventListener("mousedown", (e) => {
+  if (e.button === 0 && document.pointerLockElement === renderer.domElement) swingAxe();
+});
 canvas.addEventListener("click", () => {
   if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== renderer.domElement) {
     renderer.domElement.requestPointerLock();
@@ -2770,6 +2923,11 @@ function updateInteractPrompt() {
     return;
   }
   const target = nearestInteractable();
+  if (state.held === "axe" && state.inventory.axe && !state.flags.axeSwung && state.phase === "explore" && (!target || !target.label)) {
+    prompt.textContent = "[Click] Swing Axe";
+    prompt.classList.remove("hidden");
+    return;
+  }
   if (!target) {
     prompt.classList.add("hidden");
     return;
@@ -2812,7 +2970,7 @@ function handleInteract() {
       state.frontDoorOpen = true;
       playDoorCreak(door);
     } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
-      playKnock();
+      playJingle();
       addLog(door.lockedText || "Locked.");
     } else {
       if (door.locked) playClick(); // key turning
@@ -3808,6 +3966,8 @@ function gameLoop() {
   checkJohnRoom();
   updateEntity(dt);
   updateScares(dt);
+  doorShake = Math.max(0, doorShake - dt);
+  camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;
   applyTension(entityTension);
   updateDoorAnimation(dt);
   updateFluorescents(dt);
