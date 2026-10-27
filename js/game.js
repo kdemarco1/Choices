@@ -1524,6 +1524,13 @@ function buildWorld() {
     }
   }
 
+  for (let col = 0; col < 21; col++) {
+    if (MAP[0][col] !== 0) continue; // studios open onto row 0: draw their north wall just outside the map
+    const w = new THREE.Mesh(wallGeo, interiorMat);
+    w.position.set(col + 0.5, WALL_HEIGHT / 2, -0.5);
+    worldGroup.add(w);
+  }
+
   // Hedges along the left/right edge of the yard, curb along the road.
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -1668,8 +1675,7 @@ function buildWorld() {
 
   addLevels();
   {
-    const inApt = APT_DEFS.find((a) => yawObject.position.x >= a.ox && yawObject.position.x < a.ox + APT_W);
-    if (inApt) addApartment(inApt);
+    if (yawObject.position.x < 21) APT_DEFS.forEach(addApartment);
   }
   if (levelOf(yawObject.position.x) === 2) addBasementDecor();
   addFluorescents();
@@ -1695,28 +1701,21 @@ function buildWorld() {
 
 // Ceiling fluorescent tubes on the ground floor, switched on by the breaker.
 let fluoLights = [];
+let fluoTimer = 0;
 const FLUORESCENTS = [
   [3.5, 10.5], [8.5, 9.5], [13.5, 10.5], [17.5, 9.5], // lobby
   [8.5, 6.0], [12.5, 6.0], [17.0, 6.0], // hallway
-  [6.5, 2.0], [14.5, 2.0], // apartment 2, John's room
   [18.5, 3.4], // stairwell
   [3.0, 6.0], // staff room
 ];
 function addFluorescents() {
   fluoLights = [];
   const px = yawObject.position.x;
-  if (!state.flags.powerOn || (px >= 21 && px < APT_X0)) return;
-  let spots = FLUORESCENTS;
-  let power = 20;
-  let reach = 14;
-  if (px >= APT_X0) {
-    const a = APT_DEFS.find((d) => px >= d.ox && px < d.ox + APT_W);
-    spots = a ? [[a.ox + 10, 3.0], [a.ox + 7, 7.4]] : [];
-    power = 12;
-    reach = 7.5;
-  }
+  if (!state.flags.powerOn || px >= 21) return;
+  // the hallway/lobby tubes, plus one small flickering tube in each studio
+  const spots = FLUORESCENTS.map(([x, z]) => [x, z, 20, 14]).concat(APT_DEFS.map((a) => [a.ox + 1.5, 2.0, 9, 5]));
   const tubeMat = new THREE.MeshBasicMaterial({ color: 0xeaf6e0 });
-  spots.forEach(([x, z]) => {
+  spots.forEach(([x, z, power, reach]) => {
     addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, z, 0x9a9a96); // housing
     const tube = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.03, 0.12), tubeMat);
     tube.position.set(x, WALL_HEIGHT - 0.07, z);
@@ -1728,8 +1727,6 @@ function addFluorescents() {
     fluoLights.push(l);
   });
 }
-
-let fluoTimer = 0;
 function updateFluorescents(dt) {
   if (!fluoLights.length) return;
   fluoTimer -= dt;
@@ -1800,127 +1797,76 @@ function addApartment(a) {
     return G;
   };
   const wood = 0x4a3524, darkwood = 0x2f2218, white = 0xb4b0a2, grime = 0x2c2a26;
-  const chair = (rx, rz, rot) => furn(rx, rz, rot, [0.4, 0.4], (b) => {
-    b(0.4, 0.04, 0.4, 0, 0.45, 0, darkwood);
-    b(0.4, 0.45, 0.04, 0, 0.7, -0.18, darkwood);
-    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([cx, cz]) => b(0.04, 0.45, 0.04, cx, 0.22, cz, darkwood));
+  const W = -Math.PI / 2; // faces west (the kitchen wall faces into the room)
+
+  flatTiles(ox + 2.3, 0.75, 0.7, 2.1); // kitchenette floor
+
+  // ---- kitchenette along the east wall: counter + sink, stove, fridge, cabinets above
+  furn(2.7, 1.2, W, [0.6, 0.9], (b) => {
+    b(0.9, 0.85, 0.6, 0, 0.43, 0, wood);
+    b(0.94, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
+    b(0.45, 0.03, 0.36, 0.1, 0.9, 0.02, 0x15150f); // sink
+    b(0.04, 0.2, 0.04, 0.1, 1.0, -0.2, 0x8a8a86);
+    b(0.02, 0.4, 0.02, -0.15, 0.45, 0.31, grime);
+  });
+  furn(2.7, 1.95, W, [0.65, 0.6], (b) => {
+    b(0.6, 0.88, 0.62, 0, 0.44, 0, white);
+    [[-0.15, -0.14], [0.15, -0.14], [-0.15, 0.14], [0.15, 0.14]].forEach(([x, z]) => b(0.16, 0.02, 0.16, x, 0.9, z, 0x1a1a1a));
+    b(0.46, 0.3, 0.02, 0, 0.42, 0.32, 0x151515); // oven window
+    b(0.62, 0.2, 0.5, 0, 2.0, -0.05, 0x8a8a84); // range hood
+    b(0.22, 0.45, 0.22, 0, 2.33, -0.16, 0x7a7a76);
+  });
+  furn(2.7, 2.55, W, [0.7, 0.6], (b) => {
+    b(0.6, 1.5, 0.64, 0, 0.75, 0, 0xa7a597);
+    b(0.62, 0.02, 0.02, 0, 1.0, 0.33, 0x333330);
+    b(0.03, 0.35, 0.04, 0.22, 1.25, 0.34, 0x77756e);
+  });
+  furn(2.85, 1.2, W, null, (b) => {
+    b(0.9, 0.7, 0.32, 0, 1.95, 0, wood);
+    b(0.012, 0.65, 0.02, 0, 1.95, 0.17, darkwood);
+    const door = b(0.4, 0.65, 0.03, 0.5, 1.95, 0.3, wood);
+    door.rotation.y = 0.9; // a cabinet door hanging open
   });
 
-  flatTiles(ox + 7, 1, 6, 4); // kitchen floor
-
-  // ---- kitchen (north wall: counter, stove, counter, fridge; cabinets above)
-  furn(8.0, 1.35, 0, [1.6, 0.6], (b) => {
-    b(1.6, 0.85, 0.6, 0, 0.43, 0, wood);
-    b(1.64, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
-    b(0.55, 0.03, 0.4, -0.2, 0.9, 0.02, 0x15150f); // sink
-    b(0.04, 0.22, 0.04, -0.2, 1.0, -0.2, 0x8a8a86);
-    b(0.12, 0.03, 0.04, -0.2, 1.1, -0.12, 0x8a8a86);
-    [-0.5, 0.3, 0.6].forEach((x) => b(0.02, 0.5, 0.02, x, 0.42, 0.31, grime));
+  // ---- bed, nightstand, dresser
+  furn(0.55, 1.5, 0, [0.9, 1.8], (b) => {
+    [[-0.38, -0.8], [0.38, -0.8], [-0.38, 0.8], [0.38, 0.8]].forEach(([x, z]) => b(0.05, 0.28, 0.05, x, 0.14, z, darkwood));
+    b(0.9, 0.06, 1.8, 0, 0.3, 0, darkwood);
+    b(0.82, 0.14, 1.7, 0, 0.41, 0, 0x6a665a); // stained mattress
+    b(0.42, 0.1, 0.32, 0, 0.53, -0.62, 0x8a8678);
+    b(0.82, 0.05, 0.95, 0, 0.5, 0.35, 0x4a2a2a);
+    b(0.92, 0.65, 0.05, 0, 0.6, -0.88, darkwood);
   });
-  furn(9.25, 1.4, 0, [0.8, 0.7], (b) => {
-    b(0.78, 0.88, 0.66, 0, 0.44, 0, white);
-    [[-0.2, -0.15], [0.2, -0.15], [-0.2, 0.15], [0.2, 0.15]].forEach(([x, z]) => b(0.2, 0.02, 0.2, x, 0.9, z, 0x1a1a1a));
-    b(0.62, 0.34, 0.02, 0, 0.42, 0.34, 0x151515); // oven window
-    [-0.25, 0, 0.25].forEach((x) => b(0.05, 0.05, 0.03, x, 0.78, 0.34, 0x8a8a86));
-    b(0.82, 0.22, 0.55, 0, 2.0, -0.05, 0x8a8a84); // range hood
-    b(0.26, 0.5, 0.26, 0, 2.36, -0.18, 0x7a7a76);
+  furn(1.25, 0.35, 0, [0.4, 0.4], (b) => {
+    b(0.4, 0.5, 0.4, 0, 0.25, 0, wood);
+    b(0.3, 0.12, 0.02, 0, 0.34, 0.21, darkwood);
   });
-  furn(10.3, 1.35, 0, [1.2, 0.6], (b) => {
-    b(1.2, 0.85, 0.6, 0, 0.43, 0, wood);
-    b(1.24, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
-    [-0.3, 0.3].forEach((x) => b(0.02, 0.4, 0.02, x, 0.5, 0.31, grime));
-  });
-  furn(11.4, 1.45, 0, [0.8, 0.75], (b) => {
-    b(0.76, 1.75, 0.7, 0, 0.88, 0, 0xa7a597);
-    b(0.78, 0.02, 0.02, 0, 1.15, 0.36, 0x333330);
-    b(0.03, 0.4, 0.04, 0.3, 1.45, 0.38, 0x77756e);
-    b(0.03, 0.3, 0.04, 0.3, 0.8, 0.38, 0x77756e);
-  });
-  [[8.0, 1.6, 0], [10.3, 1.2, 0.3]].forEach(([x, w, ajar]) => furn(x, 1.2, 0, null, (b) => {
-    b(w, 0.75, 0.36, 0, 1.95, 0, wood);
-    for (let i = 0; i < Math.round(w / 0.5); i++) b(0.012, 0.7, 0.02, -w / 2 + 0.5 * (i + 1), 1.95, 0.19, darkwood);
-    if (ajar) { const door = b(0.45, 0.7, 0.03, w / 2 + 0.05, 1.95, 0.35, wood); door.rotation.y = 0.9; } // a door hanging open
-  }));
-  furn(11.0, 3.6, 0, [1.2, 0.8], (b) => {
-    b(1.2, 0.05, 0.8, 0, 0.75, 0, 0x4d3a28);
-    [[-0.55, -0.35], [0.55, -0.35], [-0.55, 0.35], [0.55, 0.35]].forEach(([x, z]) => b(0.05, 0.75, 0.05, x, 0.37, z, darkwood));
-  });
-  chair(9.8, 3.6, -Math.PI / 2);
-  chair(12.2, 3.6, Math.PI / 2);
-  furn(12.5, 4.6, 0, null, () => {
-    const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.3, 10), new THREE.MeshStandardMaterial({ color: 0x6a6c70, roughness: 0.7 }));
-    bucket.position.y = 0.15;
-    buildTarget.add(bucket);
+  furn(1.95, 0.3, 0, [0.7, 0.4], (b) => {
+    b(0.7, 0.88, 0.4, 0, 0.44, 0, wood);
+    [0.22, 0.5, 0.76].forEach((y) => { b(0.62, 0.012, 0.02, 0, y, 0.21, darkwood); b(0.05, 0.03, 0.03, 0, y - 0.09, 0.22, 0x8a8a76); });
   });
 
-  // ---- bedroom: a small bed, nightstand, dresser, desk
-  furn(1.75, 2.1, 0, [1.0, 1.9], (b) => {
-    [[-0.4, -0.85], [0.4, -0.85], [-0.4, 0.85], [0.4, 0.85]].forEach(([x, z]) => b(0.05, 0.3, 0.05, x, 0.15, z, darkwood));
-    b(1.0, 0.07, 1.9, 0, 0.32, 0, darkwood);
-    b(0.92, 0.15, 1.8, 0, 0.44, 0, 0x6a665a); // stained mattress
-    b(0.45, 0.1, 0.34, 0, 0.57, -0.65, 0x8a8678);
-    b(0.92, 0.06, 1.0, 0, 0.54, 0.35, 0x4a2a2a);
-    b(1.02, 0.7, 0.06, 0, 0.65, -0.95, darkwood);
+  // ---- couch (west wall, south end) and a small desk (south-east corner)
+  furn(0.45, 3.05, Math.PI / 2, [0.8, 1.3], (b) => {
+    b(1.3, 0.38, 0.8, 0, 0.23, 0, 0x4a4036);
+    b(1.3, 0.45, 0.2, 0, 0.58, -0.3, 0x4a4036);
+    b(0.18, 0.5, 0.8, -0.56, 0.35, 0, 0x3e362e);
+    b(0.18, 0.5, 0.8, 0.56, 0.35, 0, 0x3e362e);
+    b(0.5, 0.1, 0.55, -0.2, 0.46, 0.08, 0x554a3e);
+    b(0.5, 0.1, 0.55, 0.28, 0.46, 0.08, 0x554a3e);
   });
-  furn(3.0, 1.5, 0, [0.5, 0.5], (b) => {
-    b(0.5, 0.55, 0.5, 0, 0.28, 0, wood);
-    b(0.4, 0.14, 0.02, 0, 0.38, 0.26, darkwood);
-    b(0.04, 0.04, 0.03, 0, 0.38, 0.28, 0x8a8a76);
+  furn(2.45, 3.6, W, [0.5, 0.7], (b) => {
+    b(0.7, 0.05, 0.5, 0, 0.74, 0, wood);
+    b(0.04, 0.72, 0.46, -0.31, 0.36, 0, darkwood);
+    b(0.04, 0.72, 0.46, 0.31, 0.36, 0, darkwood);
+    b(0.3, 0.35, 0.4, 0.15, 0.5, 0, darkwood); // drawers
   });
-  furn(4.8, 1.4, 0, [0.9, 0.5], (b) => {
-    b(0.9, 0.9, 0.5, 0, 0.45, 0, wood);
-    [0.2, 0.5, 0.78].forEach((y) => { b(0.8, 0.012, 0.02, 0, y, 0.26, darkwood); b(0.05, 0.03, 0.03, 0, y - 0.1, 0.27, 0x8a8a76); });
-  });
-  furn(1.4, 4.0, Math.PI / 2, [0.6, 1.2], (b) => { // desk against the west wall
-    b(1.2, 0.05, 0.6, 0, 0.74, 0, wood);
-    b(0.04, 0.72, 0.56, -0.56, 0.36, 0, darkwood);
-    b(0.04, 0.72, 0.56, 0.56, 0.36, 0, darkwood);
-    b(0.5, 0.4, 0.5, 0.28, 0.5, 0, darkwood); // drawers
-  });
-  chair(2.3, 4.0, -Math.PI / 2);
-  addBox(1.8, 0.012, 1.3, ox + 4.2, 0.009, 3.8, 0x3b2323); // rug
-
-  // ---- living room: couch, coffee table, TV stand, shelf
-  furn(6.0, 6.6, 0, [2.0, 0.9], (b) => {
-    b(2.0, 0.4, 0.9, 0, 0.24, 0, 0x4a4036);
-    b(2.0, 0.5, 0.22, 0, 0.62, -0.34, 0x4a4036);
-    b(0.2, 0.55, 0.9, -0.9, 0.38, 0, 0x3e362e);
-    b(0.2, 0.55, 0.9, 0.9, 0.38, 0, 0x3e362e);
-    b(0.8, 0.1, 0.6, -0.3, 0.48, 0.08, 0x554a3e);
-    b(0.8, 0.1, 0.6, 0.45, 0.48, 0.08, 0x554a3e);
-  });
-  furn(6.0, 8.1, 0, [1.0, 0.5], (b) => {
-    b(1.0, 0.04, 0.5, 0, 0.4, 0, darkwood);
-    [[-0.45, -0.2], [0.45, -0.2], [-0.45, 0.2], [0.45, 0.2]].forEach(([x, z]) => b(0.04, 0.4, 0.04, x, 0.2, z, darkwood));
-  });
-  furn(9.5, 8.6, Math.PI, [1.2, 0.5], (b) => {
-    b(1.2, 0.5, 0.45, 0, 0.25, 0, wood);
-    b(0.62, 0.5, 0.46, 0, 0.78, 0, 0x1c1c1e); // old TV
-    b(0.5, 0.36, 0.02, 0, 0.78, 0.24, 0x0c0e0d);
-    b(0.04, 0.3, 0.04, 0.15, 1.15, 0, 0x555552);
-  });
-  furn(1.4, 7.4, Math.PI / 2, [0.35, 1.3], (b) => {
-    b(1.3, 1.7, 0.35, 0, 0.85, -0.01, darkwood);
-    [0.3, 0.7, 1.1, 1.5].forEach((y) => {
-      b(1.2, 0.03, 0.34, 0, y, 0.02, wood);
-      for (let i = 0; i < 5; i++) b(0.05, 0.22 + rnd() * 0.08, 0.2, -0.5 + i * 0.22 + rnd() * 0.05, y + 0.13, 0.02, [0x5a2a2a, 0x2a3a4a, 0x3a4a2a, 0x4a3a2a][i % 4]);
-    });
-  });
-  addBox(2.4, 0.012, 1.4, ox + 7.0, 0.009, 7.7, 0x2e2630); // rug
-
-  // ---- the front door (inside face), south wall of the living room
-  const door = DOORS.find((dr) => dr.id === a.door);
-  const dtex = makeThreeTexture(createStyledDoorTexture(door.style, door.plate, door.baseColor, true));
-  const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.55), new THREE.MeshStandardMaterial({ map: dtex, roughness: 0.6 }));
-  panel.rotation.y = Math.PI;
-  panel.position.set(ox + 3.5, 1.28, 8.96);
-  worldGroup.add(panel);
-  addBox(1.14, 2.7, 0.05, ox + 3.5, 1.35, 8.98, 0x1c1814);
+  addBox(0.9, 0.012, 1.0, ox + 1.4, 0.009, 2.5, 0x3b2323); // worn rug
 
   // ---- writing on the wall
   WALL_WRITING.filter((w) => w.apt === a.id).forEach((w) => {
     const m = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.95, 1.15),
+      new THREE.PlaneGeometry(0.8, 1.0),
       new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), w.paper, w.sloppy, w.seed)), roughness: 1 })
     );
     m.rotation.y = w.rot;
@@ -1928,30 +1874,20 @@ function addApartment(a) {
     worldGroup.add(m);
   });
 
-  // ---- damage: holes in the floor and ceiling
-  (dmg.holes || []).forEach(([x, z, w, d]) => {
-    addBox(w, 0.02, d, ox + x, 0.012, z, 0x030303);
-    for (let i = 0; i < 5; i++) {
-      const s = addBox(0.05, 0.03, 0.4 + rnd() * 0.3, ox + x + (rnd() - 0.5) * w, 0.03, z + (rnd() - 0.5) * d, 0x3a2a1c);
-      s.rotation.y = rnd() * 3;
-      s.rotation.z = (rnd() - 0.5) * 0.8;
-    }
-    addSolid(ox + x, z, w, d);
-  });
+  // ---- damage
   (dmg.ceil || []).forEach(([x, z, w, d]) => {
     addBox(w, 0.02, d, ox + x, WALL_HEIGHT - 0.012, z, 0x020202);
-    const flap = addBox(0.6, 0.03, 0.5, ox + x + w / 2, WALL_HEIGHT - 0.25, z, 0x5a5448);
+    const flap = addBox(0.5, 0.03, 0.4, ox + x + w / 2, WALL_HEIGHT - 0.22, z, 0x5a5448);
     flap.rotation.z = 0.7;
   });
-
-  // ---- mess on the floor
   const mess = [0x4a463e, 0x5a5448, 0x6a6558, 0x3a2a1c, 0x2c2c2a];
   for (let i = 0; i < dmg.mess; i++) {
-    const rx = 1.3 + rnd() * (APT_W - 2.6);
-    const rz = 1.3 + rnd() * 7.4;
-    if (isWall(ox + rx, rz) || solids.some((s) => ox + rx > s.minX - 0.1 && ox + rx < s.maxX + 0.1 && rz > s.minZ - 0.1 && rz < s.maxZ + 0.1)) continue;
-    const s = 0.05 + rnd() * 0.13;
-    const m = addBox(s, s * (0.2 + rnd() * 0.5), s * (0.6 + rnd()), ox + rx, s * 0.15, rz, rnd() < 0.3 ? 0x9a9688 : mess[i % mess.length]);
+    const rx = 0.3 + rnd() * 2.4;
+    const rz = 0.3 + rnd() * 3.4;
+    const wx = ox + rx;
+    if (isWall(wx, rz) || solids.some((s) => wx > s.minX - 0.05 && wx < s.maxX + 0.05 && rz > s.minZ - 0.05 && rz < s.maxZ + 0.05)) continue;
+    const s = 0.05 + rnd() * 0.1;
+    const m = addBox(s, s * (0.2 + rnd() * 0.5), s * (0.6 + rnd()), wx, s * 0.15, rz, rnd() < 0.3 ? 0x9a9688 : mess[i % mess.length]);
     m.rotation.y = rnd() * 3;
   }
 }
@@ -1992,7 +1928,7 @@ function addLevels() {
   worldGroup.add(sl);
   // faint bulbs so each level isn't a void (only built for the level you're on)
   const px = yawObject.position.x;
-  const bulbs = px >= APT_X0 ? [] : px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
+  const bulbs = px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
   bulbs.forEach(([x, y, z]) => {
     const l = new THREE.PointLight(0x8fa0b8, 0.09, 6, 2);
     l.position.set(x, y, z);
@@ -3233,7 +3169,7 @@ const ENTITY_SPAWNS_BY_LEVEL = [
 const ENTITY_SPAWNS = ENTITY_SPAWNS_BY_LEVEL[0];
 // 0 = ground floor, 1 = second floor, 2 = basement (they sit side by side on the map)
 function levelOf(x) {
-  return x < 21 || x >= APT_X0 ? 0 : x < 46 ? 1 : 2; // the apartments (x >= 70) belong to the ground floor
+  return x < 21 ? 0 : x < 46 ? 1 : 2;
 }
 
 // ---- the model: a tall, starved figure in a ragged coat, hunched, arms to its knees ----
@@ -3496,11 +3432,6 @@ function updateEntity(dt) {
   }
   // Before the power is on it haunts the ground floor. Once the lights are on it can only be
   // upstairs or in the basement.
-  if (yawObject.position.x >= APT_X0) {
-    entityGroup.visible = false; // the flats are safe; it waits outside
-    setFear(0);
-    return;
-  }
   const lvl = levelOf(yawObject.position.x);
   const haunted = state.flags.powerOn ? lvl >= 1 : lvl === 0;
   if (!haunted) {
