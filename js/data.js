@@ -43,7 +43,7 @@ const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ?
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
-const BLOCKED_CELLS = [[17, 1], [18, 1], [19, 1], [17, 2], [18, 2], [19, 2], [7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17], [59, 3]]; // + the entrance columns and four yard trees
+const BLOCKED_CELLS = [[7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17], [59, 3]]; // + the entrance columns and four yard trees
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
@@ -72,7 +72,7 @@ const ITEMS = [
   { id: "johnNote", name: "John's Note", note: true, h: 0.76, x: 15.45, y: 3.15, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
   { id: "batteries", name: "Batteries", h: 0.76, x: 15.45, y: 2.4, pickupText: "Spare batteries." },
   { id: "staffNote", name: "Notice", note: true, x: 4.2, y: 5.7, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
-  { id: "note1", name: "Torn Page", note: true, x: 24.5, y: 2.0, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
+  { id: "note1", name: "Torn Page", note: true, x: 26.2, y: 2.2, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
   { id: "note2", name: "Letter", note: true, x: 29.5, y: 2.0, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
   { id: "note3", name: "Scrap of Paper", note: true, x: 34.6, y: 10.4, paper: "it only stops when\nsomeone goes into {his}\nroom. the key is 4", sloppy: 0.7, seed: 9 },
   { id: "note4", name: "Child's Note", note: true, x: 39.5, y: 2.2, paper: "mommy says the man in\nroom 4 is {sleeping}\nbut i hear him walking\nabove me at night", sloppy: 1, seed: 17 },
@@ -82,10 +82,7 @@ const ITEMS = [
 
 // Spots you can use with E. 'go' teleports between levels.
 const HOTSPOTS = [
-  { id: "cellar", x: 17.5, y: 3.55, label: "Go Down", go: { x: 48.6, y: 2.6, yaw: -Math.PI / 2 } },
-  { id: "cellarUp", x: 47.5, y: 1.55, label: "Go Up", go: { x: 17.5, y: 3.2, yaw: 0 } },
-  { id: "boards", x: 18.5, y: 3.3, label: "Boards" },
-  { id: "upDown", x: 23.5, y: 6.5, label: "Go Down", go: { x: 18.5, y: 3.3, yaw: 0 } },
+  { id: "boards", x: 17.75, y: 2.95, label: "Boards" },
   { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 2.0, y: 5.6, label: "Flip Breaker" },
@@ -162,3 +159,13 @@ const GUEST_PAPER = {
   seed: 13,
   paper: "GUEST LOG\nSept 02 apt 1 Okafor\nSept 09 apt 3 Lindqvist\nSept 14 apt 4 John\nSept 20 apt 4 John, nails\nSept 25 power cut\nSept 28 apt 4 John\nin 3:13am   out ----\nwho let him in? door\nwas locked. ink still wet",
 };
+
+// Real staircases. Flights run north-south: you step on at z0 (height 0) and the floor rises (or falls) by `rise`
+// by z1. Reaching the far end fades out and puts you on the next level (the levels sit apart on the map).
+const STAIRS = [
+  { id: "gUp", x0: 17.0, x1: 18.5, z0: 3.9, z1: 1.25, rise: 3.0, needs: "boardsChopped", to: { x: 24.5, y: 4.6, yaw: Math.PI } },
+  { id: "gDown", x0: 18.5, x1: 20.0, z0: 3.9, z1: 1.25, rise: -3.0, to: { x: 49.3, y: 5.4, yaw: -Math.PI / 2 } },
+  { id: "uDown", x0: 23.8, x1: 25.2, z0: 3.95, z1: 1.3, rise: -3.0, to: { x: 17.75, y: 3.65, yaw: Math.PI } },
+  { id: "bUp", x0: 47.2, x1: 48.6, z0: 5.8, z1: 3.15, rise: 3.0, to: { x: 19.25, y: 3.65, yaw: Math.PI } },
+];
+const STAIR_STEPS = 12;
