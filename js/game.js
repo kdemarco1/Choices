@@ -171,7 +171,7 @@ let tensionNodes = null;
 
 function applyTension(level) {
   if (!tensionNodes) return;
-  const want = state.settings.soundOn && state.phase === "explore" ? level : 0;
+  const want = state.settings.soundOn && (state.phase === "explore" || state.phase === "breaker") ? level : 0;
   const t = audioCtx.currentTime;
   const { tg, tlp, tOscs, hg } = tensionNodes;
   tg.gain.setTargetAtTime(want * want * 0.13, t, 0.2);
@@ -539,6 +539,7 @@ function resetRun() {
   entityGroup.scale.set(1, 1, 1);
   entityGroup.visible = false;
   clearScares();
+  closeBreaker();
   state.swing = null;
   setFear(0);
   keys.clear();
@@ -993,69 +994,192 @@ const TEXTURE_SIZE = 128;
 
 // Handwritten paper: seeded jitter per letter, ink fade, and {scribbled-out} words nobody can read.
 function drawPaper(c, text, sloppy, seed) {
+  // A page from a notebook (or a torn sheet from a pad) written on in ballpoint. One person's hand:
+  // neat and calm early on, frantic and wrong later.
   const w = (c.width = 512);
   const h = (c.height = 640);
   const ctx = c.getContext("2d");
   let s = seed * 9301 + 49297;
   const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
-  ctx.fillStyle = "#d8ceae";
+  const ruled = seed % 3 !== 0; // lined notebook page, otherwise a plain sheet
+  // paper
+  const base = ctx.createLinearGradient(0, 0, w, h);
+  base.addColorStop(0, ruled ? "#e9e4d0" : "#e6dfc8");
+  base.addColorStop(1, ruled ? "#d8cfb4" : "#d6ccb0");
+  ctx.fillStyle = base;
   ctx.fillRect(0, 0, w, h);
-  for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = `rgba(120,90,40,${0.02 + r() * 0.035})`;
+  for (let i = 0; i < 320; i++) { // paper fibres
+    ctx.strokeStyle = `rgba(110,90,60,${0.03 + r() * 0.05})`;
+    ctx.lineWidth = 1;
+    const x = r() * w, y = r() * h;
     ctx.beginPath();
-    ctx.arc(r() * w, r() * h, 30 + r() * 80, 0, 6.3);
-    ctx.fill();
-  }
-  ctx.fillStyle = "rgba(0,0,0,0.08)";
-  ctx.fillRect(0, h / 2, w, 2);
-  ctx.strokeStyle = "rgba(70,90,120,0.18)";
-  ctx.lineWidth = 1;
-  for (let y = 90; y < h; y += 46) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + (r() - 0.5) * 14, y + (r() - 0.5) * 14);
     ctx.stroke();
   }
-  const size = 44 - sloppy * 8;
-  ctx.font = `${size}px "Reenie Beanie","Nothing You Could Do","Segoe Script","Bradley Hand",cursive`;
-  const ink = "#1d1f2e";
-  let y = 92;
-  text.split("\n").forEach((line) => {
-    let x = 34 + r() * 16;
-    const tilt = (r() - 0.5) * sloppy * 0.06;
+  for (let i = 0; i < 5; i++) { // age blotches
+    ctx.fillStyle = `rgba(130,100,50,${0.03 + r() * 0.05})`;
+    ctx.beginPath();
+    ctx.arc(r() * w, r() * h, 40 + r() * 90, 0, 6.3);
+    ctx.fill();
+  }
+  const firstLine = 98;
+  const step = 52;
+  if (ruled) {
+    ctx.strokeStyle = "rgba(80,115,170,0.38)";
+    ctx.lineWidth = 1.5;
+    for (let y = firstLine + 6; y < h - 20; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y + 0.6);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = "rgba(170,60,60,0.5)"; // margin
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(66, 0);
+    ctx.lineTo(66, h);
+    ctx.stroke();
+    for (let y = 70; y < h; y += 150) { // binder holes
+      ctx.fillStyle = "rgba(40,34,26,0.75)";
+      ctx.beginPath();
+      ctx.arc(24, y, 9, 0, 6.3);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+  }
+  const fy = h * (0.48 + r() * 0.06); // the fold
+  ctx.fillStyle = "rgba(0,0,0,0.09)";
+  ctx.fillRect(0, fy, w, 2);
+  ctx.fillStyle = "rgba(255,255,255,0.35)";
+  ctx.fillRect(0, fy + 2, w, 2);
+  const fx = w * (0.5 + (r() - 0.5) * 0.08);
+  ctx.fillStyle = "rgba(0,0,0,0.05)";
+  ctx.fillRect(fx, 0, 2, h);
+  if (r() < 0.45) { // a coffee ring
+    ctx.strokeStyle = "rgba(100,64,28,0.22)";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(w * (0.55 + r() * 0.3), h * (0.7 + r() * 0.2), 36 + r() * 10, 0.3, 5.6);
+    ctx.stroke();
+  }
+  const edge = ctx.createRadialGradient(w / 2, h / 2, h * 0.35, w / 2, h / 2, h * 0.75);
+  edge.addColorStop(0, "rgba(60,40,10,0)");
+  edge.addColorStop(1, "rgba(60,40,10,0.3)");
+  ctx.fillStyle = edge;
+  ctx.fillRect(0, 0, w, h);
+
+  // handwriting
+  const size = 46 - Math.min(sloppy, 1.8) * 5;
+  const fam = '"Reenie Beanie","Nothing You Could Do","Segoe Script","Bradley Hand",cursive';
+  ctx.textBaseline = "alphabetic";
+  const ink = sloppy < 0.3 ? "#1c2340" : sloppy < 1 ? "#1a1c2a" : "#0e0d12";
+  const neat = sloppy < 0.3;
+  const left = ruled ? 78 : 40;
+  let y = firstLine + (ruled ? 0 : r() * 10);
+  text.split("\n").forEach((line, li) => {
+    // shrink long lines so they stay on the page
+    ctx.font = `${size}px ${fam}`;
+    const plain = line.replace(/[{}]/g, "");
+    const wide = ctx.measureText(plain).width * (1 + sloppy * 0.16) + plain.split(" ").length * size * 0.32;
+    const sz = size * Math.min(1, (w - left - 26) / wide);
+    ctx.font = `${sz}px ${fam}`;
+    let x = left + r() * (neat ? 4 : 14) + (li > 0 ? sloppy * (r() - 0.3) * 8 : 0);
+    const drift = (r() - 0.5) * sloppy * 0.05; // the line wanders uphill/downhill
+    const startX = x;
+    const heavy = sloppy > 1.1 && r() < 0.5;
     (line.match(/\{[^}]*\}|\S+/g) || []).forEach((tok) => {
       const bad = tok[0] === "{";
       const word = bad ? tok.slice(1, -1) : tok;
       if (bad) {
-        const len = Math.max(3, word.length) * size * 0.36;
+        // a word scribbled out so hard it tears the paper
+        const len = Math.max(3, word.length) * sz * 0.34;
         ctx.strokeStyle = ink;
-        ctx.lineWidth = 2 + r() * 2;
+        ctx.lineWidth = 2 + r() * 2.5;
         ctx.beginPath();
-        ctx.moveTo(x, y - size * 0.3);
-        for (let i = 1; i <= 9; i++) ctx.lineTo(x + (len * i) / 9, y - size * 0.3 + (i % 2 ? -1 : 1) * size * (0.1 + r() * 0.3));
+        ctx.moveTo(x, y - sz * 0.3);
+        for (let i = 1; i <= 11; i++) ctx.lineTo(x + (len * i) / 11, y - sz * 0.3 + (i % 2 ? -1 : 1) * sz * (0.1 + r() * 0.32));
         ctx.stroke();
+        x += len;
+      } else if (neat) {
+        ctx.save();
+        ctx.translate(x, y + (x - startX) * drift);
+        ctx.rotate((r() - 0.5) * 0.02);
+        ctx.fillStyle = ink;
+        ctx.globalAlpha = 0.92;
+        ctx.fillText(word, 0, 0);
+        ctx.restore();
+        x += ctx.measureText(word).width;
       } else {
         for (const ch of word) {
           ctx.save();
-          ctx.translate(x, y + (r() - 0.5) * sloppy * 12 + x * tilt);
-          ctx.rotate((r() - 0.5) * sloppy * 0.6);
-          ctx.globalAlpha = 1 - sloppy * r() * 0.5;
+          const big = heavy ? 1 + r() * 0.4 : 1;
+          ctx.translate(x, y + (r() - 0.5) * sloppy * 9 + (x - startX) * drift);
+          ctx.rotate((r() - 0.5) * sloppy * 0.5);
+          ctx.scale(big, big);
+          ctx.globalAlpha = 1 - sloppy * r() * 0.3;
           ctx.fillStyle = ink;
           ctx.fillText(ch, 0, 0);
+          if (sloppy > 0.8 && r() < 0.25) ctx.fillText(ch, 1.4, 1.2); // pressing too hard, doubling the stroke
           ctx.restore();
-          x += (ctx.measureText(ch).width || size * 0.4) * (0.95 + r() * 0.2 * (1 + sloppy));
+          x += (ctx.measureText(ch).width || sz * 0.4) * big * (0.92 + r() * 0.12 * (1 + sloppy));
         }
       }
-      x += size * 0.35 * (bad ? 1.4 : 1);
+      x += sz * 0.32;
     });
-    y += 50 + r() * sloppy * 14;
+    y += step + (ruled ? (r() - 0.5) * sloppy * 4 : r() * sloppy * 10);
   });
   ctx.globalAlpha = 1;
+  // creepier as it gets worse: smudges, drips, scratches
   if (sloppy > 0.6) {
-    ctx.fillStyle = "rgba(20,20,40,0.22)";
+    ctx.fillStyle = "rgba(20,20,40,0.2)";
     ctx.beginPath();
-    ctx.ellipse(w * (0.55 + r() * 0.3), h * (0.6 + r() * 0.25), 22 + r() * 18, 14 + r() * 10, r(), 0, 6.3);
+    ctx.ellipse(w * (0.55 + r() * 0.3), h * (0.65 + r() * 0.2), 22 + r() * 18, 14 + r() * 10, r(), 0, 6.3);
     ctx.fill();
+  }
+  if (sloppy > 1.0) {
+    ctx.fillStyle = "rgba(90,12,10,0.55)";
+    for (let i = 0; i < 3; i++) {
+      const dx = w * (0.15 + r() * 0.7), dy = h * (0.2 + r() * 0.5), dl = 20 + r() * 70;
+      ctx.beginPath();
+      ctx.moveTo(dx, dy);
+      ctx.lineTo(dx + 4, dy);
+      ctx.lineTo(dx + 3, dy + dl);
+      ctx.lineTo(dx + 1, dy + dl);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(dx + 2, dy + dl + 1, 3.2, 0, 6.3);
+      ctx.fill();
+    }
+  }
+  if (sloppy > 1.5) {
+    for (let i = 0; i < 40; i++) { // scratched through the sheet
+      ctx.strokeStyle = `rgba(30,20,20,${0.1 + r() * 0.2})`;
+      ctx.lineWidth = 1 + r();
+      const x = 30 + r() * (w - 60);
+      ctx.beginPath();
+      ctx.moveTo(x, h - 40 - r() * 90);
+      ctx.lineTo(x + (r() - 0.5) * 20, h - 10);
+      ctx.stroke();
+    }
+  }
+  // the top edge is torn out of a pad (cleared, so the table shows through); tape on some
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  for (let x = 0; x <= w; x += 8) ctx.lineTo(x, 4 + r() * 9);
+  ctx.lineTo(w, 0);
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+  if (r() < 0.35) {
+    ctx.save();
+    ctx.translate(w * (r() < 0.5 ? 0.12 : 0.88), 18);
+    ctx.rotate((r() - 0.5) * 0.8);
+    ctx.fillStyle = "rgba(220,210,160,0.55)";
+    ctx.fillRect(-34, -12, 68, 26);
+    ctx.restore();
   }
   return c;
 }
@@ -1839,7 +1963,7 @@ function buildWorld() {
     else if (it.note) {
       const paper = new THREE.Mesh(
         new THREE.PlaneGeometry(0.22, 0.28),
-        new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), it.paper, it.sloppy, it.seed)), roughness: 1 })
+        new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), it.paper, it.sloppy, it.seed)), roughness: 1, transparent: true, alphaTest: 0.4 })
       );
       paper.rotation.set(-Math.PI / 2, 0, it.seed * 0.7);
       paper.position.set(it.x, (it.h || 0.02) + 0.005, it.y);
@@ -2848,7 +2972,7 @@ function nearestInteractable() {
       doorDist = d;
       let label = h.label;
       if (h.id === "drawers") label = (state.flags.drawers || 0) >= 3 ? (state.inventory.staffKey ? "Empty Drawers" : "Take Key") : "Search Drawer";
-      if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Flip Breaker";
+      if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Open Breaker Panel";
       if (h.id === "boards") label = ""; // no prompt: you have to try things
       if (h.loot && (state.flags.looted || {})[h.id]) label = ""; // already searched
       doorTarget = { type: "hotspot", id: h.id, label };
@@ -2918,7 +3042,7 @@ function updateTutorialBanner() {
 function updateInteractPrompt() {
   updateTutorialBanner();
   const prompt = document.getElementById("interact-prompt");
-  if (state.activeNpc || !state.settings.showPrompts) {
+  if (state.activeNpc || state.phase === "breaker" || !state.settings.showPrompts) {
     prompt.classList.add("hidden");
     return;
   }
@@ -3014,21 +3138,7 @@ function handleInteract() {
       openPaper(GUEST_PAPER);
     } else if (h.id === "breaker") {
       if (state.flags.powerOn) addLog("The power is on.");
-      else {
-        state.flags.powerOn = true;
-        if (state.entity.mode === "active" && levelOf(yawObject.position.x) === 0) {
-          state.entity.mode = "vanishing"; // the light burns it off the ground floor
-          state.entity.timer = 0.9;
-          playVanish();
-        } else {
-          state.entity.mode = "gone"; // gone from here; it will turn up upstairs or below
-          state.entity.timer = 14;
-        }
-        playClick();
-        setTimeout(playKnock, 200);
-        addLog("Power restored.");
-        buildWorld();
-      }
+      else openBreaker();
     } else if (h.exit) {
       const pt = PORTALS.find((p) => p.door === h.exit);
       playDoorCreak(DOORS.find((dr) => dr.id === h.exit));
@@ -3136,7 +3246,8 @@ function renderInventory() {
       renderInventory();
     }, state.batteryLevel >= 100);
   }
-  ITEMS.filter((it) => it.note && state.inventory[it.id]).forEach((it) => add(it.name, "Read", () => {
+  const noteDate = (it) => { const m = /^(Sept|Oct)\s+(\d+)/.exec(it.paper || ""); return m ? (m[1] === "Oct" ? 100 : 0) + +m[2] : 0; }; // oldest first
+  ITEMS.filter((it) => it.note && state.inventory[it.id]).sort((p, q) => noteDate(p) - noteDate(q)).forEach((it) => add(it.name, "Read", () => {
     document.getElementById("inventory-overlay").classList.add("hidden");
     openPaper(it);
   }));
@@ -3201,6 +3312,10 @@ function closeInventory() {
 
 window.addEventListener("keydown", (e) => {
   const key = e.key.toLowerCase();
+  if (state.phase === "breaker") {
+    if (key >= "1" && key <= "5") pressBreaker(+key - 1);
+    return;
+  }
 
   if (key === "escape") {
     if (state.activeNpc) {
@@ -3551,7 +3666,149 @@ function spawnEntity() {
   return true;
 }
 
+
+// ---- the breaker: a fuse panel you have to set right before the thing in the dark reaches you ----
+const BREAKER_TIME = 24; // seconds until it arrives
+const BREAKER_SIZE = 5;
+let breakerEl = null;
+function buildBreakerUI() {
+  if (breakerEl) return;
+  const wrap = document.createElement("div");
+  wrap.id = "breaker-overlay";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:80;background:rgba(0,0,0,0.88);display:none;align-items:center;justify-content:center;user-select:none;";
+  const panel = document.createElement("div");
+  panel.style.cssText = "width:min(560px,92vw);padding:26px 26px 22px;background:linear-gradient(160deg,#4a4c47,#30322f);border:3px solid #1b1c1a;border-radius:6px;box-shadow:0 10px 40px #000,inset 0 0 40px #0008;";
+  const lamps = document.createElement("div");
+  lamps.style.cssText = "display:flex;justify-content:space-around;margin-bottom:22px;";
+  const switches = document.createElement("div");
+  switches.style.cssText = "display:flex;justify-content:space-around;";
+  wrap._lamps = [];
+  wrap._levers = [];
+  for (let i = 0; i < BREAKER_SIZE; i++) {
+    const lamp = document.createElement("div");
+    lamp.style.cssText = "width:34px;height:34px;border-radius:50%;border:3px solid #151513;transition:background 0.12s,box-shadow 0.12s;";
+    lamps.appendChild(lamp);
+    wrap._lamps.push(lamp);
+    const slot = document.createElement("div");
+    slot.style.cssText = "width:56px;height:130px;background:#1b1c1a;border:3px solid #0e0e0d;border-radius:5px;position:relative;cursor:pointer;box-shadow:inset 0 0 12px #000;";
+    const lever = document.createElement("div");
+    lever.style.cssText = "position:absolute;left:8px;width:34px;height:56px;background:linear-gradient(90deg,#b9b6a8,#8f8c80);border-radius:4px;border:2px solid #25241f;transition:top 0.1s;box-shadow:0 3px 6px #000a;";
+    slot.appendChild(lever);
+    slot.addEventListener("mousedown", (e) => { e.preventDefault(); pressBreaker(i); });
+    switches.appendChild(slot);
+    wrap._levers.push(lever);
+  }
+  const barWrap = document.createElement("div");
+  barWrap.style.cssText = "margin-top:22px;height:8px;background:#151513;border-radius:4px;overflow:hidden;";
+  const bar = document.createElement("div");
+  bar.style.cssText = "height:100%;width:100%;background:#a3201a;";
+  barWrap.appendChild(bar);
+  wrap._bar = bar;
+  panel.append(lamps, switches, barWrap);
+  wrap.appendChild(panel);
+  document.body.appendChild(wrap);
+  breakerEl = wrap;
+}
+function renderBreaker() {
+  const b = state.breaker;
+  breakerEl._lamps.forEach((l, i) => {
+    l.style.background = b.on[i] ? "#4fe06a" : "#4a1210";
+    l.style.boxShadow = b.on[i] ? "0 0 16px #4fe06a" : "none";
+  });
+  breakerEl._levers.forEach((l, i) => (l.style.top = b.on[i] ? "8px" : "62px"));
+}
+function openBreaker() {
+  buildBreakerUI();
+  const p = yawObject.position;
+  const e = state.entity;
+  // it comes from the furthest place it can still walk to you from
+  let best = null;
+  let bestLen = -1;
+  ENTITY_SPAWNS_BY_LEVEL[0].forEach(([x, z]) => {
+    if (!cellFree(Math.floor(x), Math.floor(z))) return;
+    const path = entityPath(x, z, p.x, p.z);
+    if (path && path.length > bestLen) {
+      bestLen = path.length;
+      best = [x, z];
+    }
+  });
+  if (best) {
+    e.x = best[0];
+    e.z = best[1];
+    e.mode = "active";
+    e.level = 0;
+    e.dark = 0;
+    e.path = null;
+    e.repath = 0;
+    state.flags.entitySeen = true;
+  } else {
+    e.mode = "gone"; // nothing can reach you right now; only the clock is left
+    e.timer = 99;
+  }
+  // every lamp lit is the goal. Each switch also throws its neighbours, so it takes some working out.
+  const on = new Array(BREAKER_SIZE).fill(true);
+  const idx = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5).slice(0, 3);
+  idx.forEach((i) => [i - 1, i, i + 1].forEach((j) => { if (j >= 0 && j < BREAKER_SIZE) on[j] = !on[j]; }));
+  if (on.every(Boolean)) on[2] = false;
+  state.breaker = { t: 0, on, L0: Math.max(6, bestLen - 1), done: false };
+  state.phase = "breaker";
+  keys.clear();
+  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+  breakerEl.style.display = "flex";
+  breakerEl._bar.style.width = "100%";
+  renderBreaker();
+  playClick();
+}
+function closeBreaker() {
+  if (breakerEl) breakerEl.style.display = "none";
+  state.breaker = null;
+}
+function pressBreaker(i) {
+  const b = state.breaker;
+  if (!b || b.done || state.phase !== "breaker") return;
+  [i - 1, i, i + 1].forEach((j) => { if (j >= 0 && j < BREAKER_SIZE) b.on[j] = !b.on[j]; });
+  playClick();
+  renderBreaker();
+  if (b.on.every(Boolean)) {
+    b.done = true;
+    setTimeout(playKnock, 120);
+    setTimeout(() => {
+      if (state.phase !== "breaker") return;
+      closeBreaker();
+      state.phase = "explore";
+      restorePower();
+      renderer.domElement.requestPointerLock();
+    }, 450);
+  }
+}
+function updateBreaker(dt) {
+  const b = state.breaker;
+  if (state.phase !== "breaker" || !b || b.done) return;
+  b.t += dt;
+  breakerEl._bar.style.width = Math.max(0, 100 - (b.t / BREAKER_TIME) * 100) + "%";
+  if (b.t >= BREAKER_TIME) {
+    closeBreaker();
+    caughtByEntity();
+  }
+}
+function restorePower() {
+  state.flags.powerOn = true;
+  if (state.entity.mode === "active" && levelOf(yawObject.position.x) === 0) {
+    state.entity.mode = "vanishing"; // the light burns it off the ground floor
+    state.entity.timer = 0.9;
+    playVanish();
+  } else {
+    state.entity.mode = "gone"; // gone from here; it will turn up upstairs or below
+    state.entity.timer = 14;
+  }
+  playClick();
+  setTimeout(playKnock, 200);
+  buildWorld();
+}
+
 function caughtByEntity() {
+  if (breakerEl) breakerEl.style.display = "none";
+  state.breaker = null;
   state.phase = "caught";
   state.entity.mode = "done";
   keys.clear();
@@ -3572,7 +3829,8 @@ function entityStep(e, mx, mz) {
 function updateEntity(dt) {
   const e = state.entity;
   entityTension = 0;
-  if (state.phase !== "explore" || state.flags.tut === "open") return;
+  const breaking = state.phase === "breaker";
+  if ((state.phase !== "explore" && !breaking) || state.flags.tut === "open") return;
   if (e.mode === "vanishing") {
     // the lights came on: it flickers, shrinks and is gone
     e.timer -= dt;
@@ -3627,8 +3885,8 @@ function updateEntity(dt) {
     return;
   }
   const p = yawObject.position;
-  const inBeam = entityInBeam(e);
-  const lit = hasFlashlightOn() || groundLit();
+  const inBeam = !breaking && entityInBeam(e); // both hands are on the panel: no light, no beam
+  const lit = (!breaking && hasFlashlightOn()) || groundLit();
 
   // the longer you stay in the dark, the faster it comes
   if (inBeam) e.dark = Math.max(0, (e.dark || 0) - dt * 3);
@@ -3648,6 +3906,11 @@ function updateEntity(dt) {
     speed = ENTITY_SPEED_DARK + k * k * (ENTITY_SPEED_RUSH - ENTITY_SPEED_DARK);
   }
 
+  if (breaking && state.breaker) {
+    // it arrives exactly as the time runs out, getting faster the whole way
+    const b = state.breaker;
+    speed = (b.L0 / BREAKER_TIME) * (0.5 + Math.min(1, b.t / BREAKER_TIME));
+  }
   const step = speed * dt;
   let faceX = p.x - e.x;
   let faceZ = p.z - e.z;
@@ -3965,6 +4228,7 @@ function gameLoop() {
   tryMovePlayer(dt);
   checkJohnRoom();
   updateEntity(dt);
+  updateBreaker(dt);
   updateScares(dt);
   doorShake = Math.max(0, doorShake - dt);
   camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;
