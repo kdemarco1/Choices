@@ -31,6 +31,8 @@ const PITCH_LIMIT = 1.3; // radians, keeps the camera from flipping past vertica
 const PLAYER_RADIUS = 0.24;
 const INTERACT_DIST = 1.15;
 const EYE_HEIGHT = 1.5;
+const CROUCH_DROP = 0.95; // hold C: the eyes go this much lower
+let crouchK = 0; // 0 standing .. 1 crouched
 const WALL_HEIGHT = 3;
 const DOOR_OPEN_ANGLE = -Math.PI * 0.62; // swings inward, like a real hinge
 const DOOR_OPEN_SPEED = 1.9; // radians/second
@@ -1781,6 +1783,9 @@ function buildWorld() {
   openAnims = [];
   windowRun = null;
   aptPillow = {};
+  aptDoors = {};
+  lootMeshes = {};
+  bedEyes = null;
   clearScares();
 
   const rows = MAP.length;
@@ -2089,11 +2094,32 @@ function addApartment(a) {
 
   // ---- kitchenette along the east wall: counter + sink, stove, fridge, cabinets above
   furn(2.7, 1.2, W, [0.6, 0.9], (b) => {
-    b(0.9, 0.85, 0.6, 0, 0.43, 0, wood);
+    b(0.45, 0.85, 0.6, 0.225, 0.43, 0, wood); // solid half
+    b(0.45, 0.85, 0.03, -0.225, 0.43, -0.285, wood); // the cupboard: back, end, floor, shelf, cans
+    b(0.03, 0.85, 0.6, -0.435, 0.43, 0, wood);
+    b(0.45, 0.03, 0.6, -0.225, 0.03, 0, darkwood);
+    b(0.42, 0.02, 0.55, -0.225, 0.45, 0, darkwood);
+    b(0.07, 0.1, 0.07, -0.3, 0.51, -0.1, 0x7a3a2a);
+    b(0.07, 0.1, 0.07, -0.2, 0.51, -0.18, 0x8a8a70);
+    b(0.07, 0.1, 0.07, -0.12, 0.51, -0.08, 0x4a6a3a);
+    b(0.07, 0.1, 0.07, -0.3, 0.14, -0.1, 0x6a5a20);
+    if (a.id === "apt2" && !((state.flags.looted || {}).apt2_under)) {
+      const key = b(0.1, 0.012, 0.03, -0.2, 0.465, 0.12, 0xd4b04a); // Key 3 on the shelf
+      key.rotation.y = 0.5;
+      lootMeshes.apt2_under = key;
+    }
     b(0.94, 0.05, 0.64, 0, 0.88, 0, 0x2a2926);
-    b(0.45, 0.03, 0.36, 0.1, 0.9, 0.02, 0x15150f); // sink
-    b(0.04, 0.2, 0.04, 0.1, 1.0, -0.2, 0x8a8a86);
-    b(0.02, 0.4, 0.02, -0.15, 0.45, 0.31, grime);
+    b(0.4, 0.03, 0.36, 0.22, 0.9, 0.02, 0x15150f); // sink
+    b(0.04, 0.2, 0.04, 0.22, 1.0, -0.2, 0x8a8a86);
+    const pv = new THREE.Group();
+    pv.position.set(-0.45, 0.43, 0.3);
+    buildTarget.add(pv);
+    aptDoors[a.id + "_under"] = pv;
+    const prev = buildTarget;
+    buildTarget = pv;
+    addBox(0.43, 0.8, 0.03, 0.215, 0, 0.015, 0x4a3524);
+    addBox(0.025, 0.14, 0.03, 0.38, 0, 0.045, 0x8a8a76);
+    buildTarget = prev;
   });
   furn(2.7, 1.95, W, [0.65, 0.6], (b) => {
     b(0.6, 0.88, 0.62, 0, 0.44, 0, white);
@@ -2103,9 +2129,36 @@ function addApartment(a) {
     b(0.22, 0.45, 0.22, 0, 2.33, -0.16, 0x7a7a76);
   });
   furn(2.7, 2.55, W, [0.7, 0.6], (b) => {
-    b(0.6, 1.5, 0.64, 0, 0.75, 0, 0xa7a597);
-    b(0.62, 0.02, 0.02, 0, 1.0, 0.33, 0x333330);
-    b(0.03, 0.35, 0.04, 0.22, 1.25, 0.34, 0x77756e);
+    const wl = 0xa7a597;
+    b(0.6, 1.5, 0.03, 0, 0.75, -0.305, wl); // hollow shell: back, sides, top, base
+    b(0.03, 1.5, 0.64, -0.285, 0.75, 0, wl);
+    b(0.03, 1.5, 0.64, 0.285, 0.75, 0, wl);
+    b(0.6, 0.03, 0.64, 0, 1.485, 0, wl);
+    b(0.6, 0.12, 0.64, 0, 0.06, 0, wl);
+    [0.45, 0.85, 1.2].forEach((y) => b(0.54, 0.015, 0.58, 0, y, 0, 0xbfc4b8));
+    b(0.52, 0.2, 0.5, 0, 0.26, 0, 0x7f8f88); // crisper
+    b(0.09, 0.22, 0.09, -0.15, 0.97, -0.1, 0xe6e4d6); // milk, long past its date
+    b(0.09, 0.05, 0.09, -0.15, 1.1, -0.1, 0x3a5a9a);
+    b(0.08, 0.12, 0.08, 0.05, 0.92, -0.15, 0x6a7a3a);
+    b(0.18, 0.1, 0.16, 0.12, 0.51, -0.05, 0xd8d4c4);
+    b(0.1, 0.02, 0.1, 0.12, 0.57, -0.05, 0x4a6a3a); // mold
+    b(0.2, 0.06, 0.12, -0.1, 0.49, -0.12, 0xc8b890);
+    b(0.14, 0.1, 0.14, 0.1, 1.26, -0.1, 0x3a4a22);
+    [-0.15, -0.05, 0.05].forEach((x, i) => b(0.04, 0.14, 0.04, x, 1.27, 0.1, [0x8a2a22, 0x9a8a22, 0x4a3a22][i]));
+    b(0.2, 0.08, 0.14, -0.05, 0.89, 0.1, 0x6a6a5a);
+    const pv = new THREE.Group();
+    pv.position.set(-0.3, 0, 0.32);
+    buildTarget.add(pv);
+    aptDoors[a.id + "_fridge"] = pv;
+    const prev = buildTarget;
+    buildTarget = pv;
+    addBox(0.6, 1.48, 0.04, 0.3, 0.76, 0.02, 0xa7a597);
+    addBox(0.03, 0.4, 0.04, 0.54, 1.1, 0.06, 0x77756e);
+    addBox(0.03, 0.3, 0.04, 0.54, 0.5, 0.06, 0x77756e);
+    addBox(0.62, 0.015, 0.045, 0.3, 0.98, 0.02, 0x333330);
+    addBox(0.1, 0.1, 0.01, 0.2, 1.25, 0.05, 0xc84a3a);
+    addBox(0.12, 0.08, 0.01, 0.38, 0.7, 0.05, 0xe0dcc8);
+    buildTarget = prev;
   });
   furn(2.85, 1.2, W, null, (b) => {
     b(0.9, 0.7, 0.32, 0, 1.95, 0, wood);
@@ -2126,6 +2179,24 @@ function addApartment(a) {
     const pm = addBox(0.42, 0.1, 0.32, ox + 0.55, 0.53, 0.88, 0x8a8678);
     pm.rotation.y = 0.06;
     aptPillow[a.id] = { m: pm, bx: ox + 0.55, by: 0.53, bz: 0.88 };
+  }
+  // things under the bed (you have to crouch to see them)
+  [[0.45, 2.0, 0.22, 0.12, 0.3, 0x7a6a50], [0.7, 1.2, 0.3, 0.06, 1.1, 0x3a3a38], [0.3, 1.4, 0.16, 0.02, 0.5, 0x4a4a46], [0.62, 2.2, 0.12, 0.03, 0.9, 0x5a2a2a]].forEach(([x, z, s, h2, r, c]) => {
+    const m = addBox(s * 1.5, h2, s, ox + x, h2 / 2, z, c);
+    m.rotation.y = r;
+  });
+  if (a.id === "apt2") {
+    const eyes = new THREE.Group();
+    const em = new THREE.MeshBasicMaterial({ color: 0xe8e4b0, fog: false });
+    [-0.045, 0.045].forEach((dx) => {
+      const e1 = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.012, 0.01), em);
+      e1.position.x = dx;
+      eyes.add(e1);
+    });
+    eyes.position.set(ox + 0.55, 0.13, 2.28);
+    eyes.visible = false;
+    worldGroup.add(eyes);
+    bedEyes = { g: eyes, t: 0, gone: false };
   }
   furn(1.25, 0.35, 0, [0.4, 0.4], (b) => {
     b(0.4, 0.5, 0.4, 0, 0.25, 0, wood);
@@ -2262,7 +2333,10 @@ function addApartment(a) {
 
 // ---- drawers and the fridge open on screen when you search them ------------------------------------
 let openAnims = [];
-let aptPillow = {}; // each bed's pillow (it lifts when you check under it)
+let aptPillow = {};
+let aptDoors = {}; // each fridge / cupboard door (they swing open)
+let lootMeshes = {};
+let bedEyes = null; // each bed's pillow (it lifts when you check under it)
 function playDrawerSound(fridge) {
   if (!audioReady()) return;
   const t = audioCtx.currentTime;
@@ -2361,61 +2435,14 @@ function startOpenAnim(h) {
     inner.position.set(0, 0.06, -0.2);
     mover.add(front, tray, knob, inner);
   } else if (sp.anim === "fridge" || sp.anim === "cabdoor") {
-    const fr = sp.anim === "fridge";
-    const W = fr ? 0.58 : 0.4;
-    const H = fr ? 1.45 : 0.66;
-    const cy = fr ? 0.78 : 0.0;
-    const back = new THREE.Mesh(new THREE.BoxGeometry(W - 0.06, H - 0.1, 0.02), new THREE.MeshBasicMaterial({ color: fr ? 0x4a4e42 : 0x1a1612 }));
-    back.position.set(0, cy, -0.26);
-    G.add(back);
-    const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.02, H - 0.1, 0.5), mat(fr ? 0x9a9888 : 0x2a2018));
-    sideL.position.set(-W / 2 + 0.03, cy, -0.02);
-    const sideR = sideL.clone();
-    sideR.position.x = W / 2 - 0.03;
-    G.add(sideL, sideR);
-    if (fr) {
-      [0.35, 0.8, 1.2].forEach((y) => {
-        const s = new THREE.Mesh(new THREE.BoxGeometry(W - 0.08, 0.015, 0.46), mat(0xb8c0b0));
-        s.position.set(0, y - 0.06, -0.02);
-        G.add(s);
-      });
-      const milk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22, 0.09), mat(0xe6e4d6));
-      milk.position.set(-0.12, 0.8 + 0.05, -0.1);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.09), mat(0x3a5a9a));
-      cap.position.set(-0.12, 0.8 + 0.19, -0.1);
-      G.add(milk, cap);
-      [[0.1, 0.35, 0x4a5a2a], [-0.1, 0.35, 0x6a4a2a], [0.12, 1.2, 0x5a6a4a], [-0.12, 1.2, 0x2a3a22]].forEach(([x, y, c]) => {
-        const f = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.16), mat(c));
-        f.position.set(x, y - 0.0, -0.08);
-        G.add(f);
-      });
-      const bread = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.12), mat(0x4a5a3a));
-      bread.position.set(0.1, 0.8 + 0.04, -0.12);
-      G.add(bread);
-      const lamp = new THREE.PointLight(0xcfe0b8, 0.9, 2.5, 2);
-      lamp.position.set(0, 1.0, 0.2);
-      G.add(lamp);
-    } else {
-      const shelf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.06, 0.015, 0.46), mat(0x2a2018));
-      shelf.position.set(0, -0.12, -0.02);
-      G.add(shelf);
-      const inner = buildContents(ids);
-      inner.position.set(0, -0.11, -0.1);
-      G.add(inner);
-      const extra = buildContents(["a2Cans"]);
-      extra.position.set(-0.06, 0.2, -0.1);
-      G.add(extra);
-    }
-    mover = new THREE.Group();
-    mover.position.x = -W / 2;
-    const door = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.04), mat(fr ? 0xa7a597 : 0x4a3524));
-    door.position.set(W / 2, cy, 0.03);
-    mover.add(door);
+    mover = aptDoors[apt.id + "_" + parts[1]];
+    if (!mover) return false;
   }
-  const gl = new THREE.PointLight(0xffe2b0, 0.9, 1.8, 2);
-  gl.position.set(0, 0.35, 0.3);
+  const isDoor = sp.anim === "fridge" || sp.anim === "cabdoor";
+  const gl = new THREE.PointLight(isDoor && sp.anim === "fridge" ? 0xd8f0c8 : 0xffe2b0, isDoor ? 1.4 : 0.9, isDoor ? 2.4 : 1.8, 2);
+  gl.position.set(0, isDoor ? (sp.anim === "fridge" ? 0.9 : 0.15) : 0.35, isDoor ? 0.1 : 0.3);
   G.add(gl);
-  if (mover) G.add(mover);
+  if (mover && !isDoor) G.add(mover);
   worldGroup.add(G);
   playDrawerSound(sp.anim === "fridge" || sp.anim === "cabdoor");
   openAnims.push({ G, mover, kind: sp.anim, t: 0, pillow });
@@ -2432,7 +2459,7 @@ function updateOpenAnims(dt) {
       const p = a.pillow;
       p.m.position.set(p.bx, p.by + 0.22 * e, p.bz - 0.12 * e);
       p.m.rotation.x = -0.9 * e;
-    } else a.mover.rotation.y = -1.7 * e;
+    } else a.mover.rotation.y = -1.9 * e;
     if (a.t > 2.8) {
       if (a.pillow) {
         a.pillow.m.position.set(a.pillow.bx, a.pillow.by, a.pillow.bz);
@@ -2488,6 +2515,23 @@ function updateWindowRun(dt) {
       worldGroup.remove(w.g);
       windowRun = null;
     }
+  }
+}
+
+
+// something under apartment 2's bed looks back at you, but only if you crouch down to look
+function updateBedEyes(dt) {
+  const b = bedEyes;
+  if (!b || b.gone) return;
+  const p = yawObject.position;
+  const d = Math.hypot(p.x - b.g.position.x, p.z - b.g.position.z);
+  b.t += dt;
+  const watching = crouchK > 0.7 && d < 3.6 && state.phase === "explore";
+  b.g.visible = watching && Math.sin(b.t * 2.3) > -0.85 && !(b.t % 4 > 3.7);
+  if (watching && d < 1.15) {
+    b.gone = true;
+    b.g.visible = false;
+    playSkitter();
   }
 }
 
@@ -3387,8 +3431,9 @@ function tryMovePlayer(dt) {
   _forward.normalize();
   _right.crossVectors(_forward, _up).normalize();
 
-  const moveX = (_forward.x * forwardInput + _right.x * strafeInput) * MOVE_SPEED * dt;
-  const moveZ = (_forward.z * forwardInput + _right.z * strafeInput) * MOVE_SPEED * dt;
+  const spd = MOVE_SPEED * (1 - 0.55 * crouchK);
+  const moveX = (_forward.x * forwardInput + _right.x * strafeInput) * spd * dt;
+  const moveZ = (_forward.z * forwardInput + _right.z * strafeInput) * spd * dt;
 
   const nx = yawObject.position.x + moveX;
   const nz = yawObject.position.z + moveZ;
@@ -3611,7 +3656,10 @@ function onMouseMove(e) {
 document.addEventListener("pointerlockchange", onPointerLockChange);
 document.addEventListener("mousemove", onMouseMove);
 document.addEventListener("mousedown", (e) => {
-  if (e.button === 0 && document.pointerLockElement === renderer.domElement) swingAxe();
+  if (e.button !== 0 || document.pointerLockElement !== renderer.domElement) return;
+  const t = state.phase === "explore" && !state.activeNpc && !state.transition ? nearestInteractable() : null;
+  if (t && t.label) handleInteract();
+  else swingAxe();
 });
 canvas.addEventListener("click", () => {
   if (state.phase === "explore" && !state.activeNpc && document.pointerLockElement !== renderer.domElement) {
@@ -3704,7 +3752,8 @@ function updatePlayerHeight(dt) {
     }
     return;
   }
-  const target = EYE_HEIGHT + floorHeight(p.x, p.z);
+  crouchK += ((state.phase === "explore" && keys.has("c") ? 1 : 0) - crouchK) * Math.min(1, dt * 9);
+  const target = EYE_HEIGHT - CROUCH_DROP * crouchK + floorHeight(p.x, p.z);
   p.y += (target - p.y) * Math.min(1, dt * 10);
   const s = stairAt(p.x, p.z);
   if (s && s.to && state.phase === "explore") {
@@ -3766,8 +3815,7 @@ function updateInteractPrompt() {
     prompt.classList.add("hidden");
     return;
   }
-  prompt.textContent = `[E] ${target.label}`;
-  prompt.classList.remove("hidden");
+  prompt.classList.add("hidden"); // no prompt: click things to find out
 }
 
 function handleInteract() {
@@ -3867,6 +3915,7 @@ function handleInteract() {
       state.flags.looted[h.id] = true;
       playClick();
       const lids = lootList(h);
+      if (lootMeshes[h.id]) { const lm = lootMeshes[h.id]; setTimeout(() => { lm.visible = false; }, 900); }
       const anim = startOpenAnim(h);
       lids.forEach((lid, n) => {
         if (anim) setTimeout(() => collectItem(lid), 900 + n * 1100);
@@ -4076,7 +4125,7 @@ window.addEventListener("keydown", (e) => {
     cycleHeld();
     return;
   }
-  if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d", "c"].includes(key)) {
     e.preventDefault();
     keys.add(key);
   }
@@ -4955,6 +5004,7 @@ function gameLoop() {
   updateFlies(dt);
   updateOpenAnims(dt);
   updateWindowRun(dt);
+  updateBedEyes(dt);
   updateFaceScare(dt);
   doorShake = Math.max(0, doorShake - dt);
   camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;

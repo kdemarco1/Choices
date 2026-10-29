@@ -237,7 +237,7 @@ const APT_SPOTS = [
   { k: "bed", rx: 1.0, rz: 1.5, label: "Check Pillow", anim: "pillow" },
   { k: "nightstand", rx: 1.25, rz: 0.75, label: "Search Nightstand", fx: 1.25, fz: 0.56, y: 0.32, rot: 0, anim: "drawer" },
   { k: "dresser", rx: 1.95, rz: 0.75, label: "Search Dresser", fx: 1.95, fz: 0.52, y: 0.5, rot: 0, anim: "drawer" },
-  { k: "under", rx: 2.1, rz: 1.0, label: "Open Cabinet", fx: 2.38, fz: 1.2, y: 0.46, rot: -Math.PI / 2, anim: "cabdoor" },
+  { k: "under", rx: 2.1, rz: 1.0, label: "Open Cabinet", fx: 2.4, fz: 0.98, y: 0.46, rot: -Math.PI / 2, anim: "cabdoor" },
   { k: "drawer", rx: 2.1, rz: 1.5, label: "Search Drawer", fx: 2.38, fz: 1.45, y: 0.62, rot: -Math.PI / 2, anim: "drawer" },
   { k: "fridge", rx: 2.1, rz: 2.55, label: "Open Fridge", fx: 2.38, fz: 2.55, y: 0, rot: -Math.PI / 2, anim: "fridge" },
   { k: "couch", rx: 0.95, rz: 3.0, label: "Search Couch" },
