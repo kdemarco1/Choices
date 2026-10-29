@@ -975,6 +975,7 @@ let deskLampFlickerLeft = 0;
 let deskLampNextFlicker = 6;
 let flickerLights = []; // {light, base} lights that stutter (emergency bulbs, boiler glow)
 let swayers = []; // hanging chains
+let flies = []; // flies round the staff-room drain
 let scareActive = []; // pop-out apparitions in flight
 let scareBlackout = 0;
 let deskLamp = null; // set in buildWorld(); flickers in the game loop
@@ -1769,6 +1770,7 @@ function buildWorld() {
   deskLamp = null;
   flickerLights = [];
   swayers = [];
+  flies = [];
   clearScares();
 
   const rows = MAP.length;
@@ -2166,6 +2168,226 @@ function addApartment(a) {
   }
 }
 
+
+// ---- the staff room ---------------------------------------------------------------------------
+let carpetTex = null;
+function getCarpetTexture() {
+  if (carpetTex) return carpetTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const x = c.getContext("2d");
+  x.fillStyle = "#3d444c";
+  x.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 1800; i++) {
+    const v = 50 + Math.floor(Math.random() * 40);
+    x.fillStyle = `rgba(${v},${v + 4},${v + 10},${0.25 + Math.random() * 0.4})`;
+    x.fillRect(Math.random() * 128, Math.random() * 128, 2, 2);
+  }
+  carpetTex = new THREE.CanvasTexture(c);
+  carpetTex.wrapS = carpetTex.wrapT = THREE.RepeatWrapping;
+  return carpetTex;
+}
+
+// The notice board over the desk: typed sheets and a sticky note pinned to cork. Used as the wall texture and as the close-up.
+function drawStaffBoard(c) {
+  const w = (c.width = 512);
+  const h = (c.height = 640);
+  const x = c.getContext("2d");
+  let s = 4242;
+  const r = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  x.fillStyle = "#8b6a42";
+  x.fillRect(0, 0, w, h);
+  for (let i = 0; i < 2600; i++) {
+    x.fillStyle = `rgba(${60 + r() * 60},${40 + r() * 40},${20 + r() * 20},${0.25 + r() * 0.3})`;
+    x.fillRect(r() * w, r() * h, 2 + r() * 3, 2 + r() * 3);
+  }
+  const sheet = (sx, sy, sw, sh, rot, lines, opt = {}) => {
+    x.save();
+    x.translate(sx + sw / 2, sy + sh / 2);
+    x.rotate(rot);
+    x.shadowColor = "rgba(0,0,0,0.5)";
+    x.shadowBlur = 8;
+    x.shadowOffsetY = 3;
+    x.fillStyle = opt.bg || "#e7e2d2";
+    x.fillRect(-sw / 2, -sh / 2, sw, sh);
+    x.shadowColor = "transparent";
+    x.fillStyle = "rgba(120,100,60,0.12)";
+    x.fillRect(-sw / 2, -sh / 2, sw, 5);
+    x.fillStyle = opt.ink || "#1d1d20";
+    x.font = `${opt.size || 13}px "Courier New", monospace`;
+    x.textBaseline = "top";
+    lines.forEach((ln, i) => {
+      if (ln[0] === "!") { x.fillStyle = "#8a1410"; ln = ln.slice(1); } else x.fillStyle = opt.ink || "#1d1d20";
+      if (ln[0] === "#") { x.font = `bold ${(opt.size || 13) + 2}px "Courier New", monospace`; ln = ln.slice(1); } else x.font = `${opt.size || 13}px "Courier New", monospace`;
+      x.fillText(ln, -sw / 2 + 12, -sh / 2 + 14 + i * ((opt.size || 13) + 5));
+    });
+    x.fillStyle = "#b02a22"; // the pin
+    x.beginPath();
+    x.arc(0, -sh / 2 + 9, 5, 0, 6.3);
+    x.fill();
+    x.restore();
+  };
+  sheet(22, 22, 226, 250, -0.03, ["#STAFF SCHEDULE", "", "MON  P. Dunn      7-3", "TUE  P. Dunn      7-3", "WED  (vacant)", "THU  P. Dunn      7-3", "FRI  P. Dunn      7-3", "NIGHTS  --- none ---", "", "!no one stays after dark", "!see rule #1"]);
+  sheet(262, 30, 226, 262, 0.025, ["#APPOINTMENTS", "", "Sep 14  boiler inspection", "!        CANCELLED", "Sep 20  plumber, unit 4", "        'noises in walls'", "Sep 24  elevator repair", "        no show", "Sep 28  pest control", "!        refused to enter", "        'not mice'"]);
+  sheet(30, 292, 250, 262, 0.02, ["#RENT - OCTOBER", "", "Apt 1   paid", "Apt 2   paid", "Apt 3   paid", "Apt 4   J. -----------", "!        2 MONTHS PAST DUE", "", "Notice sent  Sep 12", "Notice sent  Oct  1", "!no answer. lights always on"]);
+  sheet(296, 322, 190, 150, -0.05, ["Don't knock on 4", "after dark.", "", "Don't open the", "cellar. Ever.", "          - Mgr"], { bg: "#e8d86a", ink: "#2a2418", size: 16 });
+  sheet(280, 486, 214, 128, 0.03, ["#RULES", "1 lights stay on", "2 never the cellar", "3 if you hear it", "  walking, leave"], { size: 14 });
+  // coffee stain
+  x.strokeStyle = "rgba(90,56,24,0.3)";
+  x.lineWidth = 6;
+  x.beginPath();
+  x.arc(110, 590, 30, 0.4, 5.6);
+  x.stroke();
+  return c;
+}
+
+let buzz = null;
+const DRAIN = { x: 4.55, z: 6.55 };
+function addStaffRoom() {
+  const g = (rx, rz) => [rx, rz];
+  // carpet
+  const t = getCarpetTexture().clone();
+  t.repeat.set(4 / 0.8, 2 / 0.8);
+  t.needsUpdate = true;
+  const carpet = new THREE.Mesh(new THREE.PlaneGeometry(4, 2), new THREE.MeshStandardMaterial({ map: t, roughness: 1 }));
+  carpet.rotation.x = -Math.PI / 2;
+  carpet.position.set(3, 0.007, 6);
+  worldGroup.add(carpet);
+  // stains in the carpet, worst round the drain
+  [[3.7, 6.4, 0.9, 0.6, 0.4, 0x24211d], [4.3, 6.7, 0.7, 0.5, 1.2, 0x222a1e], [2.2, 6.0, 0.5, 0.35, 0.7, 0x2a1f1a], [1.9, 5.5, 0.4, 0.3, 2.2, 0x2b2a22]].forEach(([x, z, w, d, rot, col]) => {
+    const m = addBox(w, 0.004, d, x, 0.01, z, col);
+    m.rotation.y = rot;
+  });
+  // the drain in the corner: bare concrete where the carpet gives out, a rusted grate, green slime
+  addBox(0.95, 0.012, 0.95, DRAIN.x, 0.012, DRAIN.z, 0x4b4a45);
+  addBox(0.62, 0.016, 0.62, DRAIN.x, 0.02, DRAIN.z, 0x14110e);
+  for (let i = 0; i < 5; i++) addBox(0.06, 0.02, 0.6, DRAIN.x - 0.24 + i * 0.12, 0.028, DRAIN.z, 0x6a4630);
+  addBox(0.85, 0.006, 0.45, DRAIN.x - 0.05, 0.016, DRAIN.z + 0.12, 0x2b3a22).rotation.y = 0.5; // slime
+  addBox(0.4, 0.006, 0.3, DRAIN.x + 0.1, 0.017, DRAIN.z - 0.2, 0x1d2a18).rotation.y = -0.4;
+  // shelf of cleaning supplies on the west wall
+  const sh = new THREE.Group();
+  sh.position.set(1.2, 0, 6.3);
+  worldGroup.add(sh);
+  buildTarget = sh;
+  const wood = 0x3a2a1c;
+  [[0.02, 0.02, 0.66, 0.04], [0.02, 0.02, -0.66, 0.04]].forEach(() => {});
+  addBox(0.04, 1.8, 0.04, 0, 0.9, -0.66, wood);
+  addBox(0.04, 1.8, 0.04, 0, 0.9, 0.66, wood);
+  const boards = [0.05, 0.55, 1.0, 1.45];
+  boards.forEach((y) => addBox(0.34, 0.035, 1.36, 0, y, 0, wood));
+  let seed = 77;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const cyl = (rt, rb, hgt, x, y, z, col) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, hgt, 8), new THREE.MeshStandardMaterial({ color: col, roughness: 0.6 }));
+    m.position.set(x, y, z);
+    sh.add(m);
+    return m;
+  };
+  const bottleCols = [0x3a6ea5, 0xb8b030, 0x4aa05a, 0xc8c8c0, 0xa03a3a, 0x7a4aa0];
+  boards.forEach((y, row) => {
+    for (let i = 0; i < 6; i++) {
+      const z = -0.55 + i * 0.22 + (rnd() - 0.5) * 0.06;
+      const kind = (row + i) % 4;
+      if (kind === 0) cyl(0.05, 0.06, 0.24, 0, y + 0.14, z, bottleCols[Math.floor(rnd() * 6)]); // bottle
+      else if (kind === 1) { // spray bottle
+        cyl(0.045, 0.045, 0.2, 0, y + 0.12, z, bottleCols[Math.floor(rnd() * 6)]);
+        addBox(0.1, 0.04, 0.05, 0.02, y + 0.26, z, 0x222222);
+      } else if (kind === 2) cyl(0.07, 0.07, 0.12, 0, y + 0.08, z, 0xd9d6c8); // paper towel roll
+      else addBox(0.14, 0.22, 0.1, 0, y + 0.13, z, row % 2 ? 0xd8d8d0 : 0x3a5a8a); // jug / box
+    }
+  });
+  addBox(0.12, 0.05, 0.2, 0, 1.52, 0.1, 0xc9b020); // rubber gloves
+  buildTarget = null;
+  addSolid(1.2, 6.3, 0.4, 1.4);
+  // a mop and bucket in the north-west corner
+  cyl(0.18, 0.14, 0.3, 1.45, 0.15, 5.4, 0x6a6c70);
+  const pole = cyl(0.015, 0.015, 1.5, 1.2, 0.75, 5.2, 0x8a6a40);
+  pole.rotation.z = 0.12;
+  addBox(0.22, 0.07, 0.16, 1.45, 0.38, 5.4, 0x8a867a);
+  addSolid(1.45, 5.4, 0.35, 0.35);
+  // the desk against the north wall, a chair, papers, a pile of folders
+  const desk = new THREE.Group();
+  desk.position.set(4.0, 0, 5.4);
+  worldGroup.add(desk);
+  buildTarget = desk;
+  addBox(1.2, 0.05, 0.55, 0, 0.74, 0, 0x4b3a28);
+  [[-0.55, -0.22], [0.55, -0.22], [-0.55, 0.22], [0.55, 0.22]].forEach(([x, z]) => addBox(0.05, 0.72, 0.05, x, 0.36, z, 0x2f2218));
+  addBox(0.45, 0.3, 0.5, -0.33, 0.58, 0, 0x3a2c1e); // drawers
+  addBox(0.3, 0.04, 0.24, 0.35, 0.79, 0.05, 0xc8c2ae).rotation.y = 0.2; // loose papers
+  addBox(0.26, 0.05, 0.2, -0.3, 0.8, -0.08, 0x8a7a50); // folders
+  addBox(0.26, 0.05, 0.2, -0.3, 0.85, -0.08, 0x5a6a50).rotation.y = 0.15;
+  buildTarget = null;
+  addSolid(4.0, 5.4, 1.2, 0.55);
+  const chair = new THREE.Group();
+  chair.position.set(4.35, 0, 6.0);
+  chair.rotation.y = Math.PI + 0.25;
+  worldGroup.add(chair);
+  buildTarget = chair;
+  addBox(0.42, 0.05, 0.42, 0, 0.46, 0, 0x2a2a30);
+  addBox(0.42, 0.5, 0.05, 0, 0.78, -0.19, 0x2a2a30);
+  addBox(0.05, 0.44, 0.05, 0, 0.22, 0, 0x1a1a1c);
+  buildTarget = null;
+  addSolid(4.35, 6.0, 0.4, 0.4);
+  // the cork board behind the desk, and the sheets pinned to it
+  addBox(1.08, 1.32, 0.04, 4.0, 1.7, 5.03, 0x3a2a1c);
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(0.98, 1.22), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawStaffBoard(document.createElement("canvas"))), roughness: 1 }));
+  board.position.set(4.0, 1.7, 5.06);
+  worldGroup.add(board);
+  // flies round the drain
+  flies = [];
+  const flyMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+  for (let i = 0; i < 9; i++) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.012, 0.03), flyMat);
+    worldGroup.add(f);
+    flies.push({ m: f, ph: Math.random() * 20, r: 0.15 + Math.random() * 0.4, sp: 2.5 + Math.random() * 3, y: 0.2 + Math.random() * 0.5 });
+  }
+}
+function updateFlies(dt) {
+  if (!flies.length) return;
+  const T = performance.now() / 1000;
+  flies.forEach((f) => {
+    const a = T * f.sp + f.ph;
+    f.m.position.set(
+      DRAIN.x + Math.cos(a) * f.r + Math.sin(a * 3.1) * 0.06,
+      f.y + Math.sin(a * 1.7) * 0.12 + Math.sin(a * 9) * 0.015,
+      DRAIN.z + Math.sin(a * 1.3) * f.r + Math.cos(a * 4.2) * 0.06
+    );
+    f.m.rotation.y = a;
+  });
+  // the buzzing, louder the closer you are to the drain
+  if (audioCtx && state.settings.soundOn) {
+    if (!buzz) {
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0;
+      const bp = audioCtx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 650;
+      bp.Q.value = 1.4;
+      const trem = audioCtx.createGain();
+      trem.gain.value = 0.6;
+      const lfo = audioCtx.createOscillator();
+      lfo.frequency.value = 29;
+      const lfoG = audioCtx.createGain();
+      lfoG.gain.value = 0.4;
+      lfo.connect(lfoG).connect(trem.gain);
+      [118, 124, 131].forEach((f) => {
+        const o = audioCtx.createOscillator();
+        o.type = "sawtooth";
+        o.frequency.value = f;
+        o.connect(bp);
+        o.start();
+      });
+      lfo.start();
+      bp.connect(trem).connect(gain).connect(audioCtx.destination);
+      buzz = gain;
+    }
+    const p = yawObject.position;
+    const d = Math.hypot(p.x - DRAIN.x, p.z - DRAIN.z);
+    const want = state.phase === "explore" && p.x < 21 && p.z < 8 ? Math.pow(Math.max(0, 1 - d / 5.5), 2) * 0.05 : 0;
+    buzz.gain.setTargetAtTime(want, audioCtx.currentTime, 0.15);
+  } else if (buzz) buzz.gain.setTargetAtTime(0, audioCtx.currentTime, 0.1);
+}
+
 // Basement, upstairs: the extra levels live in the far east of the map.
 function addLevels() {
   // basement (cols 46-69): boiler room, storage room, corridor blocked by rubble
@@ -2191,10 +2413,7 @@ function addLevels() {
   staffSignLight.position.set(3.5, 2.6, 8.4);
   worldGroup.add(staffSignLight);
   // staff room (west end of the hallway): shelf, mop bucket, breaker panel
-  addBox(1.2, 1.6, 0.35, 1.8, 0.8, 6.8, 0x2a2118);
-  addBox(0.3, 0.3, 0.3, 4.5, 0.15, 6.5, 0x3a3a3c);
-  addSolid(1.8, 6.8, 1.2, 0.35);
-  addSolid(4.5, 6.5, 0.3, 0.3);
+  if (yawObject.position.x < 21) addStaffRoom();
   addBox(0.5, 0.6, 0.12, 2.0, 1.55, 5.06, 0x4a4d4f);
   addBox(0.05, 0.22, 0.05, 2.0, 1.55, 5.15, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
   const sl = new THREE.PointLight(0xffe0b0, 0.3, 4, 2);
@@ -3143,6 +3362,8 @@ function handleInteract() {
       const pt = PORTALS.find((p) => p.door === h.exit);
       playDoorCreak(DOORS.find((dr) => dr.id === h.exit));
       startTransition(pt.back);
+    } else if (h.board) {
+      openPaper({ draw: drawStaffBoard });
     } else if (h.paper) {
       openPaper(h.paper);
     } else if (h.loot) {
@@ -3277,7 +3498,8 @@ function openReader(title, lines) {
 function openPaper(it) {
   state.phase = "reading";
   keys.clear();
-  drawPaper(document.getElementById("paper-canvas"), it.paper, it.sloppy, it.seed);
+  if (it.draw) it.draw(document.getElementById("paper-canvas"));
+  else drawPaper(document.getElementById("paper-canvas"), it.paper, it.sloppy, it.seed);
   document.getElementById("paper-overlay").classList.remove("hidden");
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
 }
@@ -4230,6 +4452,7 @@ function gameLoop() {
   updateEntity(dt);
   updateBreaker(dt);
   updateScares(dt);
+  updateFlies(dt);
   doorShake = Math.max(0, doorShake - dt);
   camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;
   applyTension(entityTension);

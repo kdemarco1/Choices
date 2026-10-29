@@ -78,14 +78,10 @@ const ITEMS = [
     pickupText: "A brass key on a paper tag: 4.",
   },
   { id: "axe", name: "Axe", x: 13.6, y: 1.5, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
-  { id: "johnNote", name: "John's Note", note: true, h: 0.57, x: 14.25, y: 0.35, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at night. {i can't} look at it\nI hid the axe under my bed\nin case", sloppy: 0.5, seed: 3 },
+  { id: "johnNote", name: "Note - Sept 21", note: true, order: 4, h: 0.57, x: 14.25, y: 0.35, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at\nnight. i can't look at it.\ni hid the axe under my\nbed. just in case.", sloppy: 0.6, seed: 3 },
   { id: "batteries", name: "Batteries", h: 0.92, x: 14.95, y: 0.35, pickupText: "Spare batteries." },
-  { id: "staffNote", name: "Notice", note: true, x: 4.2, y: 5.7, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
-  { id: "note1", name: "Torn Page", note: true, x: 26.2, y: 2.2, paper: "john won't sleep\nsays it walks the halls\nwhen the {lights} die\n{he stopped answering}", sloppy: 0.9, seed: 11 },
-  { id: "note2", name: "Letter", note: true, x: 29.5, y: 2.0, paper: "DONT go below\n{ something sealed }\nin the cellar.\nkeep your light ON", sloppy: 0.8, seed: 5 },
-  { id: "note3", name: "Scrap of Paper", note: true, x: 34.6, y: 10.4, paper: "it only stops when\nsomeone goes into {his}\nroom. the key is 4", sloppy: 0.7, seed: 9 },
-  { id: "note4", name: "Child's Note", note: true, x: 39.5, y: 2.2, paper: "mommy says the man in\nroom 4 is {sleeping}\nbut i hear him walking\nabove me at night", sloppy: 1, seed: 17 },
-  { id: "note5", name: "Work Order", note: true, x: 51.5, y: 2.4, paper: "Elevator cable frayed.\nDo NOT let anyone ride it.\nNeed a crowbar to pry\nthe doors when it jams.", sloppy: 0.3, seed: 21 },
+  { id: "staffNote", name: "Notice", note: true, h: 0.77, x: 3.7, y: 5.4, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
+  { id: "note5", name: "Note - Sept 28", note: true, order: 6, x: 51.5, y: 2.4, paper: "Sept 28\nfollowed it down.\nthe cellar door under\nthe stairs. the boiler is\nwarm. it is {breathing}\nnothing down there\nshould be warm", sloppy: 1.05, seed: 66 },
   { id: "batteries2", name: "Batteries", x: 50.5, y: 9.4, h: 0.5, pickupText: "Spare batteries." },
 ];
 
@@ -95,6 +91,7 @@ const HOTSPOTS = [
   { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 2.0, y: 5.6, label: "Flip Breaker" },
+  { id: "staffBoard", x: 4.6, y: 5.95, label: "Read Notice Board", board: true },
   { id: "rubble", x: 58.5, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
 
@@ -207,27 +204,30 @@ const trinket = (id, name) => ITEMS.push({ id, name, trinket: true, hidden: true
 ITEMS.push({ id: "apt3Key", name: "Key 3", key: true, hidden: true });
 ["a2Batt", "a3Batt", "a3Batt2", "jBatt"].forEach((id) => ITEMS.push({ id, name: "Batteries", hidden: true }));
 // apartment 2 (the family that left in a hurry)
-note("a2List", "Grocery List", "milk\nbread\ncandles - lots\n{don't open the door\nat night}", 0.4, 31);
-note("a2Draw", "Child's Drawing", "mommy  me  daddy\nand the {tall man}\nhe has no face", 1, 33);
 trinket("a2Photo", "Family Photo");
 trinket("a2Coin", "Old Coin");
 trinket("a2Pills", "Pill Bottle");
 // apartment 3 (someone who stopped trusting the building)
-note("a3Tape", "Taped Page", "they knock 3 times.\nthen the lights {go out}.\nit hates the light.\nkeep it ON", 0.6, 41);
-note("a3Journal", "Journal Page", "day 9\nit doesn't come in while i\nhold the flashlight.\nthe bathtub is {safest}", 0.7, 43);
-note("a3Map", "Sketch", "{the cellar door}\ni drew what i heard\nunder the floor.\nit is not the boiler", 0.9, 45);
 trinket("a3Box", "Music Box");
 trinket("a3Photo", "Torn Photo");
 // apartment 4 (John's)
-note("jJ1", "Journal Page", "Sept 3\nmoved in. quiet building.\ngood rent. the manager\nlooked scared of me", 0.2, 61);
-note("jJ2", "Journal Page", "Sept 14\nheard steps in the ceiling.\nnobody lives above me.\nnobody lives up there", 0.5, 63);
 trinket("jTag", "Dog Tag");
-note("jJ3", "Journal Page", "Sept 28\nfound where it sleeps.\nthe cellar. the boiler is\nwarm. nothing down there\nshould be {warm}", 0.5, 65);
-note("jJ4", "Journal Page", "Oct 1\ni nailed boards on the\nstairs. the sound comes\nfrom {both ways} now", 0.8, 67);
-ITEMS.push({ id: "jJ5", name: "Photo Album", note: true, h: 0.02, x: 14.5, y: 3.2, sloppy: 0.7, seed: 69, paper: "every picture of me\nhas the tall one standing\n{behind me}\nsince when" });
-//note("jJ5", "Photo Album", "every picture of me\nhas the tall one standing\n{behind me}\nsince when", 0.7, 69);
-note("jJ6", "Last Entry", "Oct 3\ni haven't eaten in 4 days.\nit goes dark and it comes.\nthe axe is under the bed.\nif the light comes back\nit {leaves}", 1, 71);
 trinket("jPhoto", "John's Photo");
+
+// ---- John's notes: one person, dated; the later ones get stranger. Hand: neat (low sloppy) -> frantic (high).
+// Only nine of these exist in the whole building, so each one matters.
+const johnNote = (id, name, order, paper, sloppy, seed, spot) => {
+  const it = { id, name: "Note - " + name, note: true, order, paper, sloppy, seed };
+  if (spot) Object.assign(it, { x: spot[0], y: spot[1], h: spot[2] || 0.02 }); else it.hidden = true;
+  ITEMS.push(it);
+};
+johnNote("nSep3", "Sept 3", 1, "Sept 3\nmoved into 4 today.\nquiet building, good rent.\nthe manager would not look\nat me when he gave me\nthe key.", 0.1, 61);
+johnNote("nSep9", "Sept 9", 2, "Sept 9\nsomeone walks the halls\nat night. slow. heavy.\nchecked the peephole.\nnothing there.\nprobably the pipes.", 0.2, 62);
+johnNote("nSep14", "Sept 14", 3, "Sept 14\nit is not the pipes.\nthe walking stops outside\nmy door. every night 3:13.\nstopped using the peephole.", 0.4, 63, [26.2, 2.2]);
+johnNote("nSep25", "Sept 25", 5, "Sept 25\npower cut again.\nthat is when it moves.\nin the dark it is {fast}\nin the light it only watches\nkeep the light on", 0.85, 65, [34.6, 10.4]);
+johnNote("nOct1", "Oct 1", 7, "Oct 1\nboarded the stairs.\nit does not use the stairs.\nit is {already upstairs}\nit is {already below}\nit is in the walls", 1.3, 67);
+johnNote("nOct3", "Oct 3", 8, "Oct 3\nhaven't eaten in 4 days.\nit knows my name now.\nit says it from the {vents}\nthe light is the only\nthing it is afraid of", 1.55, 68, [39.5, 2.2]);
+johnNote("nOct4", "Oct 4", 9, "Oct 4\nit is wearing my coat.\nit is standing behind\nwhoever is reading this.\n{turn around}", 1.85, 69);
 
 // Furniture you can search: position inside a studio (x, z from its west wall / north wall), prompt.
 const APT_SPOTS = [
@@ -242,9 +242,9 @@ const APT_SPOTS = [
 ];
 // What each spot holds: an item id, or null (empty, you only find that out by looking).
 const LOOT = {
-  apt2: { fridge: "a2List", under: "a2Batt", dresser: "apt3Key", nightstand: "a2Draw", couch: "a2Coin", drawer: "a2Pills", desk: "a2Photo", bed: null },
-  apt3: { bed: "a3Tape", nightstand: "a3Journal", desk: "a3Map", drawer: "a3Box", dresser: "a3Photo", under: "a3Batt", couch: "a3Batt2", fridge: null },
-  john: { dresser: "jJ1", desk: "jJ2", bed: "jJ3", couch: "jJ4", fridge: "jJ6", under: "jBatt", drawer: "jTag", nightstand: "jPhoto" },
+  apt2: { fridge: null, under: "a2Batt", dresser: "apt3Key", nightstand: "nSep3", couch: "a2Coin", drawer: "a2Pills", desk: "a2Photo", bed: null },
+  apt3: { bed: null, nightstand: null, desk: "a3Photo", drawer: "a3Box", dresser: "nSep9", under: "a3Batt", couch: "a3Batt2", fridge: null },
+  john: { dresser: null, desk: null, bed: "nOct4", couch: "nOct1", fridge: null, under: "jBatt", drawer: "jTag", nightstand: "jPhoto" },
 };
 // Writing scrawled on John's walls (readable). rot: the way the writing faces (0 = south, PI/2 = east, PI = north)
 const WALL_WRITING = [
