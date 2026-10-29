@@ -1772,6 +1772,7 @@ function buildWorld() {
   swayers = [];
   flies = [];
   openAnims = [];
+  aptPillow = {};
   clearScares();
 
   const rows = MAP.length;
@@ -2110,10 +2111,14 @@ function addApartment(a) {
     [[-0.38, -0.8], [0.38, -0.8], [-0.38, 0.8], [0.38, 0.8]].forEach(([x, z]) => b(0.05, 0.28, 0.05, x, 0.14, z, darkwood));
     b(0.9, 0.06, 1.8, 0, 0.3, 0, darkwood);
     b(0.82, 0.14, 1.7, 0, 0.41, 0, 0x6a665a); // stained mattress
-    b(0.42, 0.1, 0.32, 0, 0.53, -0.62, 0x8a8678);
     b(0.82, 0.05, 0.95, 0, 0.5, 0.35, 0x4a2a2a);
     b(0.92, 0.65, 0.05, 0, 0.6, -0.88, darkwood);
   });
+  {
+    const pm = addBox(0.42, 0.1, 0.32, ox + 0.55, 0.53, 0.88, 0x8a8678);
+    pm.rotation.y = 0.06;
+    aptPillow[a.id] = { m: pm, bx: ox + 0.55, by: 0.53, bz: 0.88 };
+  }
   furn(1.25, 0.35, 0, [0.4, 0.4], (b) => {
     b(0.4, 0.5, 0.4, 0, 0.25, 0, wood);
     b(0.3, 0.12, 0.02, 0, 0.34, 0.21, darkwood);
@@ -2225,6 +2230,7 @@ function addApartment(a) {
 
 // ---- drawers and the fridge open on screen when you search them ------------------------------------
 let openAnims = [];
+let aptPillow = {}; // each bed's pillow (it lifts when you check under it)
 function playDrawerSound(fridge) {
   if (!audioReady()) return;
   const t = audioCtx.currentTime;
@@ -2255,54 +2261,148 @@ function playDrawerSound(fridge) {
   o.start(t + 0.4);
   o.stop(t + 0.65);
 }
+function lootList(h) {
+  return (Array.isArray(h.loot) ? h.loot : [h.loot]).filter((x) => x && x !== "none");
+}
+// what you see inside while it's open
+function buildContents(ids) {
+  const g = new THREE.Group();
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.8 });
+  ids.forEach((id, i) => {
+    const it = ITEMS.find((x) => x.id === id) || {};
+    const o = i * 0.14 - (ids.length - 1) * 0.07;
+    if (it.note) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.008, 0.24), mat(0xe0dccb));
+      m.position.set(o, 0, 0);
+      m.rotation.y = 0.3;
+      g.add(m);
+    } else if (it.key) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.025), mat(0xd4b04a));
+      m.position.set(o, 0.01, 0);
+      m.rotation.y = 0.5;
+      const ring = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.012, 0.04), mat(0xd4b04a));
+      ring.position.set(-0.06, 0, 0);
+      m.add(ring);
+      g.add(m);
+    } else if (id === "a2Cans") {
+      [[-0.07, 0], [0.02, 0.04], [0.09, -0.03]].forEach(([x, z], k) => {
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.1, 10), mat([0x7a3a2a, 0x8a8a70, 0x4a6a3a][k]));
+        c.position.set(x, 0.05, z);
+        g.add(c);
+      });
+    } else {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.04, 0.06), mat(0x8a8068));
+      m.position.set(o, 0.02, 0);
+      g.add(m);
+    }
+  });
+  return g;
+}
 function startOpenAnim(h) {
   const parts = h.id.split("_");
   const apt = APT_DEFS.find((a) => a.id === parts[0]);
   const sp = apt && APT_SPOTS.find((s) => s.k === parts[1]);
   if (!sp || !sp.anim) return false;
+  const ids = lootList(h);
+  const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 });
   const G = new THREE.Group();
-  G.position.set(apt.ox + sp.fx, sp.y, sp.fz);
-  G.rotation.y = sp.rot;
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a432e, roughness: 0.9 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 1 });
-  let mover;
+  let mover = null;
+  let pillow = null;
+  if (sp.anim === "pillow") {
+    pillow = aptPillow[apt.id];
+    if (!pillow) return false;
+    G.position.set(pillow.bx, pillow.by - 0.04, pillow.bz);
+    G.add(buildContents(ids));
+  } else {
+    G.position.set(apt.ox + sp.fx, sp.y, sp.fz);
+    G.rotation.y = sp.rot;
+  }
   if (sp.anim === "drawer") {
     mover = new THREE.Group();
-    const front = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.17, 0.03), wood);
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.17, 0.03), mat(0x5a432e));
     front.position.z = 0.015;
-    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.4), dark);
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.4), mat(0x0c0a08));
     tray.position.set(0, -0.01, -0.2);
-    const knob = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.04), new THREE.MeshStandardMaterial({ color: 0x9a9a86 }));
+    const knob = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.04), mat(0x9a9a86));
     knob.position.set(0, 0, 0.045);
-    const junk = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.1), new THREE.MeshStandardMaterial({ color: 0x8a8068 }));
-    junk.position.set(-0.08, 0.06, -0.2);
-    junk.rotation.y = 0.5;
-    mover.add(front, tray, knob, junk);
-  } else {
-    const inside = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.02), new THREE.MeshBasicMaterial({ color: 0x23251f }));
-    inside.position.set(0, 0.78, -0.2);
-    G.add(inside);
+    const inner = buildContents(ids);
+    inner.position.set(0, 0.06, -0.2);
+    mover.add(front, tray, knob, inner);
+  } else if (sp.anim === "fridge" || sp.anim === "cabdoor") {
+    const fr = sp.anim === "fridge";
+    const W = fr ? 0.58 : 0.4;
+    const H = fr ? 1.45 : 0.66;
+    const cy = fr ? 0.78 : 0.0;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(W - 0.06, H - 0.1, 0.02), new THREE.MeshBasicMaterial({ color: fr ? 0x4a4e42 : 0x1a1612 }));
+    back.position.set(0, cy, -0.26);
+    G.add(back);
+    const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.02, H - 0.1, 0.5), mat(fr ? 0x9a9888 : 0x2a2018));
+    sideL.position.set(-W / 2 + 0.03, cy, -0.02);
+    const sideR = sideL.clone();
+    sideR.position.x = W / 2 - 0.03;
+    G.add(sideL, sideR);
+    if (fr) {
+      [0.35, 0.8, 1.2].forEach((y) => {
+        const s = new THREE.Mesh(new THREE.BoxGeometry(W - 0.08, 0.015, 0.46), mat(0xb8c0b0));
+        s.position.set(0, y - 0.06, -0.02);
+        G.add(s);
+      });
+      const milk = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22, 0.09), mat(0xe6e4d6));
+      milk.position.set(-0.12, 0.8 + 0.05, -0.1);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.06, 0.09), mat(0x3a5a9a));
+      cap.position.set(-0.12, 0.8 + 0.19, -0.1);
+      G.add(milk, cap);
+      [[0.1, 0.35, 0x4a5a2a], [-0.1, 0.35, 0x6a4a2a], [0.12, 1.2, 0x5a6a4a], [-0.12, 1.2, 0x2a3a22]].forEach(([x, y, c]) => {
+        const f = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.16), mat(c));
+        f.position.set(x, y - 0.0, -0.08);
+        G.add(f);
+      });
+      const bread = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.08, 0.12), mat(0x4a5a3a));
+      bread.position.set(0.1, 0.8 + 0.04, -0.12);
+      G.add(bread);
+      const lamp = new THREE.PointLight(0xcfe0b8, 0.9, 2.5, 2);
+      lamp.position.set(0, 1.0, 0.2);
+      G.add(lamp);
+    } else {
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(W - 0.06, 0.015, 0.46), mat(0x2a2018));
+      shelf.position.set(0, -0.12, -0.02);
+      G.add(shelf);
+      const inner = buildContents(ids);
+      inner.position.set(0, -0.11, -0.1);
+      G.add(inner);
+      const extra = buildContents(["a2Cans"]);
+      extra.position.set(-0.06, 0.2, -0.1);
+      G.add(extra);
+    }
     mover = new THREE.Group();
-    mover.position.x = -0.29;
-    const door = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.45, 0.05), new THREE.MeshStandardMaterial({ color: 0xa7a597, roughness: 0.8 }));
-    door.position.set(0.29, 0.78, 0.03);
+    mover.position.x = -W / 2;
+    const door = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.04), mat(fr ? 0xa7a597 : 0x4a3524));
+    door.position.set(W / 2, cy, 0.03);
     mover.add(door);
   }
-  G.add(mover);
+  if (mover) G.add(mover);
   worldGroup.add(G);
-  playDrawerSound(sp.anim === "fridge");
-  openAnims.push({ G, mover, kind: sp.anim, t: 0 });
+  playDrawerSound(sp.anim === "fridge" || sp.anim === "cabdoor");
+  openAnims.push({ G, mover, kind: sp.anim, t: 0, pillow });
   return true;
 }
 function updateOpenAnims(dt) {
   for (let i = openAnims.length - 1; i >= 0; i--) {
     const a = openAnims[i];
     a.t += dt;
-    const k = a.t < 0.4 ? a.t / 0.4 : a.t < 1.6 ? 1 : Math.max(0, 1 - (a.t - 1.6) / 0.4);
+    const k = a.t < 0.4 ? a.t / 0.4 : a.t < 1.9 ? 1 : Math.max(0, 1 - (a.t - 1.9) / 0.4);
     const e = k * k * (3 - 2 * k);
     if (a.kind === "drawer") a.mover.position.z = 0.36 * e;
-    else a.mover.rotation.y = -1.7 * e;
-    if (a.t > 2.0) {
+    else if (a.kind === "pillow") {
+      const p = a.pillow;
+      p.m.position.set(p.bx, p.by + 0.22 * e, p.bz - 0.12 * e);
+      p.m.rotation.x = -0.9 * e;
+    } else a.mover.rotation.y = -1.7 * e;
+    if (a.t > 2.3) {
+      if (a.pillow) {
+        a.pillow.m.position.set(a.pillow.bx, a.pillow.by, a.pillow.bz);
+        a.pillow.m.rotation.x = 0;
+      }
       worldGroup.remove(a.G);
       openAnims.splice(i, 1);
     }
@@ -3676,10 +3776,12 @@ function handleInteract() {
       if (state.flags.looted[h.id]) return;
       state.flags.looted[h.id] = true;
       playClick();
-      if (h.loot !== "none") {
-        if (startOpenAnim(h)) { const lid = h.loot; setTimeout(() => collectItem(lid), 450); }
-        else collectItem(h.loot);
-      } else startOpenAnim(h);
+      const lids = lootList(h);
+      const anim = startOpenAnim(h);
+      lids.forEach((lid, n) => {
+        if (anim) setTimeout(() => collectItem(lid), 900 + n * 1100);
+        else collectItem(lid);
+      });
     } else if (h.go) travel(h.go);
     else {
       playKnock();
@@ -3703,7 +3805,7 @@ function collectItem(id) {
     state.inventory.hands = true; // empty hands, so there's always something to switch to
     state.flags.tut = "open"; // forced tutorial: open the inventory, then switch items
   }
-  buildWorld(); // remove the collected item's marker from the scene
+  if (!item.hidden) buildWorld(); // remove the collected item's marker from the scene (hidden ones have none)
 }
 
 // ---- held items + inventory ---------------------------------------------------

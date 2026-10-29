@@ -70,6 +70,7 @@ const ITEMS = [
     id: "johnKey",
     name: "Key 4",
     key: true,
+    hidden: true,
     x: 7.4,
     y: 3.7,
     h: 0.775, // on the little desk inside Apartment 2 inside Apartment 2
@@ -205,6 +206,7 @@ ITEMS.push({ id: "apt3Key", name: "Key 3", key: true, hidden: true });
 ["a2Batt", "a3Batt", "a3Batt2", "jBatt"].forEach((id) => ITEMS.push({ id, name: "Batteries", hidden: true }));
 // apartment 2 (the family that left in a hurry)
 trinket("a2Photo", "Family Photo");
+trinket("a2Cans", "Canned Food");
 trinket("a2Coin", "Old Coin");
 trinket("a2Pills", "Pill Bottle");
 // apartment 3 (someone who stopped trusting the building)
@@ -221,6 +223,7 @@ const johnNote = (id, name, order, paper, sloppy, seed, spot) => {
   if (spot) Object.assign(it, { x: spot[0], y: spot[1], h: spot[2] || 0.02 }); else it.hidden = true;
   ITEMS.push(it);
 };
+johnNote("nSep2", "Sept 5", 0.5, "Sept 5\nif anything happens to me\nI'm giving you my key,\njust in case.\nI left the thing we\ndiscussed underneath\nmy bed. don't let\nanyone else in. - J", 0.45, 59);
 johnNote("nSep3", "Sept 3", 1, "Sept 3\nmoved into 4 today.\nquiet building, good rent.\nthe manager would not look\nat me when he gave me\nthe key.", 0.1, 61);
 johnNote("nSep9", "Sept 9", 2, "Sept 9\nsomeone walks the halls\nat night. slow. heavy.\nchecked the peephole.\nnothing there.\nprobably the pipes.", 0.2, 62);
 johnNote("nSep14", "Sept 14", 3, "Sept 14\nit is not the pipes.\nthe walking stops outside\nmy door. every night 3:13.\nstopped using the peephole.", 0.4, 63, [26.2, 2.2]);
@@ -231,18 +234,18 @@ johnNote("nOct4", "Oct 4", 9, "Oct 4\nit is wearing my coat.\nit is standing beh
 
 // Furniture you can search: position inside a studio (x, z from its west wall / north wall), prompt.
 const APT_SPOTS = [
-  { k: "bed", rx: 1.0, rz: 1.5, label: "Search Bed" },
+  { k: "bed", rx: 1.0, rz: 1.5, label: "Check Pillow", anim: "pillow" },
   { k: "nightstand", rx: 1.25, rz: 0.75, label: "Search Nightstand", fx: 1.25, fz: 0.56, y: 0.32, rot: 0, anim: "drawer" },
   { k: "dresser", rx: 1.95, rz: 0.75, label: "Search Dresser", fx: 1.95, fz: 0.52, y: 0.5, rot: 0, anim: "drawer" },
-  { k: "under", rx: 2.1, rz: 1.0, label: "Search Cabinet", fx: 2.38, fz: 1.2, y: 0.5, rot: -Math.PI / 2, anim: "drawer" },
+  { k: "under", rx: 2.1, rz: 1.0, label: "Open Cabinet", fx: 2.38, fz: 1.2, y: 0.46, rot: -Math.PI / 2, anim: "cabdoor" },
   { k: "drawer", rx: 2.1, rz: 1.5, label: "Search Drawer", fx: 2.38, fz: 1.45, y: 0.62, rot: -Math.PI / 2, anim: "drawer" },
   { k: "fridge", rx: 2.1, rz: 2.55, label: "Open Fridge", fx: 2.38, fz: 2.55, y: 0, rot: -Math.PI / 2, anim: "fridge" },
   { k: "couch", rx: 0.95, rz: 3.0, label: "Search Couch" },
-  { k: "desk", rx: 2.0, rz: 3.5, label: "Search Desk", fx: 2.19, fz: 3.75, y: 0.58, rot: -Math.PI / 2, anim: "drawer" },
+  { k: "desk", rx: 2.0, rz: 3.5, label: "Open Desk Drawer", fx: 2.19, fz: 3.75, y: 0.58, rot: -Math.PI / 2, anim: "drawer" },
 ];
 // What each spot holds: an item id, or null (empty, you only find that out by looking).
 const LOOT = {
-  apt2: { fridge: null, under: "a2Batt", dresser: "apt3Key", nightstand: "nSep3", drawer: "a2Pills", desk: "a2Photo", bed: "a2Coin" },
+  apt2: { fridge: null, under: ["a2Cans", "apt3Key"], desk: "nSep2", bed: "johnKey" },
   apt3: { bed: null, nightstand: null, desk: "a3Photo", drawer: "a3Box", dresser: "nSep9", under: "a3Batt", couch: "a3Batt2", fridge: null },
   john: { dresser: null, desk: null, bed: "nOct4", couch: "nOct1", fridge: null, under: "jBatt", drawer: "jTag", nightstand: "jPhoto" },
 };
