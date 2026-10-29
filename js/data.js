@@ -232,17 +232,17 @@ johnNote("nOct4", "Oct 4", 9, "Oct 4\nit is wearing my coat.\nit is standing beh
 // Furniture you can search: position inside a studio (x, z from its west wall / north wall), prompt.
 const APT_SPOTS = [
   { k: "bed", rx: 1.0, rz: 1.5, label: "Search Bed" },
-  { k: "nightstand", rx: 1.25, rz: 0.75, label: "Search Nightstand" },
-  { k: "dresser", rx: 1.95, rz: 0.75, label: "Search Dresser" },
-  { k: "under", rx: 2.1, rz: 1.0, label: "Search Cabinet" },
-  { k: "drawer", rx: 2.1, rz: 1.5, label: "Search Drawer" },
-  { k: "fridge", rx: 2.1, rz: 2.55, label: "Open Fridge" },
+  { k: "nightstand", rx: 1.25, rz: 0.75, label: "Search Nightstand", fx: 1.25, fz: 0.56, y: 0.32, rot: 0, anim: "drawer" },
+  { k: "dresser", rx: 1.95, rz: 0.75, label: "Search Dresser", fx: 1.95, fz: 0.52, y: 0.5, rot: 0, anim: "drawer" },
+  { k: "under", rx: 2.1, rz: 1.0, label: "Search Cabinet", fx: 2.38, fz: 1.2, y: 0.5, rot: -Math.PI / 2, anim: "drawer" },
+  { k: "drawer", rx: 2.1, rz: 1.5, label: "Search Drawer", fx: 2.38, fz: 1.45, y: 0.62, rot: -Math.PI / 2, anim: "drawer" },
+  { k: "fridge", rx: 2.1, rz: 2.55, label: "Open Fridge", fx: 2.38, fz: 2.55, y: 0, rot: -Math.PI / 2, anim: "fridge" },
   { k: "couch", rx: 0.95, rz: 3.0, label: "Search Couch" },
-  { k: "desk", rx: 2.0, rz: 3.5, label: "Search Desk" },
+  { k: "desk", rx: 2.0, rz: 3.5, label: "Search Desk", fx: 2.19, fz: 3.75, y: 0.58, rot: -Math.PI / 2, anim: "drawer" },
 ];
 // What each spot holds: an item id, or null (empty, you only find that out by looking).
 const LOOT = {
-  apt2: { fridge: null, under: "a2Batt", dresser: "apt3Key", nightstand: "nSep3", couch: "a2Coin", drawer: "a2Pills", desk: "a2Photo", bed: null },
+  apt2: { fridge: null, under: "a2Batt", dresser: "apt3Key", nightstand: "nSep3", drawer: "a2Pills", desk: "a2Photo", bed: "a2Coin" },
   apt3: { bed: null, nightstand: null, desk: "a3Photo", drawer: "a3Box", dresser: "nSep9", under: "a3Batt", couch: "a3Batt2", fridge: null },
   john: { dresser: null, desk: null, bed: "nOct4", couch: "nOct1", fridge: null, under: "jBatt", drawer: "jTag", nightstand: "jPhoto" },
 };

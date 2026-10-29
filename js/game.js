@@ -1771,6 +1771,7 @@ function buildWorld() {
   flickerLights = [];
   swayers = [];
   flies = [];
+  openAnims = [];
   clearScares();
 
   const rows = MAP.length;
@@ -2123,7 +2124,7 @@ function addApartment(a) {
   });
 
   // ---- couch (west wall, south end) and a small desk (south-east corner)
-  furn(0.45, 3.05, Math.PI / 2, [0.8, 1.3], (b) => {
+  if (a.id !== "apt2") furn(0.45, 3.05, Math.PI / 2, [0.8, 1.3], (b) => {
     b(1.3, 0.38, 0.8, 0, 0.23, 0, 0x4a4036);
     b(1.3, 0.45, 0.2, 0, 0.58, -0.3, 0x4a4036);
     b(0.18, 0.5, 0.8, -0.56, 0.35, 0, 0x3e362e);
@@ -2138,6 +2139,59 @@ function addApartment(a) {
     b(0.3, 0.35, 0.4, 0.15, 0.5, 0, darkwood); // drawers
   });
   addBox(0.9, 0.012, 1.0, ox + 1.4, 0.009, 2.5, 0x3b2323); // worn rug
+  if (a.id === "apt2") {
+    // lived-in clutter: window with broken blinds and torn curtains, lamp, laundry, takeout, trash
+    addBox(0.05, 1.15, 0.95, ox + 0.04, 1.55, 2.5, 0x3a2c20); // window frame
+    addBox(0.02, 1.0, 0.8, ox + 0.07, 1.55, 2.5, 0x070b12); // dark glass
+    addBox(0.03, 0.04, 1.0, ox + 0.1, 1.55, 2.5, 0x3a2c20); // sill bar
+    for (let i = 0; i < 9; i++) {
+      if (i === 3 || i === 4) continue; // missing slats
+      const s = addBox(0.02, 0.05, 0.84, ox + 0.12, 2.0 - i * 0.1, 2.5, 0x8a8472);
+      s.rotation.z = i === 6 ? 0.6 : 0.15;
+    }
+    addBox(0.06, 1.3, 0.28, ox + 0.14, 1.6, 1.95, 0x4a3a3a);
+    addBox(0.06, 0.8, 0.22, ox + 0.14, 1.35, 3.05, 0x403232).rotation.x = 0.1; // torn curtain
+    furn(1.28, 0.34, 0, null, (b) => { // lamp on the nightstand
+      b(0.12, 0.03, 0.12, 0, 0.52, 0, 0x2a2a28);
+      b(0.03, 0.2, 0.03, 0, 0.64, 0, 0x2a2a28);
+      b(0.2, 0.15, 0.2, 0, 0.8, 0, 0x6a5a40).rotation.z = 0.12;
+      b(0.1, 0.05, 0.06, 0.12, 0.54, 0.05, 0x151515); // dead alarm clock
+    });
+    // clothes and mess on the floor
+    [[0.9, 2.5, 0.5, 0.35, 0.4, 0x3a4a5a], [1.1, 2.7, 0.4, 0.3, 1.6, 0x5a3a3a], [0.8, 2.85, 0.35, 0.3, 0.2, 0x4a4a42]].forEach(([x, z, w, d, r, c]) => {
+      const m = addBox(w, 0.08, d, ox + x, 0.05, z, c);
+      m.rotation.y = r;
+    });
+    addBox(0.4, 0.4, 0.4, ox + 0.3, 0.2, 2.8, 0x2a3a2a); // laundry basket
+    addBox(0.33, 0.1, 0.33, ox + 0.3, 0.42, 2.8, 0x5a4a4a);
+    addBox(0.38, 0.06, 0.38, ox + 1.55, 0.03, 2.2, 0xb8a888).rotation.y = 0.3; // pizza box
+    addBox(0.3, 0.02, 0.3, ox + 1.55, 0.065, 2.2, 0xb44a2a);
+    [[0.9, 1.4], [1.7, 1.3], [1.3, 2.6], [1.95, 3.3]].forEach(([x, z], i) => { // cans and bottles
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.12, 8), new THREE.MeshStandardMaterial({ color: [0x7a2a2a, 0x2a5a3a, 0x8a8a80, 0x6a5a20][i] }));
+      c.position.set(ox + x, 0.04, z);
+      c.rotation.z = 1.4;
+      worldGroup.add(c);
+    });
+    furn(0.95, 3.8, Math.PI, [0.4, 0.4], (b) => { // overflowing bin
+      b(0.34, 0.5, 0.34, 0, 0.25, 0, 0x33322e);
+      b(0.3, 0.08, 0.3, 0, 0.54, 0, 0x6a6658);
+      b(0.14, 0.1, 0.1, 0.08, 0.62, 0.04, 0x8a8678);
+    });
+    furn(0.3, 3.5, 0, [0.5, 0.5], (b) => { // stack of old boxes
+      b(0.45, 0.35, 0.4, 0, 0.18, 0, 0x6a5a3e);
+      b(0.38, 0.3, 0.34, 0.02, 0.5, 0, 0x7a6a4a).rotation.y = 0.3;
+    });
+    // dishes piled on the counter, a kettle, a picture hanging crooked, stains
+    addBox(0.12, 0.1, 0.12, ox + 2.7, 0.96, 1.05, 0x9a9688);
+    addBox(0.2, 0.1, 0.2, ox + 2.62, 0.97, 0.88, 0x7a7870);
+    addBox(0.14, 0.14, 0.14, ox + 2.62, 1.0, 1.4, 0x6a6a68);
+    const pic = addBox(0.04, 0.4, 0.3, ox + 0.04, 1.75, 1.2, 0x2a2018);
+    pic.rotation.x = 0.25;
+    addBox(0.02, 0.33, 0.24, ox + 0.07, 1.75, 1.2, 0x5a6a5a).rotation.x = 0.25;
+    const stain = addBox(0.02, 1.0, 0.7, ox + 0.03, 1.2, 0.95, 0x1c1a14);
+    stain.rotation.x = 0.02;
+    addBox(0.7, 0.01, 0.5, ox + 0.9, 0.012, 1.55, 0x1f1a16).rotation.y = 0.4; // stain under the bed
+  }
 
   // ---- writing on the wall
   WALL_WRITING.filter((w) => w.apt === a.id).forEach((w) => {
@@ -2168,6 +2222,256 @@ function addApartment(a) {
   }
 }
 
+
+// ---- drawers and the fridge open on screen when you search them ------------------------------------
+let openAnims = [];
+function playDrawerSound(fridge) {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  const bp = audioCtx.createBiquadFilter();
+  bp.type = "bandpass";
+  bp.Q.value = 3;
+  bp.frequency.setValueAtTime(fridge ? 300 : 700, t);
+  bp.frequency.linearRampToValueAtTime(fridge ? 520 : 380, t + 0.4);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.16, t + 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+  n.connect(bp).connect(g).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.5);
+  const o = audioCtx.createOscillator();
+  const og = audioCtx.createGain();
+  o.type = "triangle";
+  o.frequency.setValueAtTime(95, t + 0.42);
+  o.frequency.exponentialRampToValueAtTime(45, t + 0.55);
+  og.gain.setValueAtTime(0.0001, t + 0.4);
+  og.gain.linearRampToValueAtTime(0.22, t + 0.43);
+  og.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+  o.connect(og).connect(audioCtx.destination);
+  o.start(t + 0.4);
+  o.stop(t + 0.65);
+}
+function startOpenAnim(h) {
+  const parts = h.id.split("_");
+  const apt = APT_DEFS.find((a) => a.id === parts[0]);
+  const sp = apt && APT_SPOTS.find((s) => s.k === parts[1]);
+  if (!sp || !sp.anim) return false;
+  const G = new THREE.Group();
+  G.position.set(apt.ox + sp.fx, sp.y, sp.fz);
+  G.rotation.y = sp.rot;
+  const wood = new THREE.MeshStandardMaterial({ color: 0x5a432e, roughness: 0.9 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x0c0a08, roughness: 1 });
+  let mover;
+  if (sp.anim === "drawer") {
+    mover = new THREE.Group();
+    const front = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.17, 0.03), wood);
+    front.position.z = 0.015;
+    const tray = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.12, 0.4), dark);
+    tray.position.set(0, -0.01, -0.2);
+    const knob = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.04), new THREE.MeshStandardMaterial({ color: 0x9a9a86 }));
+    knob.position.set(0, 0, 0.045);
+    const junk = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.03, 0.1), new THREE.MeshStandardMaterial({ color: 0x8a8068 }));
+    junk.position.set(-0.08, 0.06, -0.2);
+    junk.rotation.y = 0.5;
+    mover.add(front, tray, knob, junk);
+  } else {
+    const inside = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.3, 0.02), new THREE.MeshBasicMaterial({ color: 0x23251f }));
+    inside.position.set(0, 0.78, -0.2);
+    G.add(inside);
+    mover = new THREE.Group();
+    mover.position.x = -0.29;
+    const door = new THREE.Mesh(new THREE.BoxGeometry(0.58, 1.45, 0.05), new THREE.MeshStandardMaterial({ color: 0xa7a597, roughness: 0.8 }));
+    door.position.set(0.29, 0.78, 0.03);
+    mover.add(door);
+  }
+  G.add(mover);
+  worldGroup.add(G);
+  playDrawerSound(sp.anim === "fridge");
+  openAnims.push({ G, mover, kind: sp.anim, t: 0 });
+  return true;
+}
+function updateOpenAnims(dt) {
+  for (let i = openAnims.length - 1; i >= 0; i--) {
+    const a = openAnims[i];
+    a.t += dt;
+    const k = a.t < 0.4 ? a.t / 0.4 : a.t < 1.6 ? 1 : Math.max(0, 1 - (a.t - 1.6) / 0.4);
+    const e = k * k * (3 - 2 * k);
+    if (a.kind === "drawer") a.mover.position.z = 0.36 * e;
+    else a.mover.rotation.y = -1.7 * e;
+    if (a.t > 2.0) {
+      worldGroup.remove(a.G);
+      openAnims.splice(i, 1);
+    }
+  }
+}
+
+// ---- the face behind apartment 2's door -------------------------------------------------------------
+let faceScare = null;
+function drawCreepyFace(c) {
+  const S = (c.width = c.height = 512);
+  const x = c.getContext("2d");
+  x.fillStyle = "#000";
+  x.fillRect(0, 0, S, S);
+  // wild hair
+  x.strokeStyle = "#050505";
+  x.lineWidth = 3;
+  for (let i = 0; i < 90; i++) {
+    const a = Math.random() * 6.3;
+    x.beginPath();
+    x.moveTo(256 + Math.cos(a) * 150, 256 + Math.sin(a) * 190);
+    x.quadraticCurveTo(256 + Math.cos(a) * 230, 256 + Math.sin(a) * 260, 256 + Math.cos(a + 0.3) * 330, 256 + Math.sin(a + 0.3) * 330);
+    x.stroke();
+  }
+  // the head
+  const g = x.createRadialGradient(256, 230, 20, 256, 256, 260);
+  g.addColorStop(0, "#e9e7dc");
+  g.addColorStop(0.7, "#b9b8a8");
+  g.addColorStop(1, "#4a4a44");
+  x.fillStyle = g;
+  x.beginPath();
+  x.ellipse(256, 262, 150, 205, 0, 0, 6.3);
+  x.fill();
+  // cracks
+  x.strokeStyle = "rgba(40,30,25,0.6)";
+  x.lineWidth = 1.5;
+  for (let i = 0; i < 14; i++) {
+    let px = 140 + Math.random() * 230, py = 80 + Math.random() * 360;
+    x.beginPath();
+    x.moveTo(px, py);
+    for (let j = 0; j < 5; j++) { px += (Math.random() - 0.5) * 30; py += Math.random() * 25; x.lineTo(px, py); }
+    x.stroke();
+  }
+  // sunken eye sockets, one bigger than the other
+  x.fillStyle = "#000";
+  x.beginPath(); x.ellipse(195, 205, 48, 62, -0.25, 0, 6.3); x.fill();
+  x.beginPath(); x.ellipse(325, 195, 40, 74, 0.2, 0, 6.3); x.fill();
+  x.fillStyle = "#f4f2e6";
+  x.beginPath(); x.arc(198, 212, 7, 0, 6.3); x.fill();
+  x.beginPath(); x.arc(322, 200, 6, 0, 6.3); x.fill();
+  // nose
+  x.fillStyle = "#1a1612";
+  x.beginPath(); x.ellipse(250, 285, 7, 16, 0.1, 0, 6.3); x.fill();
+  x.beginPath(); x.ellipse(272, 287, 6, 14, -0.1, 0, 6.3); x.fill();
+  // the grin, far too wide
+  x.fillStyle = "#000";
+  x.beginPath();
+  x.moveTo(135, 330);
+  x.quadraticCurveTo(256, 520, 385, 322);
+  x.quadraticCurveTo(256, 380, 135, 330);
+  x.fill();
+  x.fillStyle = "#e8e6d4";
+  for (let i = 0; i < 17; i++) {
+    const t = i / 16;
+    const px = 140 + t * 240;
+    const py = 332 + Math.sin(t * Math.PI) * 78 - 6;
+    x.beginPath();
+    x.moveTo(px - 6, py - 4); x.lineTo(px, py + 20 + Math.random() * 12); x.lineTo(px + 6, py - 4);
+    x.fill();
+  }
+  return c;
+}
+function playScreamMusic() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  // a music box, out of tune, that slows down
+  const notes = [659, 622, 659, 622, 659, 494, 587, 523, 440];
+  let tt = 0;
+  notes.forEach((f, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.value = f * (1 + (Math.random() - 0.5) * 0.02);
+    const st = t + tt;
+    g.gain.setValueAtTime(0.0001, st);
+    g.gain.linearRampToValueAtTime(0.14, st + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, st + 0.7);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(st);
+    o.stop(st + 0.75);
+    tt += 0.26 + i * 0.03;
+  });
+  // low drone creeping in
+  const d = audioCtx.createOscillator();
+  const dg = audioCtx.createGain();
+  d.type = "sawtooth";
+  d.frequency.setValueAtTime(55, t);
+  d.frequency.linearRampToValueAtTime(48, t + 2.4);
+  dg.gain.setValueAtTime(0.0001, t);
+  dg.gain.linearRampToValueAtTime(0.1, t + 2.3);
+  dg.gain.setValueAtTime(0.0001, t + 2.4);
+  d.connect(dg).connect(audioCtx.destination);
+  d.start(t);
+  d.stop(t + 2.5);
+}
+function playScreech() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime + 0.0;
+  [880, 1175, 1480, 1865].forEach((f, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(f, t);
+    o.frequency.exponentialRampToValueAtTime(f * (i % 2 ? 1.8 : 0.5), t + 0.9);
+    g.gain.setValueAtTime(0.28, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.0);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t);
+    o.stop(t + 1.05);
+  });
+  const n = audioCtx.createBufferSource();
+  const ng = audioCtx.createGain();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  ng.gain.setValueAtTime(0.45, t);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+  n.connect(ng).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 0.85);
+  playBang();
+}
+function startFaceScare() {
+  if (faceScare) return;
+  playScreamMusic();
+  faceScare = { t: 0, shown: false, el: null };
+}
+function updateFaceScare(dt) {
+  const f = faceScare;
+  if (!f) return;
+  f.t += dt;
+  const HIT = 2.5; // the music builds, then it hits
+  if (!f.shown && f.t >= HIT) {
+    f.shown = true;
+    playScreech();
+    try {
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;pointer-events:none;overflow:hidden";
+      const cv = document.createElement("canvas");
+      cv.style.cssText = "height:100vh;max-width:100vw;object-fit:contain";
+      drawCreepyFace(cv);
+      wrap.appendChild(cv);
+      document.body.appendChild(wrap);
+      f.el = wrap;
+      f.cv = cv;
+    } catch (e) {}
+  }
+  if (f.shown) {
+    const k = f.t - HIT;
+    if (f.cv) {
+      const s = 0.7 + Math.min(k / 0.25, 1) * 0.9 + k * 0.25;
+      f.cv.style.transform = `translate(${(Math.random() - 0.5) * 30}px,${(Math.random() - 0.5) * 30}px) scale(${s})`;
+      f.cv.style.filter = "contrast(1.4) saturate(0)";
+      if (f.el) f.el.style.filter = Math.random() < 0.12 ? "invert(1)" : "none";
+    }
+    if (k > 0.85) {
+      if (f.el && f.el.parentNode) f.el.parentNode.removeChild(f.el);
+      faceScare = null;
+    }
+  }
+}
 
 // ---- the staff room ---------------------------------------------------------------------------
 let carpetTex = null;
@@ -3319,6 +3623,7 @@ function handleInteract() {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
       playDoorCreak(door);
+      if (door.id === "apt2" && !(state.flags.faceSeen)) { state.flags.faceSeen = true; startFaceScare(); }
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
         state.entity.timer = ENTITY_SPAWN_DELAY;
@@ -3371,7 +3676,10 @@ function handleInteract() {
       if (state.flags.looted[h.id]) return;
       state.flags.looted[h.id] = true;
       playClick();
-      if (h.loot !== "none") collectItem(h.loot);
+      if (h.loot !== "none") {
+        if (startOpenAnim(h)) { const lid = h.loot; setTimeout(() => collectItem(lid), 450); }
+        else collectItem(h.loot);
+      } else startOpenAnim(h);
     } else if (h.go) travel(h.go);
     else {
       playKnock();
@@ -4453,6 +4761,8 @@ function gameLoop() {
   updateBreaker(dt);
   updateScares(dt);
   updateFlies(dt);
+  updateOpenAnims(dt);
+  updateFaceScare(dt);
   doorShake = Math.max(0, doorShake - dt);
   camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;
   applyTension(entityTension);
