@@ -261,6 +261,7 @@ APT_DEFS.forEach((a) => {
     HOTSPOTS.push({ id: a.id + "_" + s.k, x: a.ox + s.rx, y: s.rz, label: s.label, loot: LOOT[a.id][s.k] || "none" });
   });
 });
+HOTSPOTS.push({ id: "apt2_switch", x: 5.9, y: 3.6, label: "Flip Light Switch", lightSwitch: true });
 WALL_WRITING.forEach((w) => HOTSPOTS.push({ id: w.id, x: APT_DEFS.find((a) => a.id === w.apt).ox + w.rx + Math.sin(w.rot) * 0.9, y: w.rz + Math.cos(w.rot) * 0.9, label: w.label, paper: { paper: w.paper, sloppy: w.sloppy, seed: w.seed } }));
 const PORTALS = []; // (the flats are real rooms behind the doors now)
 

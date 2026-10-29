@@ -74,12 +74,18 @@ function hasFlashlightOn() {
 }
 
 // With the breaker on, the ground floor (lobby, hall, apartments, stairwell, staff room) is lit by ceiling fluorescents.
+function inApt2(x, z) {
+  return x >= 5 && x < 8 && z < 4.05;
+}
 function groundLit() {
-  return !!state.flags.powerOn && levelOf(yawObject.position.x) === 0 && yawObject.position.z < DOOR_ROW;
+  const p = yawObject.position;
+  if (inApt2(p.x, p.z) && !state.flags.apt2Light) return false; // apartment 2 has its own wall switch
+  return !!state.flags.powerOn && levelOf(p.x) === 0 && p.z < DOOR_ROW;
 }
 
 function currentLightRange() {
   if (hasFlashlightOn() || groundLit()) return LIT_RANGE;
+  if (inApt2(yawObject.position.x, yawObject.position.z)) return 4.6; // moonlight through the window
   // the reception lamp throws enough light that the desk reads from across the lobby
   const near = Math.hypot(yawObject.position.x - 2.8, yawObject.position.z - 10.5) < 6.5;
   return near ? 5.5 : DARK_RANGE;
@@ -684,6 +690,7 @@ function typeStory() {
 
 const canvas = document.getElementById("viewport");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.localClippingEnabled = true;
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const scene = new THREE.Scene();
@@ -1772,6 +1779,7 @@ function buildWorld() {
   swayers = [];
   flies = [];
   openAnims = [];
+  windowRun = null;
   aptPillow = {};
   clearScares();
 
@@ -1991,7 +1999,7 @@ function addFluorescents() {
   const px = yawObject.position.x;
   if (!state.flags.powerOn || px >= 21) return;
   // the hallway/lobby tubes, plus one small flickering tube in each studio
-  const spots = FLUORESCENTS.map(([x, z]) => [x, z, 20, 14]).concat(APT_DEFS.map((a) => [a.ox + 1.5, 2.0, 9, 5]));
+  const spots = FLUORESCENTS.map(([x, z]) => [x, z, 20, 14]).concat(APT_DEFS.filter((a) => a.id !== "apt2" || state.flags.apt2Light).map((a) => [a.ox + 1.5, 2.0, 9, 5]));
   const tubeMat = new THREE.MeshBasicMaterial({ color: 0xeaf6e0 });
   spots.forEach(([x, z, power, reach]) => {
     addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, z, 0x9a9a96); // housing
@@ -2146,16 +2154,40 @@ function addApartment(a) {
   addBox(0.9, 0.012, 1.0, ox + 1.4, 0.009, 2.5, 0x3b2323); // worn rug
   if (a.id === "apt2") {
     // lived-in clutter: window with broken blinds and torn curtains, lamp, laundry, takeout, trash
-    addBox(0.05, 1.15, 0.95, ox + 0.04, 1.55, 2.5, 0x3a2c20); // window frame
-    addBox(0.02, 1.0, 0.8, ox + 0.07, 1.55, 2.5, 0x070b12); // dark glass
-    addBox(0.03, 0.04, 1.0, ox + 0.1, 1.55, 2.5, 0x3a2c20); // sill bar
-    for (let i = 0; i < 9; i++) {
-      if (i === 3 || i === 4) continue; // missing slats
-      const s = addBox(0.02, 0.05, 0.84, ox + 0.12, 2.0 - i * 0.1, 2.5, 0x8a8472);
-      s.rotation.z = i === 6 ? 0.6 : 0.15;
-    }
-    addBox(0.06, 1.3, 0.28, ox + 0.14, 1.6, 1.95, 0x4a3a3a);
-    addBox(0.06, 0.8, 0.22, ox + 0.14, 1.35, 3.05, 0x403232).rotation.x = 0.1; // torn curtain
+    // the window on the back (north) wall: moonlight, a curtain drawn part-way, a wall switch by the door
+    const wx = ox + 1.5;
+    const paneMat = new THREE.MeshBasicMaterial({ color: 0x3a5486, fog: false });
+    const pane = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.0, 0.01), paneMat);
+    pane.position.set(wx, 1.65, 0.03);
+    worldGroup.add(pane);
+    const moon = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.13, 0.01), new THREE.MeshBasicMaterial({ color: 0xeaf0ff, fog: false }));
+    moon.position.set(wx + 0.28, 1.98, 0.04);
+    worldGroup.add(moon);
+    addBox(1.05, 0.05, 0.05, wx, 2.17, 0.05, 0x3a2c20);
+    addBox(1.05, 0.05, 0.06, wx, 1.13, 0.06, 0x3a2c20);
+    addBox(0.05, 1.05, 0.05, wx - 0.5, 1.65, 0.05, 0x3a2c20);
+    addBox(0.05, 1.05, 0.05, wx + 0.5, 1.65, 0.05, 0x3a2c20);
+    addBox(0.03, 1.0, 0.03, wx, 1.65, 0.06, 0x3a2c20);
+    addBox(0.95, 0.03, 0.03, wx, 1.65, 0.06, 0x3a2c20);
+    addBox(1.5, 0.025, 0.025, wx, 2.3, 0.14, 0x2a2018); // curtain rod
+    [[-0.5, 0.0], [-0.4, 0.03], [-0.31, 0.0], [0.5, 0.0], [0.41, 0.03], [0.33, 0.0]].forEach(([dx, dz], i) => {
+      const cur = addBox(0.1, 1.15 - (i === 4 ? 0.2 : 0), 0.04, wx + dx, 1.72 - (i === 4 ? 0.1 : 0), 0.12 + dz, i % 2 ? 0x3f313c : 0x4a3a46);
+      cur.rotation.z = (i === 1 ? 0.03 : 0);
+    });
+    // moonlight: a cool light from the window and a pale lattice of it on the floor
+    const moonL = new THREE.PointLight(0x8aa4e0, 1.5, 5.5, 2);
+    moonL.position.set(wx, 1.7, 0.5);
+    worldGroup.add(moonL);
+    const patchMat = new THREE.MeshBasicMaterial({ color: 0x9ab4ea, transparent: true, opacity: 0.2, depthWrite: false, fog: false });
+    [[-0.22, 0.4], [0.22, 0.4], [-0.22, 0.9], [0.22, 0.9]].forEach(([dx, dz]) => {
+      const q = new THREE.Mesh(new THREE.PlaneGeometry(0.38, 0.42), patchMat);
+      q.rotation.x = -Math.PI / 2;
+      q.position.set(wx + dx + 0.1, 0.02, 1.0 + dz);
+      worldGroup.add(q);
+    });
+    // the light switch, left of the door as you come in
+    addBox(0.09, 0.14, 0.015, ox + 0.9, 1.3, 3.99, 0xcfc8b4);
+    addBox(0.025, 0.05, 0.02, ox + 0.9, state.flags.apt2Light ? 1.33 : 1.27, 3.98, 0x2a2a28);
     furn(1.28, 0.34, 0, null, (b) => { // lamp on the nightstand
       b(0.12, 0.03, 0.12, 0, 0.52, 0, 0x2a2a28);
       b(0.03, 0.2, 0.03, 0, 0.64, 0, 0x2a2a28);
@@ -2380,6 +2412,9 @@ function startOpenAnim(h) {
     door.position.set(W / 2, cy, 0.03);
     mover.add(door);
   }
+  const gl = new THREE.PointLight(0xffe2b0, 0.9, 1.8, 2);
+  gl.position.set(0, 0.35, 0.3);
+  G.add(gl);
   if (mover) G.add(mover);
   worldGroup.add(G);
   playDrawerSound(sp.anim === "fridge" || sp.anim === "cabdoor");
@@ -2390,7 +2425,7 @@ function updateOpenAnims(dt) {
   for (let i = openAnims.length - 1; i >= 0; i--) {
     const a = openAnims[i];
     a.t += dt;
-    const k = a.t < 0.4 ? a.t / 0.4 : a.t < 1.9 ? 1 : Math.max(0, 1 - (a.t - 1.9) / 0.4);
+    const k = a.t < 0.4 ? a.t / 0.4 : a.t < 2.4 ? 1 : Math.max(0, 1 - (a.t - 2.4) / 0.4);
     const e = k * k * (3 - 2 * k);
     if (a.kind === "drawer") a.mover.position.z = 0.36 * e;
     else if (a.kind === "pillow") {
@@ -2398,13 +2433,60 @@ function updateOpenAnims(dt) {
       p.m.position.set(p.bx, p.by + 0.22 * e, p.bz - 0.12 * e);
       p.m.rotation.x = -0.9 * e;
     } else a.mover.rotation.y = -1.7 * e;
-    if (a.t > 2.3) {
+    if (a.t > 2.8) {
       if (a.pillow) {
         a.pillow.m.position.set(a.pillow.bx, a.pillow.by, a.pillow.bz);
         a.pillow.m.rotation.x = 0;
       }
       worldGroup.remove(a.G);
       openAnims.splice(i, 1);
+    }
+  }
+}
+
+
+// ---- something runs past apartment 2's window the moment the light comes on ------------------------
+let windowRun = null;
+function startWindowRun() {
+  windowRun = { t: 0, g: null };
+}
+function updateWindowRun(dt) {
+  const w = windowRun;
+  if (!w) return;
+  w.t += dt;
+  if (!w.g && w.t >= 0.35) {
+    const x0 = 6.5 - 0.47, x1 = 6.5 + 0.47;
+    const clip = [new THREE.Plane(new THREE.Vector3(1, 0, 0), -x0), new THREE.Plane(new THREE.Vector3(-1, 0, 0), x1)];
+    const m = new THREE.MeshBasicMaterial({ color: 0x000000, clippingPlanes: clip, fog: false });
+    const G = new THREE.Group();
+    const part = (sx, sy, sz, x, y, z, rz) => {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), m);
+      b.position.set(x, y, z);
+      b.rotation.z = rz || 0;
+      G.add(b);
+      return b;
+    };
+    part(0.2, 0.34, 0.06, 0, 0.62, 0, 0.35); // hunched torso
+    part(0.13, 0.15, 0.06, -0.06, 0.88, 0, 0); // head
+    part(0.05, 0.55, 0.04, -0.14, 0.62, 0, 1.0); // long arms
+    part(0.05, 0.55, 0.04, 0.12, 0.7, 0, -0.9);
+    w.l1 = part(0.07, 0.5, 0.05, -0.04, 0.25, 0, 0);
+    w.l2 = part(0.07, 0.5, 0.05, 0.08, 0.25, 0, 0);
+    G.position.set(6.5 + 1.2, 1.2, 0.045);
+    worldGroup.add(G);
+    w.g = G;
+    w.t0 = w.t;
+    playSkitter();
+    playKnock();
+  }
+  if (w.g) {
+    const k = (w.t - w.t0) / 0.3;
+    w.g.position.x = 6.5 + 1.2 - k * 2.4; // right to left, very fast
+    w.l1.rotation.z = Math.sin(k * 30) * 0.9;
+    w.l2.rotation.z = -Math.sin(k * 30) * 0.9;
+    if (k >= 1) {
+      worldGroup.remove(w.g);
+      windowRun = null;
     }
   }
 }
@@ -3598,6 +3680,7 @@ function nearestInteractable() {
       if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Open Breaker Panel";
       if (h.id === "boards") label = ""; // no prompt: you have to try things
       if (h.loot && (state.flags.looted || {})[h.id]) label = ""; // already searched
+      if (h.lightSwitch) label = state.flags.apt2Light ? "" : "Flip Light Switch";
       doorTarget = { type: "hotspot", id: h.id, label };
     }
   });
@@ -3767,6 +3850,13 @@ function handleInteract() {
       const pt = PORTALS.find((p) => p.door === h.exit);
       playDoorCreak(DOORS.find((dr) => dr.id === h.exit));
       startTransition(pt.back);
+    } else if (h.lightSwitch) {
+      playClick();
+      if (state.flags.powerOn && !state.flags.apt2Light) {
+        state.flags.apt2Light = true;
+        buildWorld();
+        startWindowRun();
+      }
     } else if (h.board) {
       openPaper({ draw: drawStaffBoard });
     } else if (h.paper) {
@@ -4864,6 +4954,7 @@ function gameLoop() {
   updateScares(dt);
   updateFlies(dt);
   updateOpenAnims(dt);
+  updateWindowRun(dt);
   updateFaceScare(dt);
   doorShake = Math.max(0, doorShake - dt);
   camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;
