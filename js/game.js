@@ -68,7 +68,7 @@ const FACADE_H = 9; // the street-facing walls are three storeys tall
 })();
 
 // Battery drains fully after this many seconds of continuous use.
-const BATTERY_LIFE_SECONDS = 180;
+const BATTERY_LIFE_SECONDS = 140;
 const BATTERY_DRAIN_RATE = 100 / BATTERY_LIFE_SECONDS;
 
 function hasFlashlightOn() {
@@ -103,6 +103,7 @@ let audioCtx = null;
 let ambientGains = [];
 let footstepTimer = 0;
 let noiseBuf = null;
+let lockedDoorBuffer = null; // the recorded locked-door rattle
 let doorCreakBuffer = null; // the recorded creak, loaded after the first click
 
 function initAudio() {
@@ -162,6 +163,13 @@ function initAudio() {
       .then((buf) => audioCtx.decodeAudioData(buf))
       .then((decoded) => {
         doorCreakBuffer = decoded;
+      })
+      .catch(() => {});
+    fetch("audio/locked-door.mp3")
+      .then((r) => r.arrayBuffer())
+      .then((buf) => audioCtx.decodeAudioData(buf))
+      .then((decoded) => {
+        lockedDoorBuffer = decoded;
       })
       .catch(() => {});
   }
@@ -422,6 +430,16 @@ function playWoodCrack() {
 function playJingle() {
   if (!audioReady()) return;
   const t0 = audioCtx.currentTime;
+  if (lockedDoorBuffer) {
+    const src = audioCtx.createBufferSource();
+    const gn = audioCtx.createGain();
+    gn.gain.value = 0.9;
+    src.buffer = lockedDoorBuffer;
+    src.playbackRate.value = 0.96 + Math.random() * 0.08;
+    src.connect(gn).connect(audioCtx.destination);
+    src.start(t0);
+    return;
+  }
   const clink = (at, f, v) => {
     [1, 1.51, 2.3].forEach((m, i) => {
       const o = audioCtx.createOscillator();
@@ -1810,7 +1828,7 @@ function buildWorld() {
       const street = row >= doorRow;
       // the facade row shows the street texture outside and plain lobby wall inside
       const faces = row === doorRow ? [facadeMat, facadeMat, facadeMat, facadeMat, facadeMat, lobbyWallMat] : facadeMat;
-      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? faces : wallMatsFor(col, row));
+      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? faces : col >= 21 ? interiorMat : wallMatsFor(col, row));
       mesh.position.set(col + 0.5, (street ? FACADE_H : WALL_HEIGHT) / 2, row + 0.5);
       worldGroup.add(mesh);
     }
@@ -1977,7 +1995,7 @@ function buildWorld() {
   ITEMS.filter((it) => !state.inventory[it.id] && !it.hidden).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
-    else if (it.id === "axe") { if (state.flags.powerOn) addAxeModel(it.x, 0.07, it.y); }
+    else if (it.id === "axe") addAxeModel(it.x, 0.07, it.y);
     else if (it.name === "Batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, it.h + 0.02, it.y + o - 0.03, 0x9a7a1a));
     else if (it.note) {
       const paper = new THREE.Mesh(
@@ -3285,11 +3303,6 @@ function addLevels() {
   worldGroup.add(staffSignLight);
   // staff room (west end of the hallway): shelf, mop bucket, breaker panel
   if (yawObject.position.x < 21) addStaffRoom();
-  addBox(0.5, 0.6, 0.12, 2.0, 1.55, 5.06, 0x4a4d4f);
-  addBox(0.05, 0.22, 0.05, 2.0, 1.55, 5.15, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
-  const sl = new THREE.PointLight(0xffe0b0, 0.3, 4, 2);
-  sl.position.set(3, 2.5, 6);
-  worldGroup.add(sl);
   // faint bulbs so each level isn't a void (only built for the level you're on)
   const px = yawObject.position.x;
   const bulbs = px >= 46 ? [[50.5, 2.5, 3.0], [50.5, 2.5, 9.5], [57, 2.5, 3.5]] : px >= 21 ? [[25, 2.5, 6.5], [31, 2.5, 6.5], [37, 2.5, 6.5], [43, 2.5, 6.5]] : [];
@@ -3546,6 +3559,15 @@ function addStairs() {
 
 // The basement: pipes, chains, a glowing boiler, stains and a cage, so it feels lived-in and wrong.
 function addBasementDecor() {
+  // the main breaker panel on the cellar's north wall
+  addBox(0.6, 0.75, 0.12, 53.2, 1.55, 1.06, 0x4a4d4f);
+  addBox(0.5, 0.65, 0.02, 53.2, 1.55, 1.13, 0x3a3d3f);
+  addBox(0.05, 0.22, 0.05, 53.2, 1.7, 1.17, state.flags.powerOn ? 0x3aa14a : 0xaa2222);
+  if (!state.flags.powerOn) {
+    const rl = new THREE.PointLight(0xff3322, 0.7, 3.5, 2);
+    rl.position.set(53.2, 1.7, 1.5);
+    worldGroup.add(rl);
+  }
   const rust = 0x4a2e1c;
   [2.0, 9.0].forEach((z) => addBox(8.2, 0.12, 0.12, 50.8, 2.75, z, 0x2a2624)); // ceiling pipes
   addBox(0.12, 0.12, 8.5, 53.9, 2.6, 6.5, 0x2a2624);
@@ -4026,7 +4048,6 @@ function nearestInteractable() {
 
   ITEMS.forEach((item) => {
     if (state.inventory[item.id] || item.hidden) return;
-    if (item.id === "axe" && !state.flags.powerOn) return;
     const d = Math.hypot(item.x - px, item.y - py);
     if (d < closestDist) {
       closestDist = d;
@@ -4840,7 +4861,8 @@ function openBreaker() {
   // it comes from the furthest place it can still walk to you from
   let best = null;
   let bestLen = -1;
-  ENTITY_SPAWNS_BY_LEVEL[0].forEach(([x, z]) => {
+  const blvl = levelOf(p.x);
+  ENTITY_SPAWNS_BY_LEVEL[blvl].forEach(([x, z]) => {
     if (!cellFree(Math.floor(x), Math.floor(z))) return;
     const path = entityPath(x, z, p.x, p.z);
     if (path && path.length > bestLen) {
@@ -4852,7 +4874,7 @@ function openBreaker() {
     e.x = best[0];
     e.z = best[1];
     e.mode = "active";
-    e.level = 0;
+    e.level = blvl;
     e.dark = 0;
     e.path = null;
     e.repath = 0;
@@ -4909,8 +4931,8 @@ function updateBreaker(dt) {
 }
 function restorePower() {
   state.flags.powerOn = true;
-  if (state.entity.mode === "active" && levelOf(yawObject.position.x) === 0) {
-    state.entity.mode = "vanishing"; // the light burns it off the ground floor
+  if (state.entity.mode === "active") {
+    state.entity.mode = "vanishing"; // the light burns it off
     state.entity.timer = 0.9;
     playVanish();
   } else {
@@ -4965,7 +4987,7 @@ function updateEntity(dt) {
   // Before the power is on it haunts the ground floor. Once the lights are on it can only be
   // upstairs or in the basement.
   const lvl = levelOf(yawObject.position.x);
-  const haunted = state.flags.powerOn ? lvl >= 1 : lvl === 0;
+  const haunted = state.flags.powerOn ? lvl >= 1 : lvl === 0 || state.phase === "breaker";
   if (!haunted) {
     entityGroup.visible = false;
     setFear(0);

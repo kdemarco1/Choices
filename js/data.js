@@ -81,7 +81,9 @@ const ITEMS = [
   { id: "axe", name: "Axe", x: 13.6, y: 1.5, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
   { id: "johnNote", name: "Note - Sept 21", note: true, order: 4, h: 0.57, x: 14.25, y: 0.35, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at\nnight. i can't look at it.\ni hid the axe under my\nbed. just in case.", sloppy: 0.6, seed: 3 },
   { id: "batteries", name: "Batteries", h: 0.92, x: 14.95, y: 0.35, pickupText: "Spare batteries." },
-  { id: "staffNote", name: "Notice", note: true, h: 0.77, x: 3.7, y: 5.4, paper: "Power out again?\nMain breaker is on the\nnorth wall.\n- Mgmt", sloppy: 0.1, seed: 7 },
+  { id: "staffBatt1", name: "Batteries", h: 1.04, x: 1.5, y: 5.75, pickupText: "Spare batteries." },
+  { id: "staffBatt2", name: "Batteries", h: 0.77, x: 4.5, y: 5.45, pickupText: "Spare batteries." },
+  { id: "staffNote", name: "Notice", note: true, h: 0.77, x: 3.7, y: 5.4, paper: "Power out again?\nMain breaker is down in\nthe cellar. Stairs at the\nend of the hall.\nBring a light.\n- Mgmt", sloppy: 0.1, seed: 7 },
   { id: "note5", name: "Note - Sept 28", note: true, order: 6, x: 51.5, y: 2.4, paper: "Sept 28\nfollowed it down.\nthe cellar door under\nthe stairs. the boiler is\nwarm. it is {breathing}\nnothing down there\nshould be warm", sloppy: 1.05, seed: 66 },
   { id: "batteries2", name: "Batteries", x: 50.5, y: 9.4, h: 0.5, pickupText: "Spare batteries." },
 ];
@@ -91,7 +93,7 @@ const HOTSPOTS = [
   { id: "boards", x: 17.75, y: 2.95, label: "Boards" },
   { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
-  { id: "breaker", x: 2.0, y: 5.6, label: "Flip Breaker" },
+  { id: "breaker", x: 53.2, y: 1.9, label: "Flip Breaker" },
   { id: "staffBoard", x: 4.6, y: 5.95, label: "Read Notice Board", board: true },
   { id: "rubble", x: 58.5, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
