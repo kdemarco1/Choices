@@ -2941,7 +2941,199 @@ function floorPatch(kind, x0, z0, w, d, tile, y) {
   worldGroup.add(m);
 }
 
+// ---- original paintings inspired by the reference pictures (nothing here is a copy of them) ----
+const NEWART = (() => {
+  const mk = (W, H, f) => () => {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const x = c.getContext("2d");
+    f(x, W, H);
+    return c;
+  };
+  const ell = (x, cx, cy, rx, ry, col, rot) => { x.fillStyle = col; x.beginPath(); x.ellipse(cx, cy, rx, ry, rot || 0, 0, 6.3); x.fill(); };
+  const vig = (x, W, H, a) => { const g = x.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.8); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, `rgba(0,0,0,${a})`); x.fillStyle = g; x.fillRect(0, 0, W, H); };
+  const rng = (s) => () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const cracks = (x, r, cx, cy, n, col) => { x.strokeStyle = col; x.lineWidth = 1.3; for (let i = 0; i < n; i++) { let px = cx + (r() - 0.5) * 80, py = cy + (r() - 0.5) * 120; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 4; k++) { px += (r() - 0.5) * 22; py += r() * 18; x.lineTo(px, py); } x.stroke(); } };
+  const drips = (x, r, xs, y0, col) => { x.strokeStyle = col; x.lineCap = "round"; xs.forEach((px) => { x.lineWidth = 2 + r() * 3; x.beginPath(); x.moveTo(px, y0); x.lineTo(px + (r() - 0.5) * 6, y0 + 25 + r() * 50); x.stroke(); }); };
+  const glow = (x, cx, cy, rad, col) => { const g = x.createRadialGradient(cx, cy, 2, cx, cy, rad); g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g; x.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); };
+  return {
+    // a cracked mask-face in the dark, lit from below by one candle
+    maskA: mk(256, 320, (x, W, H) => {
+      const r = rng(3); x.fillStyle = "#050505"; x.fillRect(0, 0, W, H);
+      x.fillStyle = "#6a6a66"; x.beginPath(); x.moveTo(30, H); x.lineTo(70, 215); x.lineTo(186, 215); x.lineTo(226, H); x.fill();
+      x.fillStyle = "#0e0e0e"; x.beginPath(); x.moveTo(104, 215); x.lineTo(152, 215); x.lineTo(128, 300); x.fill();
+      ell(x, 128, 130, 62, 84, "#9a968a");
+      cracks(x, r, 128, 120, 14, "rgba(20,16,12,0.7)");
+      ell(x, 98, 108, 22, 30, "#060606"); ell(x, 160, 108, 22, 30, "#060606");
+      drips(x, r, [92, 100, 156, 164], 128, "#0a0808");
+      ell(x, 128, 150, 9, 13, "#2a2622");
+      x.strokeStyle = "#0a0808"; x.lineWidth = 4; x.beginPath(); x.moveTo(94, 190); x.quadraticCurveTo(128, 208, 162, 188); x.stroke();
+      drips(x, r, [110, 128, 146], 196, "#0a0808");
+      glow(x, 128, 298, 150, "rgba(255,190,90,0.55)");
+      ell(x, 128, 296, 5, 11, "#fff2c0");
+      vig(x, W, H, 0.7);
+    }),
+    // a hatted figure, one eye pit and a long stitched smile, in blue moonlight
+    maskB: mk(256, 320, (x, W, H) => {
+      const r = rng(5); const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#10182a"); g.addColorStop(1, "#05070c"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.fillStyle = "#07080c"; x.fillRect(40, 232, 176, 100); x.fillStyle = "#b8bcc0"; x.fillRect(110, 232, 36, 40);
+      x.fillStyle = "#0a0a0e"; x.fillRect(70, 40, 116, 70); x.fillRect(46, 104, 164, 14);
+      ell(x, 128, 160, 52, 66, "#a8aeb0");
+      cracks(x, r, 128, 150, 9, "rgba(10,12,16,0.6)");
+      ell(x, 106, 150, 14, 18, "#050608"); ell(x, 152, 150, 5, 5, "#e8ecef");
+      x.strokeStyle = "#050608"; x.lineWidth = 3; x.beginPath(); x.moveTo(78, 186); x.quadraticCurveTo(128, 232, 180, 184); x.stroke();
+      for (let i = 0; i < 12; i++) { const px = 84 + i * 8; x.beginPath(); x.moveTo(px, 186 + Math.sin(i / 11 * 3.1) * 28 - 6); x.lineTo(px, 186 + Math.sin(i / 11 * 3.1) * 28 + 8); x.stroke(); }
+      vig(x, W, H, 0.65);
+    }),
+    // a flat-headed stitched fellow with bolts, standing in a purple room
+    stitched: mk(256, 320, (x, W, H) => {
+      const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#1c0a3a"); g.addColorStop(0.6, "#4a1a7a"); g.addColorStop(1, "#b030d8"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.fillStyle = "rgba(20,0,30,0.4)"; x.beginPath(); x.ellipse(128, 296, 50, 8, 0, 0, 6.3); x.fill();
+      x.fillStyle = "#1a1418"; x.fillRect(114, 190, 8, 96); x.fillRect(136, 190, 8, 96); x.fillStyle = "#3a2418"; x.fillRect(108, 284, 18, 12); x.fillRect(134, 284, 18, 12);
+      x.fillStyle = "#5a3a2a"; x.beginPath(); x.moveTo(82, 150); x.lineTo(176, 150); x.lineTo(170, 205); x.lineTo(88, 205); x.fill();
+      x.fillStyle = "#a89ab0"; x.fillRect(100, 160, 56, 40);
+      x.fillStyle = "#6a9a3a"; x.fillRect(64, 160, 8, 62); x.fillRect(184, 160, 8, 62);
+      x.fillStyle = "#5a8a32"; x.beginPath(); x.moveTo(94, 40); x.lineTo(162, 40); x.lineTo(170, 150); x.quadraticCurveTo(128, 170, 86, 150); x.fill();
+      x.fillStyle = "#8a8a94"; x.fillRect(74, 92, 14, 10); x.fillRect(168, 92, 14, 10);
+      ell(x, 112, 90, 9, 8, "#f0d8d8"); ell(x, 146, 90, 9, 8, "#f0d8d8"); ell(x, 114, 91, 3, 3, "#201018"); ell(x, 144, 91, 3, 3, "#201018");
+      x.strokeStyle = "#2a4a18"; x.lineWidth = 4; x.beginPath(); x.moveTo(112, 80); x.lineTo(124, 76); x.moveTo(146, 80); x.lineTo(134, 76); x.stroke();
+      x.lineWidth = 3; x.beginPath(); x.moveTo(110, 130); x.quadraticCurveTo(128, 120, 148, 130); x.stroke();
+    }),
+    // the same sort of face, but the eyes have been crossed out and the mouth sewn shut
+    stitchedB: mk(256, 320, (x, W, H) => {
+      const r = rng(9); x.fillStyle = "#08040c"; x.fillRect(0, 0, W, H);
+      x.fillStyle = "#4e7430"; x.beginPath(); x.moveTo(60, 50); x.lineTo(196, 50); x.lineTo(204, 250); x.quadraticCurveTo(128, 300, 52, 250); x.fill();
+      x.fillStyle = "#7a7a84"; x.fillRect(32, 130, 28, 16); x.fillRect(196, 130, 28, 16);
+      ell(x, 98, 120, 18, 14, "#e8d0d0"); ell(x, 160, 120, 18, 14, "#e8d0d0");
+      x.strokeStyle = "#8a0e0e"; x.lineWidth = 6; [[98, 120], [160, 120]].forEach(([px, py]) => { x.beginPath(); x.moveTo(px - 20, py - 18); x.lineTo(px + 20, py + 18); x.moveTo(px + 20, py - 18); x.lineTo(px - 20, py + 18); x.stroke(); });
+      x.strokeStyle = "#101010"; x.lineWidth = 3; x.beginPath(); x.moveTo(84, 200); x.quadraticCurveTo(128, 190, 176, 200); x.stroke();
+      for (let i = 0; i < 9; i++) { x.beginPath(); x.moveTo(88 + i * 10, 190); x.lineTo(90 + i * 10, 212); x.stroke(); }
+      cracks(x, r, 128, 160, 6, "rgba(10,20,5,0.6)"); vig(x, W, H, 0.7);
+    }),
+    // a skull with bulging eyes and blood running down, red glow behind it
+    skull: mk(256, 320, (x, W, H) => {
+      const r = rng(11); const g = x.createRadialGradient(128, 160, 20, 128, 160, 220); g.addColorStop(0, "#7a0a0a"); g.addColorStop(1, "#080000"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      ell(x, 128, 120, 88, 96, "#d8cfae"); x.fillStyle = "#d8cfae"; x.fillRect(70, 150, 116, 90);
+      ell(x, 92, 140, 30, 26, "#2a1a14"); ell(x, 164, 140, 30, 26, "#2a1a14");
+      ell(x, 92, 138, 22, 22, "#f4f0e8"); ell(x, 164, 138, 22, 22, "#f4f0e8"); ell(x, 94, 140, 10, 10, "#40403a"); ell(x, 162, 140, 10, 10, "#40403a");
+      ell(x, 128, 185, 10, 18, "#3a2218");
+      x.fillStyle = "#f0ead4"; for (let i = 0; i < 8; i++) x.fillRect(86 + i * 12, 224, 10, 16);
+      for (let i = 0; i < 8; i++) x.fillRect(86 + i * 12, 242, 10, 14);
+      x.strokeStyle = "#7a0606"; x.lineCap = "round";
+      [[100, 40, 70], [150, 30, 140], [126, 50, 100], [80, 150, 90], [176, 150, 80]].forEach(([px, py, len]) => { x.lineWidth = 4 + r() * 3; x.beginPath(); x.moveTo(px, py); x.lineTo(px + (r() - 0.5) * 14, py + len); x.stroke(); });
+      vig(x, W, H, 0.55);
+    }),
+    // a skull wearing a crown of dead flowers, on old paper
+    skullB: mk(256, 320, (x, W, H) => {
+      const r = rng(13); x.fillStyle = "#cfc2a0"; x.fillRect(0, 0, W, H); for (let i = 0; i < 30; i++) ell(x, r() * W, r() * H, 20 + r() * 30, 14, `rgba(120,90,50,${0.05 + r() * 0.08})`);
+      ell(x, 128, 170, 66, 72, "#e8e0c8"); x.fillStyle = "#e8e0c8"; x.fillRect(84, 200, 88, 60);
+      ell(x, 104, 176, 18, 20, "#1a1410"); ell(x, 152, 176, 18, 20, "#1a1410"); ell(x, 128, 210, 6, 11, "#3a2e22");
+      x.fillStyle = "#2a2018"; for (let i = 0; i < 7; i++) x.fillRect(96 + i * 10, 244, 7, 14);
+      for (let i = 0; i < 11; i++) { const a = 3.3 + i * 0.28; const px = 128 + Math.cos(a) * 62, py = 150 + Math.sin(a) * 58; ell(x, px, py, 11, 11, ["#6a4a3a", "#8a7a6a", "#5a2a2a", "#7a7a52"][i % 4]); ell(x, px, py, 4, 4, "#2a1a10"); }
+      vig(x, W, H, 0.35);
+    }),
+    // an ink-drawn pale head: ringed eyes, a huge black grin full of fine teeth
+    grin: mk(256, 320, (x, W, H) => {
+      const r = rng(17); x.fillStyle = "#6a6a68"; x.fillRect(0, 0, W, H); x.fillStyle = "#4a4a48"; x.fillRect(0, 230, W, 90);
+      x.strokeStyle = "#101010"; x.lineWidth = 1.4; for (let i = 0; i < 70; i++) { const a = r() * 6.3; x.beginPath(); x.moveTo(128 + Math.cos(a) * 80, 120 + Math.sin(a) * 90); x.quadraticCurveTo(128 + Math.cos(a) * 110, 120 + Math.sin(a) * 140, 128 + Math.cos(a + 0.2) * 120, 120 + Math.sin(a + 0.2) * 150); x.stroke(); }
+      x.fillStyle = "#101010"; x.fillRect(122, 200, 12, 130);
+      ell(x, 128, 120, 84, 96, "#c8c8c0"); x.fillStyle = "rgba(0,0,0,0.12)"; x.beginPath(); x.ellipse(110, 110, 30, 70, 0.2, 0, 6.3); x.fill();
+      [[88, 100], [168, 100]].forEach(([px, py]) => { ell(x, px, py, 28, 28, "#101010"); ell(x, px, py, 22, 22, "#f2f2ec"); ell(x, px, py + 2, 4, 4, "#101010"); });
+      ell(x, 128, 132, 6, 12, "#7a7a74");
+      x.fillStyle = "#050505"; x.beginPath(); x.moveTo(60, 160); x.quadraticCurveTo(128, 300, 196, 158); x.quadraticCurveTo(128, 190, 60, 160); x.fill();
+      x.strokeStyle = "#6a6a64"; x.lineWidth = 1; for (let i = 0; i < 30; i++) { const px = 74 + i * 3.8; x.beginPath(); x.moveTo(px, 185 + Math.sin(i / 29 * 3.1) * 22); x.lineTo(px, 205 + Math.sin(i / 29 * 3.1) * 22); x.stroke(); }
+      vig(x, W, H, 0.5);
+    }),
+    // a child's crayon version of it
+    grinB: mk(256, 320, (x, W, H) => {
+      const r = rng(19); x.fillStyle = "#ece6d0"; x.fillRect(0, 0, W, H);
+      x.lineCap = "round"; x.strokeStyle = "#1a1a1a"; x.lineWidth = 6; x.beginPath(); x.arc(128, 130, 78, 0, 6.3); x.stroke();
+      [[96, 110], [160, 110]].forEach(([px, py]) => { x.lineWidth = 5; x.beginPath(); x.arc(px, py, 22, 0, 6.3); x.stroke(); ell(x, px, py, 5, 5, "#1a1a1a"); });
+      x.fillStyle = "#1a1a1a"; x.beginPath(); x.moveTo(70, 160); x.quadraticCurveTo(128, 250, 186, 158); x.quadraticCurveTo(128, 180, 70, 160); x.fill();
+      x.strokeStyle = "#ece6d0"; x.lineWidth = 3; for (let i = 0; i < 8; i++) { x.beginPath(); x.moveTo(84 + i * 12, 170); x.lineTo(90 + i * 12, 186); x.lineTo(96 + i * 12, 170); x.stroke(); }
+      x.strokeStyle = "#c82a20"; x.lineWidth = 5; x.beginPath(); x.moveTo(128, 210); x.lineTo(128, 290); x.moveTo(90, 240); x.lineTo(166, 240); x.stroke();
+      x.strokeStyle = "rgba(0,0,0,0.5)"; x.lineWidth = 2; for (let i = 0; i < 14; i++) { x.beginPath(); x.moveTo(r() * W, 300 + r() * 10); x.lineTo(r() * W, 314); x.stroke(); }
+    }),
+    // a horned, grinning thing in a red hat and white beard, with a mouth full of needles
+    krampus: mk(320, 220, (x, W, H) => {
+      const r = rng(23); const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#080c14"); g.addColorStop(1, "#1a2230"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      for (let i = 0; i < 9; i++) { x.fillStyle = "#04060a"; x.fillRect(r() * W, 0, 6 + r() * 10, H); }
+      x.fillStyle = "#c8d0d8"; for (let i = 0; i < 70; i++) x.fillRect(r() * W, r() * H, 2, 2);
+      x.fillStyle = "#a01818"; x.beginPath(); x.moveTo(40, H); x.lineTo(70, 160); x.lineTo(250, 160); x.lineTo(280, H); x.fill();
+      x.fillStyle = "#c6c2b8"; x.beginPath(); x.ellipse(160, 160, 80, 26, 0, 0, 6.3); x.fill();
+      x.strokeStyle = "#8a7a30"; x.lineWidth = 9; x.lineCap = "round"; x.beginPath(); x.moveTo(104, 60); x.quadraticCurveTo(70, 40, 84, 6); x.moveTo(216, 60); x.quadraticCurveTo(250, 40, 236, 6); x.stroke();
+      x.fillStyle = "#b8b4aa"; x.beginPath(); x.moveTo(104, 80); x.quadraticCurveTo(160, 190, 216, 80); x.quadraticCurveTo(160, 40, 104, 80); x.fill();
+      x.fillStyle = "#a01818"; x.beginPath(); x.moveTo(110, 66); x.quadraticCurveTo(160, 0, 214, 62); x.lineTo(190, 70); x.quadraticCurveTo(160, 58, 128, 72); x.fill();
+      ell(x, 206, 14, 10, 10, "#e8e4dc");
+      [[134, 82], [186, 82]].forEach(([px, py]) => { ell(x, px, py, 11, 11, "#f0eee8"); ell(x, px, py, 7, 7, "#d01010"); ell(x, px, py, 3, 3, "#200000"); });
+      x.fillStyle = "#1a0606"; x.beginPath(); x.ellipse(160, 128, 36, 30, 0, 0, 6.3); x.fill();
+      x.fillStyle = "#f0ecdc"; for (let i = 0; i < 14; i++) { const a = i / 13 * 3.14; x.fillRect(126 + i * 5, 104 + Math.sin(a) * -2, 2.2, 20); x.fillRect(126 + i * 5, 138 + Math.sin(a) * 4, 2.2, -18); }
+      ell(x, 160, 140, 12, 8, "#c0506a");
+      vig(x, W, H, 0.5);
+    }),
+    // only the red eyes and the horns, out in the trees
+    krampusB: mk(320, 220, (x, W, H) => {
+      const r = rng(29); x.fillStyle = "#020304"; x.fillRect(0, 0, W, H);
+      x.fillStyle = "#14181e"; x.fillRect(0, 170, W, 50); x.fillStyle = "#c8d0d8"; for (let i = 0; i < 50; i++) x.fillRect(r() * W, 172 + r() * 46, 2, 1);
+      x.fillStyle = "#06080a"; for (let i = 0; i < 12; i++) { const px = r() * W; x.beginPath(); x.moveTo(px, 172); x.lineTo(px + 8, 172); x.lineTo(px + 4, 40 + r() * 60); x.fill(); }
+      x.strokeStyle = "#0a0a0a"; x.lineWidth = 8; x.lineCap = "round"; x.beginPath(); x.moveTo(140, 100); x.quadraticCurveTo(116, 90, 124, 50); x.moveTo(184, 100); x.quadraticCurveTo(208, 90, 200, 50); x.stroke();
+      x.fillStyle = "#050606"; x.beginPath(); x.ellipse(162, 130, 38, 52, 0, 0, 6.3); x.fill();
+      [[150, 112], [176, 112]].forEach(([px, py]) => { glow(x, px, py, 24, "rgba(255,20,10,0.5)"); ell(x, px, py, 5, 5, "#ff3020"); });
+      vig(x, W, H, 0.6);
+    }),
+    flowers: mk(256, 320, (x, W, H) => {
+      const r = rng(31); x.fillStyle = "#b89a5a"; x.fillRect(0, 0, W, H); x.fillStyle = "#6a4a3a"; x.fillRect(0, 240, W, 80);
+      x.fillStyle = "#3a5a6a"; x.beginPath(); x.moveTo(92, 250); x.lineTo(164, 250); x.lineTo(150, 170); x.lineTo(106, 170); x.fill();
+      x.strokeStyle = "#4a5a28"; x.lineWidth = 3;
+      [[0.2, "#a8402a"], [0.4, "#7a2a6a"], [0.55, "#c89a2a"], [0.75, "#4a1a1a"], [0.9, "#8a8a7a"]].forEach(([t, col], i) => { const fx = 60 + t * 140, fy = 50 + r() * 60 + i * 8; x.beginPath(); x.moveTo(128, 172); x.quadraticCurveTo(128, 120, fx, fy); x.stroke(); ell(x, fx, fy, 15, 13, col); ell(x, fx, fy, 5, 5, "#201008"); });
+      for (let i = 0; i < 5; i++) ell(x, 60 + r() * 140, 262 + r() * 20, 5, 3, "#5a3a22");
+      vig(x, W, H, 0.4);
+    }),
+    // a porcelain doll with one eye gone
+    doll: mk(256, 320, (x, W, H) => {
+      const r = rng(37); x.fillStyle = "#8a6a6a"; x.fillRect(0, 0, W, H);
+      for (let i = 0; i < 24; i++) { x.strokeStyle = "#3a2418"; x.lineWidth = 4; x.beginPath(); const a = 3.3 + i * 0.14; x.moveTo(128 + Math.cos(a) * 62, 140 + Math.sin(a) * 70); x.quadraticCurveTo(128 + Math.cos(a) * 92, 160 + i * 4, 128 + Math.cos(a) * 80, 250); x.stroke(); }
+      x.fillStyle = "#e8e0d0"; x.beginPath(); x.moveTo(60, H); x.lineTo(80, 250); x.lineTo(176, 250); x.lineTo(196, H); x.fill();
+      ell(x, 128, 140, 56, 70, "#ecdcc8"); ell(x, 98, 170, 14, 9, "rgba(200,80,80,0.5)"); ell(x, 160, 170, 14, 9, "rgba(200,80,80,0.5)");
+      ell(x, 106, 128, 15, 11, "#f8f4ec"); ell(x, 106, 128, 6, 6, "#2a4a8a"); ell(x, 152, 128, 14, 12, "#080404");
+      x.strokeStyle = "#8a2a2a"; x.lineWidth = 3; x.beginPath(); x.moveTo(112, 196); x.quadraticCurveTo(128, 206, 144, 196); x.stroke();
+      x.strokeStyle = "#3a2a22"; x.lineWidth = 1.4; x.beginPath(); x.moveTo(150, 70); x.lineTo(142, 110); x.lineTo(158, 150); x.lineTo(150, 190); x.stroke(); vig(x, W, H, 0.5);
+    }),
+    // a house standing in black water, one lit window, someone in it
+    house: mk(320, 220, (x, W, H) => {
+      const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#20283a"); g.addColorStop(0.55, "#58607a"); g.addColorStop(0.56, "#101418"); g.addColorStop(1, "#04060a"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.fillStyle = "#0c0e12"; x.fillRect(110, 80, 100, 70); x.beginPath(); x.moveTo(100, 82); x.lineTo(160, 40); x.lineTo(220, 82); x.fill();
+      x.fillStyle = "#e8b850"; x.fillRect(146, 98, 26, 24); x.fillStyle = "#0a0a0a"; x.fillRect(156, 106, 6, 16); ell(x, 159, 103, 4, 4, "#0a0a0a");
+      x.fillStyle = "rgba(232,184,80,0.2)"; x.fillRect(146, 152, 26, 60);
+      x.strokeStyle = "rgba(200,210,230,0.15)"; for (let i = 0; i < 8; i++) { x.beginPath(); x.moveTo(40 + i * 36, 160 + i % 3 * 12); x.lineTo(70 + i * 36, 160 + i % 3 * 12); x.stroke(); }
+      vig(x, W, H, 0.5);
+    }),
+    handprints: mk(256, 320, (x, W, H) => {
+      const r = rng(41); x.fillStyle = "#d8d0bc"; x.fillRect(0, 0, W, H);
+      for (let i = 0; i < 16; i++) { const px = 30 + r() * 196, py = 30 + r() * 250, s = 0.7 + r() * 0.7, a = (r() - 0.5) * 0.8; x.save(); x.translate(px, py); x.rotate(a); x.scale(s, s); x.fillStyle = `rgba(${110 + r() * 40},10,10,0.85)`; x.beginPath(); x.ellipse(0, 0, 14, 17, 0, 0, 6.3); x.fill(); for (let f = 0; f < 4; f++) x.fillRect(-13 + f * 8, -34 + (f === 1 || f === 2 ? -4 : 0), 6, 22); x.fillRect(12, -10, 18, 6); x.restore(); }
+      vig(x, W, H, 0.3);
+    }),
+    // a long corridor with something tall at the far end
+    figure: mk(256, 320, (x, W, H) => {
+      const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#1a1a14"); g.addColorStop(1, "#06060a"); x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.fillStyle = "#2a281e"; x.beginPath(); x.moveTo(0, 0); x.lineTo(96, 110); x.lineTo(96, 210); x.lineTo(0, H); x.fill(); x.beginPath(); x.moveTo(W, 0); x.lineTo(160, 110); x.lineTo(160, 210); x.lineTo(W, H); x.fill();
+      x.fillStyle = "#8a7a50"; x.fillRect(96, 110, 64, 100); glow(x, 128, 160, 90, "rgba(255,230,150,0.4)");
+      x.fillStyle = "#040404"; x.fillRect(122, 120, 12, 76); ell(x, 128, 118, 7, 9, "#040404"); x.fillRect(116, 130, 4, 50); x.fillRect(136, 130, 4, 52);
+      vig(x, W, H, 0.6);
+    }),
+    // stairs going down into nothing, a pale hand on the rail
+    stairs: mk(256, 320, (x, W, H) => {
+      x.fillStyle = "#06060a"; x.fillRect(0, 0, W, H);
+      for (let i = 0; i < 9; i++) { const y = 60 + i * 28, w = 200 - i * 18; x.fillStyle = `rgb(${70 - i * 6},${58 - i * 5},${44 - i * 4})`; x.fillRect(128 - w / 2, y, w, 24); x.fillStyle = "rgba(0,0,0,0.5)"; x.fillRect(128 - w / 2, y + 24, w, 4); }
+      x.fillStyle = "#050507"; x.fillRect(0, 200, W, 120);
+      x.strokeStyle = "#2a2018"; x.lineWidth = 6; x.beginPath(); x.moveTo(24, 80); x.lineTo(70, 240); x.stroke();
+      x.fillStyle = "#d8d0c0"; x.fillRect(46, 160, 12, 6); for (let f = 0; f < 4; f++) x.fillRect(44 + f * 4, 150, 3, 12);
+      vig(x, W, H, 0.6);
+    }),
+  };
+})();
 function drawArt(kind, seed) {
+  if (NEWART[kind]) return NEWART[kind]();
   const r = seededRng(seed);
   const c = document.createElement("canvas");
   const wide = kind === "landscape";
@@ -3021,36 +3213,38 @@ function addArt(kind, x, y, z, rot, h, seed, tilt) {
   G.add(pic);
 }
 function addWallDecor() {
+  const P = Math.PI;
+  // every picture is different: no kind is hung twice
   // hallway (north wall faces south; south wall faces north)
-  addArt("portrait", 8.5, 1.65, 5.0, 0, 0.7, 5);
-  addArt("landscape", 12.5, 1.6, 5.0, 0, 0.5, 6, 0.04);
+  addArt("maskA", 8.5, 1.65, 5.0, 0, 0.7, 1);
+  addArt("house", 12.5, 1.6, 5.0, 0, 0.45, 2, 0.04);
   addArt("family", 16.5, 1.6, 5.0, 0, 0.6, 7);
-  addArt("eyes", 11.0, 1.6, 7.0, Math.PI, 0.7, 8);
-  addArt("clock", 14.2, 2.0, 7.0, Math.PI, 0.35, 9);
-  addArt("mirror", 17.2, 1.6, 7.0, Math.PI, 0.75, 10);
-  addArt("portrait", 6.0, 1.65, 6.0, Math.PI / 2, 0.65, 12, -0.05);
-  // lobby
-  addArt("landscape", 6.0, 1.7, 8.0, 0, 0.6, 14);
-  addArt("portrait", 14.5, 1.7, 8.0, 0, 0.8, 15);
-  addArt("family", 17.5, 1.7, 8.0, 0, 0.6, 16, 0.05);
-  addArt("eyes", 1.0, 1.7, 9.2, Math.PI / 2, 0.7, 17);
-  addArt("clock", 1.0, 2.1, 11.0, Math.PI / 2, 0.4, 18);
-  addArt("portrait", 3.0, 1.7, 12.0, Math.PI, 0.7, 19);
-  addArt("mirror", 17.0, 1.6, 12.0, Math.PI, 0.8, 20);
+  addArt("eyes", 11.0, 1.6, 7.0, P, 0.7, 8);
+  addArt("clock", 14.2, 2.0, 7.0, P, 0.35, 9);
+  addArt("mirror", 17.2, 1.6, 7.0, P, 0.75, 10);
+  addArt("stitched", 6.0, 1.65, 6.0, P / 2, 0.65, 12, -0.05);
+  // lobby (it runs from z 8 to z 13)
+  addArt("krampus", 6.0, 1.7, 8.0, 0, 0.5, 14);
+  addArt("skull", 14.5, 1.7, 8.0, 0, 0.8, 15);
+  addArt("portrait", 17.5, 1.7, 8.0, 0, 0.6, 16, 0.05);
+  addArt("grin", 1.0, 1.7, 9.2, P / 2, 0.7, 17);
+  addArt("doll", 1.0, 1.7, 11.2, P / 2, 0.6, 18);
+  addArt("maskB", 3.0, 1.7, 13.0, P, 0.7, 19);
+  addArt("krampusB", 12.0, 1.7, 13.0, P, 0.5, 20);
   // apartment 2 (olive)
-  addArt("child", 7.95, 1.6, 3.0, -Math.PI / 2, 0.45, 22);
-  addArt("clock", 5.0, 2.0, 3.2, Math.PI / 2, 0.32, 23);
-  addArt("landscape", 7.4, 1.7, 4.0, Math.PI, 0.38, 24);
+  addArt("child", 7.95, 1.6, 3.0, -P / 2, 0.45, 22);
+  addArt("figure", 5.0, 1.9, 3.2, P / 2, 0.45, 23);
+  addArt("grinB", 7.4, 1.7, 4.0, P, 0.38, 24);
   // apartment 3 (mauve)
-  addArt("portrait", 9.0, 1.7, 1.5, Math.PI / 2, 0.6, 26);
-  addArt("landscape", 10.8, 1.7, 0.0, 0, 0.45, 27, -0.04);
-  addArt("eyes", 9.5, 1.7, 4.0, Math.PI, 0.6, 28);
+  addArt("landscape", 9.0, 1.7, 1.5, P / 2, 0.45, 26);
+  addArt("flowers", 10.8, 1.7, 0.0, 0, 0.5, 27, -0.04);
+  addArt("skullB", 9.5, 1.7, 4.0, P, 0.5, 28);
   // John's (dark red)
-  addArt("family", 16.0, 1.6, 1.4, -Math.PI / 2, 0.5, 30);
-  addArt("child", 13.0, 1.5, 1.1, Math.PI / 2, 0.45, 31, 0.1);
-  addArt("mirror", 13.5, 1.6, 4.0, Math.PI, 0.6, 32);
+  addArt("handprints", 16.0, 1.6, 1.4, -P / 2, 0.5, 30);
+  addArt("stitchedB", 13.0, 1.5, 1.1, P / 2, 0.45, 31, 0.1);
+  addArt("stairs", 13.5, 1.6, 4.0, P, 0.5, 32);
   // floors: wood, carpet, tile where it belongs
-  floorPatch("tile", 1, 8, 19, 4, 1.0, 0.004); // lobby
+  floorPatch("tile", 1, 8, 19, 5, 1.0, 0.004); // lobby
   floorPatch("plankDark", 6, 5, 14, 2, 1.0, 0.004); // hallway boards
   floorPatch("runner", 6.4, 5.5, 13.2, 1.0, 1.0, 0.007); // runner down the middle
   floorPatch("plank", 5, 0, 3, 4, 1.0, 0.004); // apartment 2
