@@ -1784,6 +1784,7 @@ function buildWorld() {
   windowRun = null;
   aptPillow = {};
   aptDoors = {};
+  doorAnims = [];
   lootMeshes = {};
   bedEyes = null;
   clearScares();
@@ -1809,7 +1810,7 @@ function buildWorld() {
       const street = row >= doorRow;
       // the facade row shows the street texture outside and plain lobby wall inside
       const faces = row === doorRow ? [facadeMat, facadeMat, facadeMat, facadeMat, facadeMat, lobbyWallMat] : facadeMat;
-      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? faces : interiorMat);
+      const mesh = new THREE.Mesh(street ? facadeGeo : wallGeo, street ? faces : wallMatsFor(col, row));
       mesh.position.set(col + 0.5, (street ? FACADE_H : WALL_HEIGHT) / 2, row + 0.5);
       worldGroup.add(mesh);
     }
@@ -1817,7 +1818,7 @@ function buildWorld() {
 
   for (let col = 0; col < 21; col++) {
     if (MAP[0][col] !== 0) continue; // studios open onto row 0: draw their north wall just outside the map
-    const w = new THREE.Mesh(wallGeo, interiorMat);
+    const w = new THREE.Mesh(wallGeo, wallMatsFor(col, -1));
     w.position.set(col + 0.5, WALL_HEIGHT / 2, -0.5);
     worldGroup.add(w);
   }
@@ -1950,6 +1951,7 @@ function buildWorld() {
   // The first thing you see on the left, just past the door.
   addReceptionDesk(3.0, 10.8);
   addMailboxes(19.9, 8.8);
+  if (yawObject.position.x < 21) addWallDecor();
   addSofa(15.5, 11.6);
   addPlant(18.6, 8.7);
   addPlant(14.7, 8.7);
@@ -2115,6 +2117,15 @@ function addApartment(a) {
     pv.position.set(-0.45, 0.43, 0.3);
     buildTarget.add(pv);
     aptDoors[a.id + "_under"] = pv;
+    pv.rotation.y = ((state.flags.doorsOpenA || {})[a.id + "_under"]) ? DOOR_OPEN : 0;
+    if (a.id === "apt2") {
+      const lt = new THREE.PointLight(0xffe2b0, 0, 2.2, 2);
+      lt.userData.on = 1.2;
+      lt.intensity = pv.rotation.y ? 1.2 : 0;
+      lt.position.set(-0.2, 0.55, 0.1);
+      buildTarget.add(lt);
+      aptDoors[a.id + "_under_light"] = lt;
+    }
     const prev = buildTarget;
     buildTarget = pv;
     addBox(0.43, 0.8, 0.03, 0.215, 0, 0.015, 0x4a3524);
@@ -2150,6 +2161,15 @@ function addApartment(a) {
     pv.position.set(-0.3, 0, 0.32);
     buildTarget.add(pv);
     aptDoors[a.id + "_fridge"] = pv;
+    pv.rotation.y = ((state.flags.doorsOpenA || {})[a.id + "_fridge"]) ? DOOR_OPEN : 0;
+    if (a.id === "apt2") {
+      const lt = new THREE.PointLight(0xd8f0c8, 0, 2.6, 2);
+      lt.userData.on = 1.4;
+      lt.intensity = pv.rotation.y ? 1.4 : 0;
+      lt.position.set(0, 0.9, 0.1);
+      buildTarget.add(lt);
+      aptDoors[a.id + "_fridge_light"] = lt;
+    }
     const prev = buildTarget;
     buildTarget = pv;
     addBox(0.6, 1.48, 0.04, 0.3, 0.76, 0.02, 0xa7a597);
@@ -2336,6 +2356,46 @@ let openAnims = [];
 let aptPillow = {};
 let aptDoors = {}; // each fridge / cupboard door (they swing open)
 let lootMeshes = {};
+let doorAnims = [];
+function spotOf(h) {
+  const parts = h.id.split("_");
+  const apt = APT_DEFS.find((a) => a.id === parts[0]);
+  const sp = apt && APT_SPOTS.find((s) => s.k === parts[1]);
+  return sp ? { apt, sp } : null;
+}
+function isDoorSpot(so) {
+  return !!so && (so.sp.anim === "fridge" || so.sp.anim === "cabdoor");
+}
+const DOOR_OPEN = -1.9;
+function toggleDoor(h) {
+  const pv = aptDoors[h.id];
+  if (!pv) return;
+  if (!state.flags.doorsOpenA) state.flags.doorsOpenA = {};
+  const f = state.flags.doorsOpenA;
+  f[h.id] = !f[h.id];
+  doorAnims = doorAnims.filter((d) => d.pv !== pv);
+  doorAnims.push({ pv, from: pv.rotation.y, to: f[h.id] ? DOOR_OPEN : 0, t: 0, id: h.id });
+  playDrawerSound(true);
+  if (!state.flags.looted) state.flags.looted = {};
+  if (f[h.id] && !state.flags.looted[h.id]) {
+    state.flags.looted[h.id] = true;
+    if (lootMeshes[h.id]) { const lm = lootMeshes[h.id]; setTimeout(() => { lm.visible = false; }, 900); }
+    lootList(h).forEach((lid, n) => setTimeout(() => collectItem(lid), 900 + n * 1100));
+  }
+}
+function updateDoorAnims(dt) {
+  for (let i = doorAnims.length - 1; i >= 0; i--) {
+    const d = doorAnims[i];
+    d.t += dt / 0.55;
+    const k = Math.min(1, d.t);
+    d.pv.rotation.y = d.from + (d.to - d.from) * (k * k * (3 - 2 * k));
+    if (k >= 1) {
+      const lt = aptDoors[d.id + "_light"];
+      if (lt) lt.intensity = d.to ? lt.userData.on : 0;
+      doorAnims.splice(i, 1);
+    }
+  }
+}
 let bedEyes = null; // each bed's pillow (it lifts when you check under it)
 function playDrawerSound(fridge) {
   if (!audioReady()) return;
@@ -2378,9 +2438,10 @@ function buildContents(ids) {
     const it = ITEMS.find((x) => x.id === id) || {};
     const o = i * 0.14 - (ids.length - 1) * 0.07;
     if (it.note) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.008, 0.24), mat(0xe0dccb));
-      m.position.set(o, 0, 0);
-      m.rotation.y = 0.3;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.008, 0.32), mat(0xf2eedb));
+      m.position.set(o, 0.03, 0.02);
+      m.rotation.x = 0.55;
+      m.rotation.y = 0.12;
       g.add(m);
     } else if (it.key) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.025), mat(0xd4b04a));
@@ -2697,6 +2758,286 @@ function updateFaceScare(dt) {
       faceScare = null;
     }
   }
+}
+
+// ---- walls and floors: wallpaper, wainscot, tile, wood, carpet, and things hanging on the walls --------------
+function seededRng(seed) {
+  let s = seed || 1;
+  return () => ((s = (s * 16807) % 2147483647) / 2147483647);
+}
+function makeWallTexture(style, seed) {
+  const W = 128, H = 384;
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  const x = c.getContext("2d");
+  const r = seededRng(seed);
+  const P = {
+    hall: { base: "#38483f", pat: "#2e3c35", wain: "#2b1e17", rail: "#7a6642", kind: "stripe" },
+    lobby: { base: "#6a5a44", pat: "#5a4c38", wain: "#3a2c20", rail: "#9a8458", kind: "stripe" },
+    apt2: { base: "#6e6a3e", pat: "#5c5832", wain: null, kind: "diamond" },
+    apt3: { base: "#523d50", pat: "#72506a", wain: "#2a2028", rail: "#8a6a7a", kind: "dots" },
+    john: { base: "#3e1a1a", pat: "#150808", wain: "#1c0f0f", rail: "#4a2a2a", kind: "vines" },
+    staff: { base: "#5c6a5e", pat: null, wain: "#38423b", rail: "#9aa49a", kind: "plain" },
+  }[style];
+  x.fillStyle = P.base;
+  x.fillRect(0, 0, W, H);
+  x.fillStyle = P.pat || P.base;
+  if (P.kind === "stripe") {
+    for (let i = 0; i < W; i += 16) x.fillRect(i, 0, 8, H);
+  } else if (P.kind === "diamond") {
+    for (let yy = 0; yy < H; yy += 32) for (let xx = 0; xx < W; xx += 32) {
+      x.beginPath(); x.moveTo(xx + 16, yy + 4); x.lineTo(xx + 28, yy + 16); x.lineTo(xx + 16, yy + 28); x.lineTo(xx + 4, yy + 16); x.closePath(); x.fill();
+    }
+  } else if (P.kind === "dots") {
+    for (let yy = 8; yy < H; yy += 24) for (let xx = (yy / 24) % 2 ? 8 : 20; xx < W; xx += 24) { x.beginPath(); x.arc(xx, yy, 4, 0, 6.3); x.fill(); x.fillRect(xx - 1, yy + 4, 2, 8); }
+  } else if (P.kind === "vines") {
+    x.strokeStyle = P.pat; x.lineWidth = 3;
+    for (let i = 0; i < 6; i++) {
+      x.beginPath();
+      let px = 10 + i * 22;
+      x.moveTo(px, 0);
+      for (let yy = 0; yy < H; yy += 40) { px += (r() - 0.5) * 40; x.quadraticCurveTo(px + 20, yy + 20, px, yy + 40); }
+      x.stroke();
+    }
+  }
+  if (P.wain) { // wainscot: panelled wood on the lower third, a rail on top
+    x.fillStyle = P.wain;
+    x.fillRect(0, 252, W, H - 252);
+    x.strokeStyle = "rgba(0,0,0,0.5)"; x.lineWidth = 2;
+    x.strokeRect(10, 266, W - 20, 90);
+    x.fillStyle = P.rail;
+    x.fillRect(0, 248, W, 6);
+  }
+  x.fillStyle = "#120d0a"; // baseboard
+  x.fillRect(0, H - 14, W, 14);
+  // age: water stains, mold, peeling
+  for (let i = 0; i < 6; i++) {
+    const sx = r() * W, sw = 6 + r() * 18, sy = r() * 60, sh = 80 + r() * 160;
+    const g = x.createLinearGradient(0, sy, 0, sy + sh);
+    g.addColorStop(0, "rgba(25,18,8,0.4)"); g.addColorStop(1, "rgba(25,18,8,0)");
+    x.fillStyle = g; x.fillRect(sx, sy, sw, sh);
+  }
+  for (let i = 0; i < 5; i++) { x.fillStyle = `rgba(20,45,25,${0.2 + r() * 0.2})`; x.beginPath(); x.arc(r() * W, H - 30 - r() * 40, 8 + r() * 14, 0, 6.3); x.fill(); }
+  for (let i = 0; i < 2; i++) { const px = r() * 90, py = 20 + r() * 150; x.fillStyle = "rgba(190,175,140,0.35)"; x.fillRect(px, py, 18, 34); x.fillStyle = "rgba(0,0,0,0.35)"; x.fillRect(px + 16, py + 4, 3, 32); }
+  const top = x.createLinearGradient(0, 0, 0, 50);
+  top.addColorStop(0, "rgba(0,0,0,0.65)"); top.addColorStop(1, "rgba(0,0,0,0)");
+  x.fillStyle = top; x.fillRect(0, 0, W, 50);
+  if (style === "john") { // scratches
+    x.strokeStyle = "rgba(120,20,20,0.6)"; x.lineWidth = 1.5;
+    for (let i = 0; i < 4; i++) { const sx = 10 + r() * 100, sy = 90 + r() * 80; for (let k = 0; k < 4; k++) { x.beginPath(); x.moveTo(sx + k * 5, sy); x.lineTo(sx + k * 5 + 6, sy + 40); x.stroke(); } }
+  }
+  return c;
+}
+let wallMatCache = null;
+function getWallMats() {
+  if (wallMatCache) return wallMatCache;
+  const mk = (style, seed) => {
+    const t = new THREE.CanvasTexture(makeWallTexture(style, seed));
+    return new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 });
+  };
+  wallMatCache = { hall: mk("hall", 11), lobby: mk("lobby", 23), apt2: mk("apt2", 37), apt3: mk("apt3", 41), john: mk("john", 53), staff: mk("staff", 61) };
+  return wallMatCache;
+}
+function aptStyleOfCol(col) {
+  const W = getWallMats();
+  if (col >= 5 && col <= 7) return W.apt2;
+  if (col >= 9 && col <= 11) return W.apt3;
+  if (col >= 13 && col <= 15) return W.john;
+  return null;
+}
+// materials for the six faces of one wall block (+x, -x, +y, -y, +z south, -z north)
+function wallMatsFor(col, row) {
+  const W = getWallMats();
+  if (row === -1) return aptStyleOfCol(col) || W.hall;
+  if (row <= 3) return [aptStyleOfCol(col + 1) || W.hall, aptStyleOfCol(col - 1) || W.hall, W.hall, W.hall, W.hall, W.hall];
+  if (row === 4) return [W.hall, W.hall, W.hall, W.hall, W.hall, aptStyleOfCol(col) || W.hall];
+  if (row <= 6) return col <= 4 ? W.staff : col === 5 ? [W.hall, W.staff, W.hall, W.hall, W.hall, W.hall] : W.hall;
+  if (row === 7) return [W.hall, W.hall, W.hall, W.hall, W.lobby, col <= 5 ? W.staff : W.hall];
+  if (row <= 12) return W.lobby;
+  return W.hall;
+}
+
+function makeFloorTexture(kind, seed) {
+  const S = 256;
+  const c = document.createElement("canvas");
+  c.width = c.height = S;
+  const x = c.getContext("2d");
+  const r = seededRng(seed);
+  if (kind === "tile") { // black and cream checker, cracked and filthy
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      const dark = (i + j) % 2 === 0;
+      const v = dark ? 30 + r() * 12 : 138 + r() * 22;
+      x.fillStyle = `rgb(${v},${v - 3},${v - 12})`;
+      x.fillRect(i * 64, j * 64, 64, 64);
+    }
+    x.strokeStyle = "#16130f"; x.lineWidth = 2;
+    for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(i * 64, 0); x.lineTo(i * 64, S); x.moveTo(0, i * 64); x.lineTo(S, i * 64); x.stroke(); }
+    x.strokeStyle = "rgba(20,15,10,0.7)"; x.lineWidth = 1;
+    for (let i = 0; i < 4; i++) { let px = r() * S, py = r() * S; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 5; k++) { px += (r() - 0.5) * 30; py += r() * 22; x.lineTo(px, py); } x.stroke(); }
+  } else if (kind === "carpet") { // teal-grey carpet with a faint pattern
+    x.fillStyle = "#3b5254"; x.fillRect(0, 0, S, S);
+    x.fillStyle = "rgba(255,255,255,0.05)";
+    for (let i = 0; i < S; i += 32) for (let j = 0; j < S; j += 32) { x.fillRect(i + 12, j, 8, 32); x.fillRect(i, j + 12, 32, 8); }
+    for (let i = 0; i < 3000; i++) { const v = 40 + r() * 50; x.fillStyle = `rgba(${v},${v + 14},${v + 14},0.35)`; x.fillRect(r() * S, r() * S, 2, 2); }
+  } else if (kind === "runner") { // red hall runner with a gold border
+    x.fillStyle = "#5a1a1c"; x.fillRect(0, 0, S, S);
+    x.fillStyle = "#8a6a2a"; x.fillRect(0, 10, S, 6); x.fillRect(0, S - 16, S, 6);
+    x.fillStyle = "#7a2a2a";
+    for (let i = 0; i < S; i += 64) { x.beginPath(); x.moveTo(i + 32, 60); x.lineTo(i + 56, 128); x.lineTo(i + 32, 196); x.lineTo(i + 8, 128); x.closePath(); x.fill(); }
+    for (let i = 0; i < 2500; i++) { x.fillStyle = `rgba(0,0,0,${r() * 0.25})`; x.fillRect(r() * S, r() * S, 2, 2); }
+  } else { // wood planks
+    const dark = kind === "plankDark";
+    const rows = 7, h = S / rows;
+    for (let j = 0; j < rows; j++) {
+      let px = -r() * 120;
+      while (px < S) {
+        const len = 110 + r() * 90;
+        const v = (dark ? 36 : 76) + r() * 26;
+        x.fillStyle = `rgb(${v + 16},${v + 4},${v - 10})`;
+        x.fillRect(px, j * h, len, h);
+        x.strokeStyle = "rgba(0,0,0,0.3)"; x.lineWidth = 1;
+        for (let g = 0; g < 4; g++) { x.beginPath(); x.moveTo(px, j * h + r() * h); x.lineTo(px + len, j * h + r() * h); x.stroke(); }
+        x.fillStyle = "#0e0a07"; x.fillRect(px, j * h, 2, h);
+        px += len;
+      }
+      x.fillStyle = "#0e0a07"; x.fillRect(0, j * h, S, 2);
+    }
+    for (let i = 0; i < 4; i++) { x.fillStyle = "rgba(10,8,4,0.3)"; x.beginPath(); x.ellipse(r() * S, r() * S, 12 + r() * 24, 6 + r() * 12, r() * 3, 0, 6.3); x.fill(); }
+  }
+  return c;
+}
+const floorTexCache = {};
+function floorPatch(kind, x0, z0, w, d, tile, y) {
+  if (!floorTexCache[kind]) {
+    const t = new THREE.CanvasTexture(makeFloorTexture(kind, kind.length * 13));
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    floorTexCache[kind] = t;
+  }
+  const t = floorTexCache[kind].clone();
+  t.repeat.set(w / tile, d / tile);
+  t.needsUpdate = true;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), new THREE.MeshStandardMaterial({ map: t, roughness: 0.9 }));
+  m.rotation.x = -Math.PI / 2;
+  m.position.set(x0 + w / 2, y || 0.004, z0 + d / 2);
+  worldGroup.add(m);
+}
+
+function drawArt(kind, seed) {
+  const r = seededRng(seed);
+  const c = document.createElement("canvas");
+  const wide = kind === "landscape";
+  const W = (c.width = wide ? 320 : kind === "clock" ? 200 : 256);
+  const H = (c.height = wide ? 220 : kind === "clock" ? 200 : 320);
+  const x = c.getContext("2d");
+  if (kind === "portrait") {
+    const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#2a2018"); g.addColorStop(1, "#0e0a08");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = "#1a1210"; x.beginPath(); x.ellipse(128, 130, 74, 96, 0, 0, 6.3); x.fill(); // hair
+    x.fillStyle = "#cbbf9f"; x.beginPath(); x.ellipse(128, 140, 50, 70, 0, 0, 6.3); x.fill(); // face
+    x.fillStyle = "#050404"; x.beginPath(); x.ellipse(108, 128, 11, 15, 0, 0, 6.3); x.fill(); x.beginPath(); x.ellipse(148, 128, 11, 15, 0, 0, 6.3); x.fill(); // empty eyes
+    x.strokeStyle = "#3a1a14"; x.lineWidth = 3; x.beginPath(); x.moveTo(98, 176); x.quadraticCurveTo(128, 200, 158, 176); x.stroke();
+    x.fillStyle = "#1a1612"; x.fillRect(60, 232, 136, 90);
+    x.strokeStyle = "rgba(0,0,0,0.5)"; x.lineWidth = 1; for (let i = 0; i < 20; i++) { x.beginPath(); x.moveTo(r() * W, r() * H); x.lineTo(r() * W, r() * H); x.stroke(); }
+  } else if (kind === "landscape") {
+    const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, "#2a2048"); g.addColorStop(0.6, "#8a4a38"); g.addColorStop(1, "#1a1a20");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = "#101418"; x.fillRect(0, 150, W, 70);
+    for (let i = 0; i < 14; i++) { const px = r() * W, hh = 40 + r() * 60; x.fillStyle = "#0a0e0c"; x.beginPath(); x.moveTo(px - 14, 150); x.lineTo(px, 150 - hh); x.lineTo(px + 14, 150); x.fill(); }
+    x.fillStyle = "#d8d4c8"; x.fillRect(214, 128, 3, 22); x.beginPath(); x.arc(215.5, 125, 3, 0, 6.3); x.fill(); // someone standing there
+  } else if (kind === "family") {
+    x.fillStyle = "#cfc6a8"; x.fillRect(0, 0, W, H);
+    x.fillStyle = "#6a5a3e"; x.fillRect(14, 14, W - 28, H - 28);
+    [[80, 150, 1], [128, 140, 1.1], [176, 170, 0.7]].forEach(([px, py, s], i) => {
+      x.fillStyle = "#2a2018"; x.beginPath(); x.ellipse(px, py + 70 * s, 30 * s, 60 * s, 0, 0, 6.3); x.fill();
+      x.fillStyle = "#b8a98a"; x.beginPath(); x.arc(px, py, 20 * s, 0, 6.3); x.fill();
+      if (i === 1) { x.strokeStyle = "#1a0606"; x.lineWidth = 5; for (let k = 0; k < 14; k++) { x.beginPath(); x.moveTo(px - 24 + r() * 48, py - 24 + r() * 48); x.lineTo(px - 24 + r() * 48, py - 24 + r() * 48); x.stroke(); } }
+    });
+  } else if (kind === "child") {
+    x.fillStyle = "#e0d8bc"; x.fillRect(0, 0, W, H);
+    x.lineWidth = 4;
+    x.strokeStyle = "#c8a020"; x.beginPath(); x.arc(210, 50, 22, 0, 6.3); x.stroke();
+    x.strokeStyle = "#a03020"; x.strokeRect(30, 150, 80, 60); x.beginPath(); x.moveTo(24, 150); x.lineTo(70, 110); x.lineTo(116, 150); x.stroke();
+    x.strokeStyle = "#2060a0";
+    [[60, 250], [100, 250], [140, 260]].forEach(([px, py]) => { x.beginPath(); x.arc(px, py - 30, 9, 0, 6.3); x.moveTo(px, py - 21); x.lineTo(px, py + 10); x.moveTo(px - 12, py - 6); x.lineTo(px + 12, py - 6); x.moveTo(px, py + 10); x.lineTo(px - 8, py + 26); x.moveTo(px, py + 10); x.lineTo(px + 8, py + 26); x.stroke(); });
+    x.strokeStyle = "#0a0a0a"; x.lineWidth = 6; // the tall black one standing behind them
+    x.beginPath(); x.moveTo(210, 90); x.lineTo(210, 230); x.moveTo(210, 120); x.lineTo(160, 200); x.moveTo(210, 120); x.lineTo(250, 210); x.stroke();
+    x.beginPath(); x.arc(210, 76, 14, 0, 6.3); x.stroke();
+    x.strokeStyle = "#0a0a0a"; x.lineWidth = 2; for (let i = 0; i < 40; i++) { x.beginPath(); x.moveTo(190 + r() * 40, 62 + r() * 28); x.lineTo(190 + r() * 40, 62 + r() * 28); x.stroke(); }
+  } else if (kind === "eyes") {
+    x.fillStyle = "#050505"; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 26; i++) {
+      const px = 20 + r() * 216, py = 20 + r() * 280, s = 0.6 + r() * 1.1;
+      x.fillStyle = "#e6e2cc"; x.beginPath(); x.ellipse(px, py, 20 * s, 10 * s, 0, 0, 6.3); x.fill();
+      x.fillStyle = "#050505"; x.beginPath(); x.arc(px + (r() - 0.5) * 8, py, 6 * s, 0, 6.3); x.fill();
+    }
+  } else if (kind === "mirror") {
+    const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, "#1c2024"); g.addColorStop(1, "#080a0c");
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    x.fillStyle = "rgba(210,215,225,0.1)"; x.beginPath(); x.ellipse(170, 150, 22, 34, 0, 0, 6.3); x.fill(); x.fillRect(150, 180, 40, 140); // someone standing behind you
+    x.strokeStyle = "rgba(200,200,210,0.25)"; x.lineWidth = 1;
+    for (let i = 0; i < 3; i++) { let px = r() * W, py = r() * 80; x.beginPath(); x.moveTo(px, py); for (let k = 0; k < 6; k++) { px += (r() - 0.5) * 40; py += 40; x.lineTo(px, py); } x.stroke(); }
+  } else if (kind === "clock") {
+    x.fillStyle = "#d8d2bc"; x.beginPath(); x.arc(100, 100, 92, 0, 6.3); x.fill();
+    x.strokeStyle = "#1a1612"; x.lineWidth = 4; x.stroke();
+    for (let i = 0; i < 12; i++) { const a = i * 0.5236; x.beginPath(); x.moveTo(100 + Math.sin(a) * 78, 100 - Math.cos(a) * 78); x.lineTo(100 + Math.sin(a) * 88, 100 - Math.cos(a) * 88); x.stroke(); }
+    x.lineWidth = 6; x.beginPath(); x.moveTo(100, 100); x.lineTo(100, 38); x.stroke(); // stuck at 12
+    x.beginPath(); x.moveTo(100, 100); x.lineTo(100, 28); x.stroke();
+  }
+  return c;
+}
+function addArt(kind, x, y, z, rot, h, seed, tilt) {
+  const cv = drawArt(kind, seed);
+  const w = h * (cv.width / cv.height);
+  const nx = Math.sin(rot), nz = Math.cos(rot);
+  const G = new THREE.Group();
+  G.position.set(x + nx * 0.02, y, z + nz * 0.02);
+  G.rotation.y = rot;
+  G.rotation.z = tilt || 0;
+  worldGroup.add(G);
+  const frameCol = kind === "mirror" ? 0x7a7a74 : kind === "family" ? 0x1a1410 : 0x3a2a1a;
+  const fr = new THREE.Mesh(new THREE.BoxGeometry(w + 0.08, h + 0.08, 0.03), new THREE.MeshStandardMaterial({ color: frameCol, roughness: 0.8 }));
+  G.add(fr);
+  const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(cv), roughness: kind === "mirror" ? 0.2 : 1 }));
+  pic.position.z = 0.017;
+  G.add(pic);
+}
+function addWallDecor() {
+  // hallway (north wall faces south; south wall faces north)
+  addArt("portrait", 8.5, 1.65, 5.0, 0, 0.7, 5);
+  addArt("landscape", 12.5, 1.6, 5.0, 0, 0.5, 6, 0.04);
+  addArt("family", 16.5, 1.6, 5.0, 0, 0.6, 7);
+  addArt("eyes", 11.0, 1.6, 7.0, Math.PI, 0.7, 8);
+  addArt("clock", 14.2, 2.0, 7.0, Math.PI, 0.35, 9);
+  addArt("mirror", 17.2, 1.6, 7.0, Math.PI, 0.75, 10);
+  addArt("portrait", 6.0, 1.65, 6.0, Math.PI / 2, 0.65, 12, -0.05);
+  // lobby
+  addArt("landscape", 6.0, 1.7, 8.0, 0, 0.6, 14);
+  addArt("portrait", 14.5, 1.7, 8.0, 0, 0.8, 15);
+  addArt("family", 17.5, 1.7, 8.0, 0, 0.6, 16, 0.05);
+  addArt("eyes", 1.0, 1.7, 9.2, Math.PI / 2, 0.7, 17);
+  addArt("clock", 1.0, 2.1, 11.0, Math.PI / 2, 0.4, 18);
+  addArt("portrait", 3.0, 1.7, 12.0, Math.PI, 0.7, 19);
+  addArt("mirror", 17.0, 1.6, 12.0, Math.PI, 0.8, 20);
+  // apartment 2 (olive)
+  addArt("child", 7.95, 1.6, 3.0, -Math.PI / 2, 0.45, 22);
+  addArt("clock", 5.0, 2.0, 3.2, Math.PI / 2, 0.32, 23);
+  addArt("landscape", 7.4, 1.7, 4.0, Math.PI, 0.38, 24);
+  // apartment 3 (mauve)
+  addArt("portrait", 9.0, 1.7, 1.5, Math.PI / 2, 0.6, 26);
+  addArt("landscape", 10.8, 1.7, 0.0, 0, 0.45, 27, -0.04);
+  addArt("eyes", 9.5, 1.7, 4.0, Math.PI, 0.6, 28);
+  // John's (dark red)
+  addArt("family", 16.0, 1.6, 1.4, -Math.PI / 2, 0.5, 30);
+  addArt("child", 13.0, 1.5, 1.1, Math.PI / 2, 0.45, 31, 0.1);
+  addArt("mirror", 13.5, 1.6, 4.0, Math.PI, 0.6, 32);
+  // floors: wood, carpet, tile where it belongs
+  floorPatch("tile", 1, 8, 19, 4, 1.0, 0.004); // lobby
+  floorPatch("plankDark", 6, 5, 14, 2, 1.0, 0.004); // hallway boards
+  floorPatch("runner", 6.4, 5.5, 13.2, 1.0, 1.0, 0.007); // runner down the middle
+  floorPatch("plank", 5, 0, 3, 4, 1.0, 0.004); // apartment 2
+  floorPatch("carpet", 9, 0, 3, 4, 1.0, 0.004); // apartment 3
+  floorPatch("plankDark", 13, 0, 3, 4, 1.0, 0.004); // John's
 }
 
 // ---- the staff room ---------------------------------------------------------------------------
@@ -3728,6 +4069,7 @@ function nearestInteractable() {
       if (h.id === "breaker") label = state.flags.powerOn ? "Breaker Panel" : "Open Breaker Panel";
       if (h.id === "boards") label = ""; // no prompt: you have to try things
       if (h.loot && (state.flags.looted || {})[h.id]) label = ""; // already searched
+      if (h.loot && isDoorSpot(spotOf(h))) label = (state.flags.doorsOpenA || {})[h.id] ? "Close" : h.label;
       if (h.lightSwitch) label = state.flags.apt2Light ? "" : "Flip Light Switch";
       doorTarget = { type: "hotspot", id: h.id, label };
     }
@@ -3752,7 +4094,7 @@ function updatePlayerHeight(dt) {
     }
     return;
   }
-  crouchK += ((state.phase === "explore" && keys.has("c") ? 1 : 0) - crouchK) * Math.min(1, dt * 9);
+  crouchK += ((state.phase === "explore" && state.crouch ? 1 : 0) - crouchK) * Math.min(1, dt * 9);
   const target = EYE_HEIGHT - CROUCH_DROP * crouchK + floorHeight(p.x, p.z);
   p.y += (target - p.y) * Math.min(1, dt * 10);
   const s = stairAt(p.x, p.z);
@@ -3909,6 +4251,8 @@ function handleInteract() {
       openPaper({ draw: drawStaffBoard });
     } else if (h.paper) {
       openPaper(h.paper);
+    } else if (h.loot && isDoorSpot(spotOf(h))) {
+      toggleDoor(h);
     } else if (h.loot) {
       if (!state.flags.looted) state.flags.looted = {};
       if (state.flags.looted[h.id]) return;
@@ -4125,11 +4469,12 @@ window.addEventListener("keydown", (e) => {
     cycleHeld();
     return;
   }
-  if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d", "c"].includes(key)) {
+  if (["arrowup", "arrowdown", "arrowleft", "arrowright", "w", "a", "s", "d"].includes(key)) {
     e.preventDefault();
     keys.add(key);
   }
   if (key === "e") handleInteract();
+  if (key === "c" && !e.repeat) state.crouch = !state.crouch; // press C to crouch, press again to stand
   if (key === "f") toggleFlashlight();
 });
 
@@ -5003,6 +5348,7 @@ function gameLoop() {
   updateScares(dt);
   updateFlies(dt);
   updateOpenAnims(dt);
+  updateDoorAnims(dt);
   updateWindowRun(dt);
   updateBedEyes(dt);
   updateFaceScare(dt);

@@ -223,7 +223,7 @@ const johnNote = (id, name, order, paper, sloppy, seed, spot) => {
   if (spot) Object.assign(it, { x: spot[0], y: spot[1], h: spot[2] || 0.02 }); else it.hidden = true;
   ITEMS.push(it);
 };
-johnNote("nSep2", "Sept 5", 0.5, "Sept 5\nif anything happens to me\nI'm giving you my key,\njust in case.\nI left the thing we\ndiscussed underneath\nmy bed. don't let\nanyone else in. - J", 0.45, 59);
+johnNote("nSep2", "Sept 5", 0.5, "Sept 5\nif anything happens to me\nI'm giving you my key,\njust in case.\nI left the thing we\ndiscussed underneath\nmy bed. don't let\nanyone else in. - J", 0.15, 59);
 johnNote("nSep3", "Sept 3", 1, "Sept 3\nmoved into 4 today.\nquiet building, good rent.\nthe manager would not look\nat me when he gave me\nthe key.", 0.1, 61);
 johnNote("nSep9", "Sept 9", 2, "Sept 9\nsomeone walks the halls\nat night. slow. heavy.\nchecked the peephole.\nnothing there.\nprobably the pipes.", 0.2, 62);
 johnNote("nSep14", "Sept 14", 3, "Sept 14\nit is not the pipes.\nthe walking stops outside\nmy door. every night 3:13.\nstopped using the peephole.", 0.4, 63, [26.2, 2.2]);
