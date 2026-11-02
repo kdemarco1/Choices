@@ -1812,7 +1812,7 @@ function buildWorld() {
   const interiorMat = new THREE.MeshStandardMaterial({ map: interiorWallTexture, roughness: 0.95 });
   // No moon: the street walls and roof carry a faint cold glow of their own.
   const facadeMat = new THREE.MeshStandardMaterial({ map: facadeTexture, roughness: 0.95, emissive: 0x03050a });
-  const lobbyWallMat = new THREE.MeshStandardMaterial({ map: lobbyWallTexture, roughness: 0.95 });
+  const lobbyWallMat = getWallMats().lobby; // the lobby side of the front wall matches the rest of the lobby
   const facadeGeo = new THREE.BoxGeometry(1, FACADE_H, 1);
   const wallGeo = new THREE.BoxGeometry(1, WALL_HEIGHT, 1);
 
