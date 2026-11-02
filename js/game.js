@@ -88,9 +88,9 @@ function groundLit() {
 function currentLightRange() {
   if (hasFlashlightOn() || groundLit()) return LIT_RANGE;
   if (inApt2(yawObject.position.x, yawObject.position.z)) return 4.6; // moonlight through the window
-  // the reception lamp throws enough light that the desk reads from across the lobby
-  const near = Math.hypot(yawObject.position.x - 2.8, yawObject.position.z - 10.5) < 6.5;
-  return near ? 5.5 : DARK_RANGE;
+  // the flickering STAFF sign lights the lobby just enough to see the desk and the way to it
+  const nearSign = Math.hypot(yawObject.position.x - 3.5, yawObject.position.z - 8.4) < 10 && yawObject.position.z > 8 && yawObject.position.x < 21;
+  return nearSign ? 5.2 : DARK_RANGE;
 }
 
 function isOutside() {
@@ -475,6 +475,7 @@ function playKnock() {
 }
 
 function toggleFlashlight() {
+  if (state.flags.hints && state.flags.hints.f) hideHint();
   if (!state.inventory.flashlight) {
     return;
   }
@@ -993,6 +994,7 @@ let elevLightMat = null;
 let elevLightTimer = 0;
 let elevAnim = null; // seconds into the door-opening sequence
 let staffSignMat = null;
+let staffHaloMat = null;
 let staffSignLight = null;
 const STAFF_SIGN_LEVEL = 0.9;
 let staffSignTimer = 0;
@@ -1792,6 +1794,7 @@ function buildWorld() {
   elevLight = null;
   elevLightMat = null;
   staffSignMat = null;
+  staffHaloMat = null;
   staffSignLight = null;
   solids = [];
   deskLamp = null;
@@ -3488,11 +3491,25 @@ function addLevels() {
     r.rotation.y = i * 0.7;
   });
   // flickering STAFF sign over the staff door, on the lobby side
-  staffSignMat = new THREE.MeshBasicMaterial({ map: makeSignTexture("STAFF", "#10140f", "#d7e6a8") });
+  staffSignMat = new THREE.MeshBasicMaterial({ map: makeSignTexture("STAFF", "#10140f", "#d7e6a8"), fog: false }); // fog-free: you see it flicker from the front door
   const staffSign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.225), staffSignMat);
   staffSign.position.set(3.5, 2.82, 8.02);
   worldGroup.add(staffSign);
-  staffSignLight = new THREE.PointLight(0xd7e6a8, STAFF_SIGN_LEVEL, 4, 2);
+  // a soft halo round the sign so the flicker reads from across the lobby
+  const hc = document.createElement("canvas");
+  hc.width = hc.height = 64;
+  const hx = hc.getContext("2d");
+  const hg = hx.createRadialGradient(32, 32, 2, 32, 32, 32);
+  hg.addColorStop(0, "rgba(215,230,168,0.9)");
+  hg.addColorStop(0.4, "rgba(160,190,110,0.28)");
+  hg.addColorStop(1, "rgba(0,0,0,0)");
+  hx.fillStyle = hg;
+  hx.fillRect(0, 0, 64, 64);
+  staffHaloMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(hc), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  const halo = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), staffHaloMat);
+  halo.position.set(3.5, 2.82, 8.04);
+  worldGroup.add(halo);
+  staffSignLight = new THREE.PointLight(0xd7e6a8, STAFF_SIGN_LEVEL, 8, 2);
   staffSignLight.position.set(3.5, 2.6, 8.4);
   worldGroup.add(staffSignLight);
   // staff room (west end of the hallway): shelf, mop bucket, breaker panel
@@ -3598,14 +3615,12 @@ function addReceptionDesk(cx, cz) {
     new THREE.MeshStandardMaterial({ color: 0x1d2a22, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide })
   );
   shade.position.set(lx - 0.2, 1.06, lz);
-  deskBulbMat = new THREE.MeshBasicMaterial({ color: 0xffd27a });
+  deskBulbMat = new THREE.MeshBasicMaterial({ color: 0x2a2418 }); // the lamp is dead
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 10), deskBulbMat);
   bulb.position.set(lx - 0.2, 1.0, lz);
   [lbase, lstem, larm, shade, bulb].forEach((m) => G.add(m));
 
-  deskLamp = new THREE.PointLight(0xffb347, DESK_LAMP_LEVEL, 8, 2);
-  deskLamp.position.set(lx - 0.2, 0.96, lz);
-  G.add(deskLamp);
+  deskLamp = null; // no light from the reception desk: the flickering STAFF sign is the only lamp in the lobby
 
   // RECEPTION plate on the customer-facing side
   const plate = new THREE.Mesh(
@@ -4123,7 +4138,23 @@ function updateStaffSign(dt) {
   const level = r < 0.55 ? 1 : r < 0.8 ? 0.45 + Math.random() * 0.4 : r < 0.92 ? 0.12 : 0;
   staffSignTimer = level === 1 ? 0.15 + Math.random() * 0.9 : 0.04 + Math.random() * 0.1;
   staffSignMat.color.setRGB(level, level, level);
+  if (staffHaloMat) staffHaloMat.opacity = level;
   if (staffSignLight) staffSignLight.intensity = STAFF_SIGN_LEVEL * 1.1 * level;
+}
+
+// The first time you step through the front door your view drifts left, toward the flickering STAFF sign.
+let entryLookLeft = 0;
+function updateEntryLook(dt) {
+  const p = yawObject.position;
+  if (state.phase === "explore" && !state.flags.entryLook && p.z < 13.3 && p.z > 11 && p.x > 6 && p.x < 11) {
+    state.flags.entryLook = true;
+    entryLookLeft = 0.55;
+  }
+  if (entryLookLeft > 0 && state.phase === "explore") {
+    const step = Math.min(entryLookLeft, dt * 0.4);
+    yawObject.rotation.y += step;
+    entryLookLeft -= step;
+  }
 }
 
 function updateDeskLampFlicker(dt) {
@@ -4351,8 +4382,46 @@ function updateTutorialBanner() {
   b.classList.toggle("hidden", !(state.flags.tut === "open" && state.phase === "explore"));
 }
 
+// First-time control hints: each control is explained once, at the bottom of the screen, the first time it matters.
+let hintEl = null;
+let hintUntil = 0;
+function hintBusy() {
+  return performance.now() < hintUntil;
+}
+function hideHint() {
+  hintUntil = 0;
+  if (hintEl) hintEl.style.opacity = "0";
+}
+function hintOnce(key, text) {
+  if (!state.flags.hints) state.flags.hints = {};
+  if (state.flags.hints[key] || hintBusy() || state.phase !== "explore") return false;
+  state.flags.hints[key] = true;
+  try {
+    if (!hintEl) {
+      hintEl = document.createElement("div");
+      hintEl.className = "interact-prompt"; // the same box as every other instruction
+      hintEl.style.cssText = "position:fixed;z-index:60;opacity:0;transition:opacity 0.5s";
+      document.body.appendChild(hintEl);
+    }
+    hintEl.textContent = text;
+    hintEl.style.opacity = "1";
+    hintUntil = performance.now() + 4500;
+    setTimeout(() => { if (performance.now() >= hintUntil - 50 && hintEl) hintEl.style.opacity = "0"; }, 4500);
+  } catch (e) {}
+  return true;
+}
+function updateControlHints() {
+  if (!state.settings.showPrompts || state.activeNpc || state.transition || state.phase !== "explore") return;
+  const p = yawObject.position;
+  if (state.inventory.flashlight && !state.flags.tut && !state.flashlightOn && state.batteryLevel > 0) hintOnce("f", "Click F to turn on flashlight");
+  if (p.x >= 5 && p.x < 16 && p.z < 4 && !state.flags.tut) hintOnce("c", "Click C to crouch and look underneath things");
+  const t = nearestInteractable();
+  if (t && t.label && !state.flags.tut) hintOnce("e", "Click E to " + t.label);
+}
+
 function updateInteractPrompt() {
   updateTutorialBanner();
+  updateControlHints();
   const prompt = document.getElementById("interact-prompt");
   if (state.activeNpc || state.phase === "breaker" || !state.settings.showPrompts) {
     prompt.classList.add("hidden");
@@ -5563,6 +5632,7 @@ function gameLoop() {
   updateBreaker(dt);
   updateScares(dt);
   updateFlies(dt);
+  updateEntryLook(dt);
   updateOpenAnims(dt);
   updateDoorAnims(dt);
   updateWindowRun(dt);

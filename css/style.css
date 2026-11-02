@@ -554,78 +554,56 @@ h1 {
   white-space: nowrap;
 }
 
-/* inventory: a sheet of ruled paper with handwriting, like the notes */
-#inventory-overlay .dialogue-box {
-  background-color: #d8ceae;
-  background-image: repeating-linear-gradient(transparent 0 37px, rgba(70, 90, 120, 0.2) 37px 38px);
-  color: #1d1f2e;
-  border: 1px solid #8a7a52;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.7);
-  min-width: min(90vw, 400px);
-  font-family: "Reenie Beanie", "Nothing You Could Do", "Segoe Script", "Bradley Hand", cursive;
-}
-#inventory-overlay h1 {
-  color: #1d1f2e;
-  font-size: 40px;
-  letter-spacing: 2px;
-  margin: 0 0 8px;
-}
-#inventory-overlay .inv-row {
-  gap: 18px;
-  margin: 0;
-  min-height: 38px;
-  padding: 0;
-}
-#inventory-overlay .inv-row span {
-  font-size: 26px;
-  color: #1d1f2e;
-}
-#inventory-overlay .choice-button {
-  background: transparent;
-  border: 2px solid #1d1f2e;
-  border-radius: 2px;
-  color: #1d1f2e;
-  font-family: inherit;
-  font-size: 22px;
-  padding: 0 14px;
-  line-height: 1.2;
-}
-#inventory-overlay .choice-button:hover:not(:disabled) {
-  background: rgba(29, 31, 46, 0.14);
-}
-#inventory-overlay .choice-button:disabled {
-  opacity: 1;
-  cursor: default;
-  color: #2f6b3a;
-  border-color: #2f6b3a;
-  background: rgba(47, 107, 58, 0.1);
-}
-.inv-hint {
-  margin: 14px 0 0;
-  font-size: 20px;
-  line-height: 1.3;
-  color: #4a4636;
-  text-align: center;
-}
 
+
+/* ================= one look for everything the game says to you ================= */
+:root {
+  --ui-bg: rgba(11, 10, 13, 0.88);
+  --ui-border: #6b6259;
+  --ui-text: #d8d3c4;
+  --ui-dim: #8c8478;
+  --ui-font: "Courier New", monospace;
+}
+.interact-prompt,
+.tutorial-banner,
+.pickup-popup,
+.battery-hud,
+.pointer-lock-hint,
+.hint-overlay,
+.log-overlay,
+.dialogue-box {
+  background: var(--ui-bg);
+  border: 1px solid var(--ui-border);
+  border-radius: 3px;
+  color: var(--ui-text);
+  font-family: var(--ui-font);
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  box-shadow: none;
+  text-shadow: none;
+  font-style: normal;
+}
+/* prompts and instructions: bottom centre, same place, same box */
+.interact-prompt,
 .tutorial-banner {
   position: absolute;
   left: 50%;
-  bottom: 16%;
+  bottom: 24px;
   transform: translateX(-50%);
-  padding: 12px 30px;
-  background: #d8ceae;
-  color: #1d1f2e;
-  border: 1px solid #8a7a52;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.7);
-  font-family: "Reenie Beanie", "Nothing You Could Do", "Segoe Script", "Bradley Hand", cursive;
-  font-size: 30px;
+  padding: 8px 16px;
+  white-space: nowrap;
   pointer-events: none;
-  z-index: 25;
 }
-.tutorial-banner.hidden {
-  display: none;
-}
-#inventory-hint b {
-  color: #7a2a22;
-}
+.tutorial-banner b { color: #fff; }
+.pickup-popup { padding: 8px 16px; }
+.pointer-lock-hint { padding: 8px 16px; }
+.dialogue-text, .story-content, .inv-hint, .choice-button, .caption { font-family: var(--ui-font); font-style: normal; }
+.dialogue-box { background: var(--ui-bg); }
+.pause-box { min-width: min(90vw, 320px); }
+.choice-button { background: transparent; border: 1px solid var(--ui-border); color: var(--ui-text); font-size: 14px; }
+.choice-button:hover:not(:disabled) { background: rgba(216, 211, 196, 0.1); }
+.choice-button:disabled { color: #5c8a52; border-color: #5c8a52; opacity: 1; cursor: default; }
+.secondary-button, .primary-button, .toggle-button { font-family: var(--ui-font); }
+.inv-row span { color: var(--ui-text); font-size: 14px; }
+.inv-hint { margin: 14px 0 0; font-size: 12px; line-height: 1.5; color: var(--ui-dim); text-align: center; }
+#inventory-overlay h1 { color: var(--ui-text); font-family: var(--ui-font); font-size: 18px; letter-spacing: 3px; text-transform: uppercase; margin: 0 0 12px; }
