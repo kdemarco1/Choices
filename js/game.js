@@ -215,7 +215,7 @@ function syncAmbient() {
   const want = state.settings.soundOn && state.phase === "explore";
   if (want === ambientOn) return;
   ambientOn = want;
-  ambientGains.forEach((g) => (g.gain.value = want ? 0.03 : 0));
+  ambientGains.forEach((g) => (g.gain.value = want ? 0.018 : 0));
 }
 
 function audioReady() {
@@ -1607,7 +1607,7 @@ function addOutdoors(cols, rows) {
     worldGroup.add(m);
   };
   const cx = cols / 2;
-  flat(240, 240, cx, rows + 40, -0.02, 0x10150e); // dark ground all around
+  flat(240, 240, cx, rows + 40, -3.15, 0x10150e); // dark ground all around (well below the floor, so it never covers the stairwells)
   flat(160, 9, cx, rows + 4.5, 0.004, 0x1b1b1e); // the road behind you, z 20-29
   flat(160, 2.2, cx, rows + 10.1, 0.004, 0x2e2e2c); // far sidewalk
   flat(1.8, 3.4, FRONT_DOOR.x, rows - 2.4, 0.007, 0x3b3b39); // path from the door to the road
@@ -2353,6 +2353,52 @@ function addApartment(a) {
     worldGroup.add(m);
   });
 
+  // ---- trim: baseboards and crown moulding make each flat look finished, in its own colour
+  {
+    const trim = { apt2: 0xcfc4a0, apt3: 0xd8c6cc, john: 0x1c1010 }[a.id] || 0x8a7a60;
+    addBox(2.96, 0.12, 0.03, ox + 1.5, 0.06, 0.03, trim);
+    addBox(0.03, 0.12, 3.94, ox + 0.03, 0.06, 2.0, trim);
+    addBox(0.03, 0.12, 3.94, ox + 2.97, 0.06, 2.0, trim);
+    addBox(0.95, 0.12, 0.03, ox + 0.5, 0.06, 3.97, trim);
+    addBox(0.95, 0.12, 0.03, ox + 2.5, 0.06, 3.97, trim);
+    addBox(2.96, 0.1, 0.06, ox + 1.5, 2.94, 0.04, trim);
+    addBox(0.06, 0.1, 3.94, ox + 0.04, 2.94, 2.0, trim);
+    addBox(0.06, 0.1, 3.94, ox + 2.96, 2.94, 2.0, trim);
+    addBox(2.96, 0.1, 0.06, ox + 1.5, 2.94, 3.96, trim);
+  }
+  if (a.id === "apt3") {
+    // the collector: a wall of old photographs, dolls on the dresser, a red-shaded lamp, the calendar by the desk
+    const pw = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPhotoWall()), roughness: 1 }));
+    pw.position.set(ox + 1.5, 1.85, 0.045);
+    worldGroup.add(pw);
+    [-0.28, 0, 0.28].forEach((dx, i) => {
+      const body = addBox(0.1, 0.16, 0.07, ox + 1.95 + dx, 0.96, 0.3, [0x6a3a4a, 0x3a4a6a, 0x5a5a3a][i]);
+      body.rotation.y = (i - 1) * 0.5;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), new THREE.MeshStandardMaterial({ color: 0xe0d6c0, roughness: 0.6 }));
+      head.position.set(ox + 1.95 + dx, 1.12, 0.3);
+      worldGroup.add(head);
+    });
+    furn(1.4, 3.35, 0, [0.3, 0.3], (b) => {
+      b(0.04, 1.5, 0.04, 0, 0.75, 0, 0x2a2018);
+      b(0.2, 0.03, 0.2, 0, 0.02, 0, 0x2a2018);
+      const sh = b(0.28, 0.22, 0.28, 0, 1.55, 0, 0x7a2018);
+      sh.material = new THREE.MeshBasicMaterial({ color: 0x7a2418 });
+    });
+    const cal = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.48), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawCalendar()), roughness: 1 }));
+    cal.rotation.y = -Math.PI / 2;
+    cal.position.set(ox + 2.96, 1.55, 3.4);
+    worldGroup.add(cal);
+  }
+  if (a.id === "john") {
+    // red string and clippings on the north wall, newspapers piled on the floor, foil over the glass
+    const sb = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.9), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawStringBoard()), roughness: 1 }));
+    sb.position.set(ox + 2.35, 1.7, 0.045);
+    worldGroup.add(sb);
+    [[0.6, 3.5, 0.5, 0.2], [0.75, 3.6, 0.4, 0.35], [2.2, 2.0, 0.35, 0.15]].forEach(([x, z, s, h]) => {
+      const m = addBox(s, h, s * 0.8, ox + x, h / 2, z, 0x9a9484);
+      m.rotation.y = x;
+    });
+  }
   // ---- damage
   (dmg.ceil || []).forEach(([x, z, w, d]) => {
     addBox(w, 0.02, d, ox + x, WALL_HEIGHT - 0.012, z, 0x020202);
@@ -2614,6 +2660,118 @@ function updateBedEyes(dt) {
     b.gone = true;
     b.g.visible = false;
     playSkitter();
+  }
+}
+
+
+// ---- the score: a dark generative piece (music box, bowed swells, a heartbeat) and random things in the walls ----
+let musicBus = null;
+let musicTimer = 3;
+let musicStep = 0;
+let beatTimer = 0;
+let eventTimer = 25;
+const MUSIC_SCALE = [220, 261.63, 311.13, 329.63, 369.99, 440]; // A minor with a flat fifth and a major seventh pull
+const MUSIC_CHORDS = [[110, 130.81, 164.81], [87.31, 130.81, 174.61], [82.41, 123.47, 155.56], [110, 138.59, 164.81]];
+function ensureMusicBus() {
+  if (musicBus || !audioCtx) return;
+  const input = audioCtx.createGain();
+  const out = audioCtx.createGain();
+  out.gain.value = 0.9;
+  input.connect(out);
+  // a cheap cavern: two feedback delays through a lowpass
+  [[0.37, 0.45], [0.53, 0.4]].forEach(([dtm, fb]) => {
+    const d = audioCtx.createDelay(1);
+    d.delayTime.value = dtm;
+    const f = audioCtx.createGain();
+    f.gain.value = fb;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 1400;
+    input.connect(d);
+    d.connect(lp).connect(f).connect(d);
+    lp.connect(out);
+  });
+  out.connect(audioCtx.destination);
+  musicBus = input;
+}
+function musicNote(f, t, vol, dur) {
+  [[1, 0.5], [2.01, 0.22], [3.02, 0.1]].forEach(([m, v]) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.value = f * m * (1 + (Math.random() - 0.5) * 0.004);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(vol * v, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur / m);
+    o.connect(g).connect(musicBus);
+    o.start(t);
+    o.stop(t + dur / m + 0.05);
+  });
+}
+function musicSwell(chord, t, vol, dur) {
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = "lowpass";
+  lp.frequency.setValueAtTime(260, t);
+  lp.frequency.linearRampToValueAtTime(900, t + dur * 0.6);
+  lp.frequency.linearRampToValueAtTime(240, t + dur);
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + dur * 0.5);
+  g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  lp.connect(g).connect(musicBus);
+  chord.forEach((f, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.value = f * (1 + (i - 1) * 0.003);
+    o.connect(lp);
+    o.start(t);
+    o.stop(t + dur + 0.1);
+  });
+}
+function playScoreBeat(vol) {
+  const t = audioCtx.currentTime;
+  [0, 0.2].forEach((off, i) => {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.type = "sine";
+    o.frequency.setValueAtTime(70 - i * 12, t + off);
+    o.frequency.exponentialRampToValueAtTime(34, t + off + 0.18);
+    g.gain.setValueAtTime(0.0001, t + off);
+    g.gain.linearRampToValueAtTime(vol * (i ? 0.7 : 1), t + off + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.2);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t + off);
+    o.stop(t + off + 0.25);
+  });
+}
+function updateMusic(dt) {
+  if (!audioReady() || state.phase !== "explore" && state.phase !== "breaker") return;
+  ensureMusicBus();
+  if (!musicBus) return;
+  const tension = typeof entityTension === "number" ? entityTension : 0;
+  const lvl = levelOf(yawObject.position.x);
+  const dark = !state.flags.powerOn || lvl === 2 ? 1 : 0.55;
+  // music box notes, sparser when it's quiet and busier as the thing closes in
+  musicTimer -= dt;
+  if (musicTimer <= 0) {
+    const t = audioCtx.currentTime + 0.05;
+    const chord = MUSIC_CHORDS[Math.floor(musicStep / 4) % MUSIC_CHORDS.length];
+    if (musicStep % 4 === 0) musicSwell(chord, t, 0.05 * dark, 7);
+    const n = MUSIC_SCALE[Math.floor(Math.random() * MUSIC_SCALE.length)] * (Math.random() < 0.25 ? 2 : 1);
+    if (Math.random() < 0.8) musicNote(n, t, 0.09 * dark, 2.6);
+    if (tension > 0.4 && Math.random() < 0.5) musicNote(n * 1.06, t + 0.12, 0.05, 1.6); // a note a semitone off
+    musicStep++;
+    musicTimer = (2.4 - tension * 1.6) * (0.7 + Math.random() * 0.8);
+  }
+  // things in the walls: a knock, a skitter, a lights stutter. Only when there's no light on you.
+  eventTimer -= dt;
+  if (eventTimer <= 0 && state.phase === "explore" && !state.transition) {
+    eventTimer = 18 + Math.random() * 22 - tension * 10;
+    const r = Math.random();
+    if (r < 0.35) { playKnock(); setTimeout(playKnock, 420 + Math.random() * 300); }
+    else if (r < 0.65) playSkitter();
+    else if (r < 0.85) scareBlackout = 0.35 + Math.random() * 0.3;
+    else playSting();
   }
 }
 
@@ -3255,6 +3413,55 @@ function addWallDecor() {
   floorPatch("plankDark", 13, 0, 3, 4, 1.0, 0.004); // John's
 }
 
+
+function drawPhotoWall() {
+  const c = document.createElement("canvas");
+  c.width = 512; c.height = 256;
+  const x = c.getContext("2d");
+  x.fillStyle = "#00000000"; x.clearRect(0, 0, 512, 256);
+  for (let i = 0; i < 6; i++) {
+    const px = 14 + (i % 3) * 164, py = 12 + Math.floor(i / 3) * 124;
+    x.fillStyle = "#2a1c12"; x.fillRect(px, py, 150, 112);
+    x.fillStyle = ["#b8a888", "#a89878", "#c0b090"][i % 3]; x.fillRect(px + 8, py + 8, 134, 96);
+    x.fillStyle = "#3a2e22"; x.beginPath(); x.arc(px + 75, py + 48, 22, 0, 6.3); x.fill(); x.fillRect(px + 45, py + 70, 60, 34);
+    x.fillStyle = "#d8cdb0"; x.beginPath(); x.arc(px + 75, py + 46, 17, 0, 6.3); x.fill();
+    x.fillStyle = "#14100c"; x.fillRect(px + 66, py + 42, 5, 6); x.fillRect(px + 80, py + 42, 5, 6);
+    if (i === 4) { x.fillStyle = "#b8a888"; x.fillRect(px + 8, py + 8, 134, 96); } // an empty frame
+    if (i === 2) { x.strokeStyle = "#120c08"; x.lineWidth = 4; for (let k = 0; k < 9; k++) { x.beginPath(); x.moveTo(px + 40 + k * 8, py + 20); x.lineTo(px + 30 + k * 9, py + 90); x.stroke(); } }
+  }
+  return c;
+}
+function drawCalendar() {
+  const c = document.createElement("canvas");
+  c.width = 180; c.height = 240;
+  const x = c.getContext("2d");
+  x.fillStyle = "#e6dfc8"; x.fillRect(0, 0, 180, 240);
+  x.fillStyle = "#8a1f1f"; x.fillRect(0, 0, 180, 36);
+  x.fillStyle = "#e6dfc8"; x.font = "bold 20px Courier New"; x.fillText("SEPTEMBER", 28, 25);
+  x.fillStyle = "#222"; x.font = "14px Courier New";
+  for (let i = 0; i < 30; i++) x.fillText(String(i + 1), 10 + (i % 7) * 24, 62 + Math.floor(i / 7) * 36);
+  x.strokeStyle = "#8a1010"; x.lineWidth = 2;
+  [14, 20].forEach((n) => { const cx = 16 + ((n - 1) % 7) * 24, cy = 57 + Math.floor((n - 1) / 7) * 36; x.beginPath(); x.moveTo(cx - 8, cy - 8); x.lineTo(cx + 8, cy + 8); x.moveTo(cx + 8, cy - 8); x.lineTo(cx - 8, cy + 8); x.stroke(); });
+  for (let k = 0; k < 3; k++) { const cx = 16 + 6 * 24, cy = 57 + 3 * 36; x.beginPath(); x.ellipse(cx, cy, 13 + k * 3, 11 + k * 3, k * 0.4, 0, 6.3); x.stroke(); }
+  return c;
+}
+function drawStringBoard() {
+  const c = document.createElement("canvas");
+  c.width = 320; c.height = 360;
+  const x = c.getContext("2d");
+  x.fillStyle = "#6a5030"; x.fillRect(0, 0, 320, 360);
+  const pins = [[60, 60], [240, 70], [70, 200], [250, 210], [160, 300], [160, 150]];
+  x.strokeStyle = "#a01414"; x.lineWidth = 2;
+  [[0, 5], [1, 5], [2, 5], [3, 5], [4, 5], [0, 1], [2, 4]].forEach(([p, q]) => { x.beginPath(); x.moveTo(pins[p][0], pins[p][1]); x.lineTo(pins[q][0], pins[q][1]); x.stroke(); });
+  pins.forEach(([px, py], i) => {
+    x.fillStyle = i === 5 ? "#14100c" : "#d8d0b8"; x.fillRect(px - 30, py - 26, 60, 52);
+    x.fillStyle = i === 5 ? "#8a1010" : "#6a6050";
+    if (i === 5) { x.font = "bold 40px Courier New"; x.fillText("?", px - 11, py + 14); } else { x.fillRect(px - 22, py - 18, 44, 24); x.fillStyle = "#3a3228"; for (let k = 0; k < 3; k++) x.fillRect(px - 22, py + 10 + k * 5, 44, 2); }
+    x.fillStyle = "#a01414"; x.beginPath(); x.arc(px, py - 24, 4, 0, 6.3); x.fill();
+  });
+  return c;
+}
+
 // ---- the staff room ---------------------------------------------------------------------------
 let carpetTex = null;
 function getCarpetTexture() {
@@ -3685,7 +3892,7 @@ function addPlaneWithHoles(y, rotX, mat, width, depth, holes) {
 // Every staircase: solid steps (or steps cut down below the floor), railings, tall shafts for the ones that climb.
 function addStairs() {
   const N = STAIR_STEPS;
-  const stone = 0x34343a;
+  const stone = 0x5a4632; // worn wooden stairs
   STAIRS.forEach((s) => {
     const dz = (s.z1 - s.z0) / N;
     const depth = Math.abs(dz);
@@ -3705,7 +3912,9 @@ function addStairs() {
     // worn steps: a lighter nosing on every tread, and a banister with posts down each side
     for (let i = 0; i < N; i++) {
       const top = (s.rise * (i + 1)) / N;
-      addBox(w - 0.04, 0.03, 0.05, cx, top + 0.015, s.z0 + dz * i + (dz < 0 ? -0.025 : 0.025), 0x55555c);
+      const edge = s.z0 + dz * i;
+      addBox(w - 0.04, 0.03, 0.14, cx, top + 0.015, edge + (dz < 0 ? -0.07 : 0.07), 0xb09060); // lit tread edge
+      addBox(w - 0.04, 0.03, 0.03, cx, top + 0.016, edge + (dz < 0 ? -0.16 : 0.16), 0x140c06); // dark gap before the next riser
     }
     const run = zhi - zlo;
     const len = Math.hypot(run, s.rise);
@@ -3741,16 +3950,25 @@ function addStairs() {
       worldGroup.add(cap);
     }
   });
-  // Boards nailed across the ground-floor flight, until they're chopped.
-  const up = STAIRS[0];
-  if (!state.flags.boardsChopped) {
-    const zb = 2.5;
-    const base = floorHeight(17.75, zb);
+  // Boards nailed across the top of the cellar stairs, until they're chopped.
+  if (!state.flags.boardsChopped && yawObject.position.x < 21) {
+    const zb = 3.4;
+    const base = floorHeight(18.5, zb);
     [0.3, 0.62, 0.94, 1.26].forEach((dy, i) => {
-      const plank = addBox(1.6, 0.17, 0.05, (up.x0 + up.x1) / 2, base + dy, zb - (i % 2) * 0.05, 0x3a2a1c);
+      const plank = addBox(2.0, 0.17, 0.05, 18.5, base + dy, zb - (i % 2) * 0.05, 0x3a2a1c);
       plank.rotation.z = ((i % 3) - 1) * 0.07;
     });
-    addSolid((up.x0 + up.x1) / 2, zb, up.x1 - up.x0, 0.35);
+    addSolid(18.5, zb, 2.0, 0.35);
+  }
+  // upstairs: the elevator is the only way back down
+  if (levelOf(yawObject.position.x) === 1) {
+    addBox(1.1, 2.2, 0.08, 24.5, 1.1, 1.05, 0x8a8f95);
+    addBox(0.02, 2.2, 0.09, 24.5, 1.1, 1.05, 0x2a2c2e);
+    addBox(1.3, 0.1, 0.1, 24.5, 2.25, 1.06, 0x55585c);
+    addBox(0.08, 0.14, 0.03, 25.3, 1.2, 1.05, 0xc8a020);
+    const el = new THREE.PointLight(0xc8a020, 0.5, 3, 2);
+    el.position.set(24.5, 2.3, 1.6);
+    worldGroup.add(el);
   }
   const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
   bulb.position.set(17.75, 2.5, 3.4);
@@ -4121,11 +4339,8 @@ function updateElevator(dt) {
   setElevatorOpen(k * k * (3 - 2 * k));
   if (elevAnim >= 1.3) {
     elevAnim = null;
-    state.flags.elevatorStuck = true;
     setElevatorOpen(1);
-    playKnock();
-    setTimeout(playKnock, 160);
-    addLog("The doors jam.");
+    startTransition({ x: 24.5, y: 3.3, yaw: Math.PI }); // up to the second floor
   }
 }
 
@@ -4392,6 +4607,20 @@ function hideHint() {
   hintUntil = 0;
   if (hintEl) hintEl.style.opacity = "0";
 }
+function showMessage(text) {
+  try {
+    if (!hintEl) {
+      hintEl = document.createElement("div");
+      hintEl.className = "interact-prompt";
+      hintEl.style.cssText = "position:fixed;z-index:60;opacity:0;transition:opacity 0.5s";
+      document.body.appendChild(hintEl);
+    }
+    hintEl.textContent = text;
+    hintEl.style.opacity = "1";
+    hintUntil = performance.now() + 1800;
+    setTimeout(() => { if (performance.now() >= hintUntil - 50 && hintEl) hintEl.style.opacity = "0"; }, 1800);
+  } catch (e) {}
+}
 function hintOnce(key, text) {
   if (!state.flags.hints) state.flags.hints = {};
   if (state.flags.hints[key] || hintBusy() || state.phase !== "explore") return false;
@@ -4453,12 +4682,9 @@ function handleInteract() {
     const f = FIXTURES.find((x) => x.id === target.id);
     if (f.id === "elevator") {
       if (elevAnim !== null) return;
-      if (state.flags.elevatorStuck) {
-        playKnock();
-        addLog("Jammed.");
-      } else if (!state.flags.powerOn) {
+      if (!state.flags.powerOn) {
         playClick();
-        addLog("No power.");
+        showMessage("No power");
       } else {
         playDing();
         elevAnim = 0;
@@ -4475,7 +4701,7 @@ function handleInteract() {
       playDoorCreak(door);
     } else if (door.locked && !(door.keyId && state.inventory[door.keyId])) {
       playJingle();
-      addLog(door.lockedText || "Locked.");
+      showMessage("Locked");
     } else {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
@@ -4524,6 +4750,9 @@ function handleInteract() {
       const pt = PORTALS.find((p) => p.door === h.exit);
       playDoorCreak(DOORS.find((dr) => dr.id === h.exit));
       startTransition(pt.back);
+    } else if (h.elevatorDown) {
+      playDing();
+      startTransition({ x: 11.5, y: 9.2, yaw: Math.PI }); // down to the lobby
     } else if (h.lightSwitch) {
       playClick();
       if (state.flags.powerOn && !state.flags.apt2Light) {
@@ -4825,10 +5054,10 @@ document.getElementById("dialogue-exit").addEventListener("click", closeDialogue
 // closes in, faster the longer you stay there. Light on but not on it: it hangs back.
 // Light on it: it recoils. Switching the power on drives it out for good.
 
-const ENTITY_SPAWN_DELAY = 12; // seconds after the hall door opens
-const ENTITY_SPEED_DARK = 0.9; // how fast it creeps when you've only just lost the light
-const ENTITY_SPEED_RUSH = 5.6; // where it ends up if you stay in the dark: far faster than you
-const ENTITY_DARK_RAMP = 9; // seconds in the dark to reach full rush
+const ENTITY_SPAWN_DELAY = 8; // seconds after the hall door opens
+const ENTITY_SPEED_DARK = 1.3; // how fast it creeps when you've only just lost the light
+const ENTITY_SPEED_RUSH = 6.4; // where it ends up if you stay in the dark: far faster than you
+const ENTITY_DARK_RAMP = 7; // seconds in the dark to reach full rush
 const ENTITY_SPEED_WATCHING = 0.25;
 const ENTITY_RETREAT_SPEED = 1.8;
 const ENTITY_CATCH_DIST = 0.85;
@@ -5638,6 +5867,7 @@ function gameLoop() {
   updateWindowRun(dt);
   updateBedEyes(dt);
   updateFaceScare(dt);
+  updateMusic(dt);
   doorShake = Math.max(0, doorShake - dt);
   camera.rotation.z = doorShake > 0 ? Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4) : 0;
   applyTension(entityTension);

@@ -90,7 +90,8 @@ const ITEMS = [
 
 // Spots you can use with E. 'go' teleports between levels.
 const HOTSPOTS = [
-  { id: "boards", x: 17.75, y: 2.95, label: "Boards" },
+  { id: "boards", x: 18.5, y: 3.4, label: "Boards" },
+  { id: "elevatorDown", x: 24.5, y: 2.3, label: "Call Elevator", elevatorDown: true },
   { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 53.2, y: 1.9, label: "Flip Breaker" },
@@ -172,10 +173,8 @@ const GUEST_PAPER = {
 // Real staircases. Flights run north-south: you step on at z0 (height 0) and the floor rises (or falls) by `rise`
 // by z1. Reaching the far end fades out and puts you on the next level (the levels sit apart on the map).
 const STAIRS = [
-  { id: "gUp", x0: 17.0, x1: 18.5, z0: 3.9, z1: 1.25, rise: 3.0, needs: "boardsChopped", to: { x: 24.5, y: 4.6, yaw: Math.PI } },
-  { id: "gDown", x0: 18.5, x1: 20.0, z0: 3.9, z1: 1.25, rise: -3.0, to: { x: 49.3, y: 5.4, yaw: -Math.PI / 2 } },
-  { id: "uDown", x0: 23.8, x1: 25.2, z0: 3.95, z1: 1.3, rise: -3.0, to: { x: 17.75, y: 3.65, yaw: Math.PI } },
-  { id: "bUp", x0: 47.2, x1: 48.6, z0: 5.8, z1: 3.15, rise: 3.0, to: { x: 19.25, y: 3.65, yaw: Math.PI } },
+  { id: "gDown", x0: 17.5, x1: 19.5, z0: 3.9, z1: 1.25, rise: -3.0, to: { x: 49.3, y: 5.4, yaw: -Math.PI / 2 } },
+  { id: "bUp", x0: 47.2, x1: 48.6, z0: 5.8, z1: 3.15, rise: 3.0, to: { x: 18.5, y: 3.65, yaw: Math.PI } },
 ];
 const STAIR_STEPS = 12;
 
@@ -263,6 +262,7 @@ APT_DEFS.forEach((a) => {
     HOTSPOTS.push({ id: a.id + "_" + s.k, x: a.ox + s.rx, y: s.rz, label: s.label, loot: LOOT[a.id][s.k] || "none" });
   });
 });
+HOTSPOTS.push({ id: "apt3_calendar", x: 11.2, y: 3.4, label: "Read Calendar", paper: { paper: "SEPTEMBER\n14  boiler man - no show\n20  plumber - left early\n28  {circled three times}\nit knocks three times.\nthen the lights go.\n{don't answer.}", sloppy: 0.5, seed: 92 } });
 HOTSPOTS.push({ id: "apt2_switch", x: 5.9, y: 3.6, label: "Flip Light Switch", lightSwitch: true });
 WALL_WRITING.forEach((w) => HOTSPOTS.push({ id: w.id, x: APT_DEFS.find((a) => a.id === w.apt).ox + w.rx + Math.sin(w.rot) * 0.9, y: w.rz + Math.cos(w.rot) * 0.9, label: w.label, paper: { paper: w.paper, sloppy: w.sloppy, seed: w.seed } }));
 const PORTALS = []; // (the flats are real rooms behind the doors now)
