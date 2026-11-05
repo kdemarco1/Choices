@@ -18,17 +18,17 @@
 //             the road runs behind you past row 19 and can't be crossed
 const MAP_ROWS_TEXT = [
   "#####...#...#...######################################################", // 0
-  "#####...#...#...#...###....#....#....#....#..##........########......#", // 1  apartments 1-3 and John's (4), then the stairwell
-  "#####...#...#...#...###....#....#....#....#..##........########......#", // 2
-  "#####...#...#...#...###....#....#....#....#..##......................#", // 3
-  "########################.####.####.####.###.###........########......#", // 4  apartment + stairwell doors
-  "#....#..............###......................##........########......#", // 5  hallway
-  "#....#..............###......................#####.###################", // 6
-  "#######################......................#####.###################", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
-  "#...................####.####.####.####.###.###........###############", // 8  lobby
-  "#...................###....#....#....#....#..##........###############", // 9
-  "#...................###....#....#....#....#..##........###############", // 10
-  "#...................###....#....#....#....#..##........###############", // 11
+  "#####...#...#...#...###....#....#....#....#..##........#.#.......#...#", // 1  apartments 1-3 and John's (4), then the stairwell
+  "#####...#...#...#...###....#....#....#....#..##........#.#.#######...#", // 2
+  "#####...#...#...#...###....#....#....#....#..##..........#.#.#.#.....#", // 3
+  "########################.######################........#.#.#.#.#.#...#", // 4  apartment + stairwell doors
+  "#....#..............###......................##........#.#.......#...#", // 5  hallway
+  "#....#..............###......................#####.#####.#.#...#.#####", // 6
+  "#######################......................#####.#####.#.....#.#####", // 7  lobby wall (hall door, elevator and staff door on the lobby side)
+  "#...................###########################........#.#.###.#.#####", // 8  lobby
+  "#...................###....#....#....#....#..##..............#.#.#####", // 9
+  "#...................###....#....#....#....#..##........#.#.#.#########", // 10
+  "#...................###....#....#....#....#..##........#.#.#.....#####", // 11
   "#...................##################################################", // 12
   "########.#############################################################", // 13 facade, front door at col 8
   "x...................x#################################################", // 14 street
@@ -39,6 +39,7 @@ const MAP_ROWS_TEXT = [
   "xxxxxxxxxxxxxxxxxxxxx#################################################", // 19
 ];
 // Three studio flats sit right behind the hallway doors, 3 wide x 4 deep (rows 0-3).
+const CELLAR = {"levers": [{"c": 64, "r": 9, "side": "S", "color": 0}, {"c": 60, "r": 3, "side": "N", "color": 1}, {"c": 64, "r": 1, "side": "E", "color": 2}], "order": [1, 0, 2], "notes": [{"c": 62, "r": 3}, {"c": 56, "r": 11}], "husks": [{"c": 60, "r": 9, "kind": "hang"}, {"c": 58, "r": 1, "kind": "crawl"}, {"c": 64, "r": 7, "kind": "hang"}, {"c": 58, "r": 11, "kind": "crawl"}, {"c": 62, "r": 1, "kind": "hang"}, {"c": 58, "r": 7, "kind": "crawl"}], "gate": {"c": 65, "r": 3}, "nest": {"c0": 66, "c1": 68, "r0": 1, "r1": 5}}; // generated maze extras: lever spots, colour order for the gate, notes, husk nests
 const APT_W = 3;
 const APT_DEFS = [
   { id: "apt2", door: "apt2", ox: 5 },
@@ -50,7 +51,7 @@ const MAP = MAP_ROWS_TEXT.map((row) => Array.from(row).map((ch) => (ch === "#" ?
 
 // Floor cells that are solid but drawn as props instead of wall blocks
 // (the staircase fills the back of the stairwell).
-const BLOCKED_CELLS = [[7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17], [59, 3]]; // + the entrance columns and four yard trees
+const BLOCKED_CELLS = [[7, 15], [9, 15], [2, 15], [4, 17], [14, 15], [17, 17]]; // + the entrance columns and four yard trees
 
 const PLAYER_START = { x: 8.5, y: 18.0, angle: -Math.PI / 2 };
 
@@ -96,7 +97,6 @@ const HOTSPOTS = [
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 53.2, y: 1.9, label: "Flip Breaker" },
   { id: "staffBoard", x: 4.6, y: 5.95, label: "Read Notice Board", board: true },
-  { id: "rubble", x: 58.5, y: 3.5, label: "Inspect Rubble", text: "Too heavy to move." },
 ];
 
 const PROTAGONIST = {
@@ -189,7 +189,7 @@ const SCARES = [
   { id: "upDrop", level: 1, kind: "drop", trigger: { x: 29.5, z: 9.6, r: 0.9 }, at: { x: 29.7, z: 10.3 } },
   // basement
   { id: "baseLurk", level: 2, kind: "lurker", trigger: { x: 50.5, z: 4.6, r: 1.2 }, at: { x: 53.0, z: 2.8 }, delay: 0.4, life: 6 },
-  { id: "baseSlam", level: 2, kind: "slam", trigger: { x: 55.5, z: 3.4, r: 0.8 }, at: { x: 57.0, z: 3.5 }, delay: 0.9, life: 1.6 },
+  { id: "baseSlam", level: 2, kind: "slam", trigger: { x: 54.6, z: 3.5, r: 0.8 }, at: { x: 56.5, z: 3.5 }, delay: 0.9, life: 1.6 },
   { id: "baseCrawl", level: 2, kind: "crawler", trigger: { x: 50.5, z: 7.4, r: 1.0 }, at: { x: 53.6, z: 10.8 }, to: { x: 51.0, z: 8.9 }, dur: 1.0 },
   { id: "baseDrop", level: 2, kind: "drop", trigger: { x: 51.8, z: 9.6, r: 1.1 }, at: { x: 52.4, z: 9.0 } },
   // on the stairs themselves
@@ -265,6 +265,69 @@ APT_DEFS.forEach((a) => {
 HOTSPOTS.push({ id: "apt3_calendar", x: 11.2, y: 3.4, label: "Read Calendar", paper: { paper: "SEPTEMBER\n14  boiler man - no show\n20  plumber - left early\n28  {circled three times}\nit knocks three times.\nthen the lights go.\n{don't answer.}", sloppy: 0.5, seed: 92 } });
 HOTSPOTS.push({ id: "apt2_switch", x: 5.9, y: 3.6, label: "Flip Light Switch", lightSwitch: true });
 WALL_WRITING.forEach((w) => HOTSPOTS.push({ id: w.id, x: APT_DEFS.find((a) => a.id === w.apt).ox + w.rx + Math.sin(w.rot) * 0.9, y: w.rz + Math.cos(w.rot) * 0.9, label: w.label, paper: { paper: w.paper, sloppy: w.sloppy, seed: w.seed } }));
+
+// ---- second floor: a corridor of closed apartment doors. Rooms are 3 deep; v counts from the far wall. ----
+// side N: rooms at z 1-4, door in the wall at z 4. side S: rooms at z 9-12, door in the wall at z 9.
+const DOOR_OPEN_ANGLE_F2 = Math.PI * 0.5;
+const F2_ROOMS = [
+  { id: "f2n1", side: "N", c0: 23, w: 4, layout: "lobby", wall: "hall", floor: "tile",
+    spots: [{ u: 2.4, v: 1.6, label: "Read Directory", paper: "FLOOR TWO\n11   Marsh\n12   Kowal\n13   ----\n14   ----\n15   Hale\n16   {nobody}\n17   ----", sloppy: 0.2, seed: 140 }] },
+  { id: "f2n2", side: "N", c0: 28, w: 4, door: 29, plate: "11", layout: "bedroom", wall: "f2a", floor: "plank", accent: 0x5a3a3a, color: "#8a7f62",
+    spots: [{ u: 2.35, v: 1.0, label: "Check Nightstand", text: "A glass of water. Still full." }] },
+  { id: "f2n3", side: "N", c0: 33, w: 4, door: 34, plate: "12", layout: "kitchen", wall: "f2b", floor: "tile", color: "#3e4a52",
+    spots: [{ u: 3.5, v: 1.3, label: "Open Fridge", text: "Warm inside. The light is dead." }, { u: 0.9, v: 1.7, label: "Run Tap", text: "It drips. It stops when you listen." }] },
+  { id: "f2n4", side: "N", c0: 38, w: 4, door: 39, plate: "13", layout: "study", wall: "f2c", floor: "plankDark", color: "#4c3a34",
+    spots: [{ u: 1.4, v: 1.25, label: "Read Desk Note", paper: "to whoever is left\nthe elevator only comes\nwhen the lights hum.\ndon't ride it {twice}\nthe second time it\ngoes somewhere else", sloppy: 0.8, seed: 141 }] },
+  { id: "f2n5", side: "N", c0: 43, w: 2, door: 43, plate: "U", layout: "utility", wall: "hall", floor: "plankDark", color: "#6b6f72",
+    spots: [{ u: 1.0, v: 0.8, label: "Check Shelf", text: "Bleach. Rags. A mop that is still wet." }] },
+  { id: "f2s1", side: "S", c0: 23, w: 4, door: 24, plate: "14", layout: "vacant", wall: "f2d", floor: "plankDark", color: "#8a7f62",
+    spots: [{ u: 1.0, v: 1.9, label: "Examine Chair", text: "It faces the corner. The seat is warm." }] },
+  { id: "f2s2", side: "S", c0: 28, w: 4, door: 29, plate: "15", layout: "tv", wall: "f2b", floor: "carpet", color: "#3e4a52",
+    spots: [{ u: 2.0, v: 1.0, label: "Turn On TV", text: "Static. Then, for a second, this hallway." }] },
+  { id: "f2s3", side: "S", c0: 33, w: 4, door: 34, plate: "16", layout: "nursery", wall: "f2a", floor: "carpet", locked: true, keyId: "f2Key", color: "#4c3a34",
+    spots: [{ u: 1.2, v: 1.3, label: "Read Note", paper: "Sept 30\nthe baby stopped crying\nweeks ago.\nthe mobile still turns.\ni hear it at 3am.\nit plays the {same four notes}", sloppy: 0.9, seed: 142 }] },
+  { id: "f2s4", side: "S", c0: 38, w: 4, door: 39, plate: "17", layout: "bathroom", wall: "f2c", floor: "tile", color: "#8a7f62",
+    spots: [{ u: 1.5, v: 1.2, label: "Look in Mirror", text: "Your reflection blinks late." }] },
+  { id: "f2s5", side: "S", c0: 43, w: 2, door: 43, plate: "M", layout: "meters", wall: "hall", floor: "plankDark", color: "#6b6f72",
+    spots: [{ u: 1.0, v: 0.7, label: "Check Meters", text: "Every dial reads zero. One is ticking." }] },
+];
+const f2Pos = (r, u, v) => ({ x: r.c0 + u, y: r.side === "N" ? 1 + v : 12 - v });
+F2_ROOMS.forEach((r, ri) => {
+  if (r.door !== undefined) {
+    DOORS.push({
+      id: r.id, x: r.door + 0.5, y: r.side === "N" ? 4.5 : 8.5, interactionDistance: 1.4, label: r.locked ? "Try Door" : "Open Door",
+      locked: !!r.locked, keyId: r.keyId, unlockLabel: r.locked ? "Unlock Apartment " + r.plate : undefined, lockedText: "Locked.",
+      style: r.layout === "utility" || r.layout === "meters" ? "flush" : "wood6", plate: r.plate, baseColor: r.color, frame: "#2a2218", handle: "lever",
+      metal: "#a89a60", creak: 0.85 + (ri % 5) * 0.07, creakTone: 3000 + ri * 530, creakGain: 0.7 + (ri % 4) * 0.08, creakStart: 0.01 * ri, openAngle: r.side === "S" ? DOOR_OPEN_ANGLE_F2 : undefined,
+    });
+  }
+  (r.spots || []).forEach((s, i) => {
+    const p = f2Pos(r, s.u, s.v);
+    const h = { id: r.id + "_" + i, x: p.x, y: p.y, label: s.label };
+    if (s.paper) h.paper = { paper: s.paper, sloppy: s.sloppy || 0.4, seed: s.seed || 150 + i };
+    else h.text = s.text;
+    HOTSPOTS.push(h);
+  });
+});
+ITEMS.push(
+  { id: "f2Key", name: "Key 16", key: true, x: 43.12, y: 2.4, h: 1.35, color: "#d4b04a", height: 0.9, pickupText: "A brass key on a tag: 16." },
+  { id: "f2Batt", name: "Batteries", x: 34.2, y: 11.7, h: 0.92, pickupText: "Spare batteries." }
+);
+
+// The cellar maze: three coloured levers (the gate's lintel shows the order), a couple of notes and a hidden nest.
+CELLAR.levers.forEach((l, i) => HOTSPOTS.push({ id: "lever" + i, x: l.c + 0.5, y: l.r + 0.5, label: "Pull Lever", lever: i }));
+const MAZE_NOTES = [
+  "Sept 26\nthe walls here are {wet}\nwhen i hold the light on\nthem they stop.\nthey only stop.",
+  "Sept 27\nthree handles. i pulled\nthem the way that felt right\nand something up there\n{laughed}",
+];
+CELLAR.notes.forEach((n, i) =>
+  ITEMS.push({ id: "mazeNote" + i, name: "Note - Sept " + (26 + i), note: true, order: 7 + i, x: n.c + 0.5, y: n.r + 0.5, paper: MAZE_NOTES[i % 2], sloppy: 1.1, seed: 120 + i })
+);
+ITEMS.push(
+  { id: "nestBatt1", name: "Batteries", x: 67.5, y: 1.6, h: 0.1, pickupText: "Spare batteries." },
+  { id: "nestBatt2", name: "Batteries", x: 67.5, y: 4.4, h: 0.1, pickupText: "Spare batteries." },
+  { id: "nestNote", name: "Note - Sept 29", note: true, order: 9, x: 67.6, y: 3.0, h: 0.1, paper: "Sept 29\nthey were people once.\nthe light hurts them.\nso does the axe.\nI am going to stay here.\nit is quiet {now}", sloppy: 1.3, seed: 133 }
+);
 const PORTALS = []; // (the flats are real rooms behind the doors now)
 
 // Damage and clutter that differs between flats.
