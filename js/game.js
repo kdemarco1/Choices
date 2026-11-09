@@ -5067,7 +5067,7 @@ function updateEntryLook(dt) {
   const p = yawObject.position;
   if (state.phase === "explore" && !state.flags.entryLook && p.z < 13.3 && p.z > 11 && p.x > 6 && p.x < 11) {
     state.flags.entryLook = true;
-    entryLookLeft = 0.55;
+    entryLookLeft = 0; // no forced camera turn on entry
   }
   if (entryLookLeft > 0 && state.phase === "explore") {
     const step = Math.min(entryLookLeft, dt * 0.4);
