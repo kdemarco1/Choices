@@ -1112,7 +1112,7 @@ let staffSignLight = null;
 const STAFF_SIGN_LEVEL = 0.9;
 let staffSignTimer = 0;
 let deskBulbMat = null;
-const DESK_LAMP_LEVEL = 4.5;
+const DESK_LAMP_LEVEL = 0.6;
 let deskLampFlickerLeft = 0;
 let deskLampNextFlicker = 6;
 let flickerLights = []; // {light, base} lights that stutter (emergency bulbs, boiler glow)
@@ -4480,7 +4480,10 @@ function addReceptionDesk(cx, cz) {
   bulb.position.set(lx - 0.2, 1.0, lz);
   [lbase, lstem, larm, shade, bulb].forEach((m) => G.add(m));
 
-  deskLamp = null; // no light from the reception desk: the flickering STAFF sign is the only lamp in the lobby
+  // a small, dim, warm desk lamp: enough to see the desk and the way on from the front door
+  deskLamp = new THREE.PointLight(0xffd7a0, 0.55, 8, 2);
+  deskLamp.position.set(lx - 0.2, 0.95, lz);
+  G.add(deskLamp);
 
   // RECEPTION plate on the customer-facing side
   const plate = new THREE.Mesh(
