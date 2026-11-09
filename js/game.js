@@ -3249,13 +3249,26 @@ function startEnding() {
   setFear(0);
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   const ov = document.getElementById("ending-overlay");
-  const lines = [
-    "The elevator carries you up through the dark.",
-    "The lobby is quiet. The front door stands open to the street.",
-    "Behind you the shaft hums once, and then it is still.",
-    "You never learn everything John was keeping down there.",
-    "You walk out. You do not look back.",
-  ];
+  // two endings: how much of John's story you pieced together decides which one you get
+  const STORY_IDS = ["nSep2", "nSep3", "nSep9", "nSep14", "nSep25", "nOct1", "nOct3", "nOct4", "note5", "johnNote", "mazeNote0", "mazeNote1", "nestNote"];
+  const found = STORY_IDS.filter((id) => state.inventory[id]).length;
+  const knowsAll = found >= 8 && state.inventory.nestNote;
+  const lines = knowsAll
+    ? [
+        "The elevator carries you up through the dark.",
+        "You read every page he left. You know whose coat it wore.",
+        "In the shaft something says your name, in his voice. Then it lets you go.",
+        state.inventory.jPhoto ? "You set his photograph on the reception desk, where the lamp can find it." : "You set the lamp on the reception desk, where he can find it.",
+        "The front door stands open. Morning is coming up grey on the street.",
+        "You leave the light on for him.",
+      ]
+    : [
+        "The elevator carries you up through the dark.",
+        "The lobby is quiet. The front door stands open to the street.",
+        "Behind you the shaft hums once, and then it is still.",
+        "You came here looking for your brother. You never learn what he became.",
+        "You walk out. You do not look back.",
+      ];
   const box = document.getElementById("ending-lines");
   box.innerHTML = "";
   document.getElementById("ending-title").classList.add("hidden");
@@ -3272,7 +3285,7 @@ function startEnding() {
   setTimeout(() => {
     document.getElementById("ending-title").classList.remove("hidden");
     const kills = state.flags.huskKills || 0;
-    document.getElementById("ending-stats").textContent = "Husks destroyed: " + kills;
+    document.getElementById("ending-stats").textContent = "Pages found: " + found + " / " + STORY_IDS.length + "   Husks destroyed: " + kills;
     document.getElementById("ending-return").classList.remove("hidden");
   }, 800 + lines.length * 3200 + 1200);
 }

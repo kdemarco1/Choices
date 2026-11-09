@@ -31,11 +31,11 @@ const MAP_ROWS_TEXT = [
   "#...................###....#....#....#....#..##........#.#.#.....#####", // 11
   "#...................##################################################", // 12
   "########.#############################################################", // 13 facade, front door at col 8
-  "x...................x#################################################", // 14 street
-  "x...................x#################################################", // 15
-  "x...................x#################################################", // 16
-  "x...................x#################################################", // 17
-  "x...................x#################################################", // 18 player start
+  "x...................x#############################.............#######", // 14 street
+  "x...................x#############################.............#######", // 15
+  "x...................x#############################.............#######", // 16
+  "x...................x#############################.............#######", // 17
+  "x...................x#############################.............#######", // 18 player start
   "xxxxxxxxxxxxxxxxxxxxx#################################################", // 19
 ];
 // Three studio flats sit right behind the hallway doors, 3 wide x 4 deep (rows 0-3).
@@ -93,6 +93,8 @@ const ITEMS = [
 const HOTSPOTS = [
   { id: "boards", x: 18.5, y: 3.4, label: "Boards" },
   { id: "elevatorDown", x: 24.5, y: 2.3, label: "Call Elevator", elevatorDown: true },
+  { id: "finaleNote", x: 59.4, y: 16.5, label: "Read Note", paper: { paper: "Maria,\nyou came down anyway.\nit wears the building.\nit wore me for a while.\nit hates the light\nbecause the light\nremembers it.\nkeep looking at it.\n{don't blink}\n- J", sloppy: 0.9, seed: 160 } },
+  { id: "finaleExit", x: 51.0, y: 16.5, label: "Take Elevator", finaleExit: true },
   { id: "drawers", x: 2.4, y: 10.35, label: "Search Drawer" },
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 53.2, y: 1.9, label: "Flip Breaker" },
@@ -224,14 +226,14 @@ const johnNote = (id, name, order, paper, sloppy, seed, spot) => {
   if (spot) Object.assign(it, { x: spot[0], y: spot[1], h: spot[2] || 0.02 }); else it.hidden = true;
   ITEMS.push(it);
 };
-johnNote("nSep2", "Sept 5", 0.5, "Sept 5\nif anything happens to me\nI'm giving you my key,\njust in case.\nI left the thing we\ndiscussed underneath\nmy bed. don't let\nanyone else in. - J", 0.15, 59);
-johnNote("nSep3", "Sept 3", 1, "Sept 3\nmoved into 4 today.\nquiet building, good rent.\nthe manager would not look\nat me when he gave me\nthe key.", 0.1, 61);
+johnNote("nSep2", "Sept 5", 0.5, "Sept 5\nMaria - if anything\nhappens to me, my key\nis yours. the thing we\ndiscussed is under my\nbed. don't let anyone\nelse in. - J", 0.15, 59);
+johnNote("nSep3", "Sept 3", 1, "Sept 3\nmoved into 4 today.\nquiet building, good rent.\nthe manager would not look\nat me when he gave me\nthe key. told Maria.\nshe worries too much.", 0.1, 61);
 johnNote("nSep9", "Sept 9", 2, "Sept 9\nsomeone walks the halls\nat night. slow. heavy.\nchecked the peephole.\nnothing there.\nprobably the pipes.", 0.2, 62);
 johnNote("nSep14", "Sept 14", 3, "Sept 14\nit is not the pipes.\nthe walking stops outside\nmy door. every night 3:13.\nstopped using the peephole.", 0.4, 63, [26.2, 2.2]);
 johnNote("nSep25", "Sept 25", 5, "Sept 25\npower cut again.\nthat is when it moves.\nin the dark it is {fast}\nin the light it only watches\nkeep the light on", 0.85, 65, [34.6, 10.4]);
 johnNote("nOct1", "Oct 1", 7, "Oct 1\nboarded the stairs.\nit does not use the stairs.\nit is {already upstairs}\nit is {already below}\nit is in the walls", 1.3, 67);
 johnNote("nOct3", "Oct 3", 8, "Oct 3\nhaven't eaten in 4 days.\nit knows my name now.\nit says it from the {vents}\nthe light is the only\nthing it is afraid of", 1.55, 68, [39.5, 2.2]);
-johnNote("nOct4", "Oct 4", 9, "Oct 4\nit is wearing my coat.\nit is standing behind\nwhoever is reading this.\n{turn around}", 1.85, 69);
+johnNote("nOct4", "Oct 4", 9, "Oct 4\nit is wearing my coat.\nit is standing behind\nwhoever is reading this.\n{turn around}\nMaria. i'm sorry.", 1.85, 69);
 
 // Furniture you can search: position inside a studio (x, z from its west wall / north wall), prompt.
 const APT_SPOTS = [
@@ -277,7 +279,7 @@ const F2_ROOMS = [
   { id: "f2n3", side: "N", c0: 33, w: 4, door: 34, plate: "12", layout: "kitchen", wall: "f2b", floor: "tile", color: "#3e4a52",
     spots: [{ u: 3.5, v: 1.3, label: "Open Fridge", text: "Warm inside. The light is dead." }, { u: 0.9, v: 1.7, label: "Run Tap", text: "It drips. It stops when you listen." }] },
   { id: "f2n4", side: "N", c0: 38, w: 4, door: 39, plate: "13", layout: "study", wall: "f2c", floor: "plankDark", color: "#4c3a34",
-    spots: [{ u: 1.4, v: 1.25, label: "Read Desk Note", paper: "to whoever is left\nthe elevator only comes\nwhen the lights hum.\ndon't ride it {twice}\nthe second time it\ngoes somewhere else", sloppy: 0.8, seed: 141 }] },
+    spots: [{ u: 1.4, v: 1.25, label: "Read Desk Note", paper: "to whoever is left\nthe elevator only comes\nwhen the lights hum.\ndon't ride it {twice}\nthe second time it\ngoes down. there is a\nkey. i hid it with\nthe things that crawl", sloppy: 0.8, seed: 141 }] },
   { id: "f2n5", side: "N", c0: 43, w: 2, door: 43, plate: "U", layout: "utility", wall: "hall", floor: "plankDark", color: "#6b6f72",
     spots: [{ u: 1.0, v: 0.8, label: "Check Shelf", text: "Bleach. Rags. A mop that is still wet." }] },
   { id: "f2s1", side: "S", c0: 23, w: 4, door: 24, plate: "14", layout: "vacant", wall: "f2d", floor: "plankDark", color: "#8a7f62",
@@ -324,9 +326,11 @@ CELLAR.notes.forEach((n, i) =>
   ITEMS.push({ id: "mazeNote" + i, name: "Note - Sept " + (26 + i), note: true, order: 7 + i, x: n.c + 0.5, y: n.r + 0.5, paper: MAZE_NOTES[i % 2], sloppy: 1.1, seed: 120 + i })
 );
 ITEMS.push(
+  { id: "elevKey", name: "Elevator Key", key: true, x: 67.4, y: 2.2, h: 0.1, color: "#d4b04a", height: 0.9, pickupText: "A small steel key. The tag reads: B." },
+  { id: "finaleBatt", name: "Batteries", x: 51.4, y: 14.6, h: 0.1, pickupText: "Spare batteries." },
   { id: "nestBatt1", name: "Batteries", x: 67.5, y: 1.6, h: 0.1, pickupText: "Spare batteries." },
   { id: "nestBatt2", name: "Batteries", x: 67.5, y: 4.4, h: 0.1, pickupText: "Spare batteries." },
-  { id: "nestNote", name: "Note - Sept 29", note: true, order: 9, x: 67.6, y: 3.0, h: 0.1, paper: "Sept 29\nthey were people once.\nthe light hurts them.\nso does the axe.\nI am going to stay here.\nit is quiet {now}", sloppy: 1.3, seed: 133 }
+  { id: "nestNote", name: "Note - Sept 29", note: true, order: 9, x: 67.6, y: 3.0, h: 0.1, paper: "Sept 29\nthey were people once.\nthe light hurts them.\nso does the axe.\nthe lift has a button\nnobody presses. B.\nthe key is by my hand.\nMaria, I heard you call.\nit is quiet {now}", sloppy: 1.3, seed: 133 }
 );
 const PORTALS = []; // (the flats are real rooms behind the doors now)
 
