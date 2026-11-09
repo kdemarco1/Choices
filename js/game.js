@@ -1802,7 +1802,7 @@ function makePlateTexture(text, bg, fg) {
 // The door itself, built around its left (hinge) edge. Handles, hinges, plates
 // and the rest are real meshes on both faces so it reads as a complete door.
 function buildDoorMesh(door) {
-  const metal = new THREE.MeshStandardMaterial({ color: door.metal || "#b8963a", roughness: 0.3, metalness: 0.8 });
+  const metal = new THREE.MeshStandardMaterial({ color: door.metal || "#b8963a", roughness: 0.55, metalness: 0.6 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x0a0907, roughness: 1 });
   const side = new THREE.MeshStandardMaterial({ color: door.baseColor, roughness: 0.9 });
   const frontMat = new THREE.MeshStandardMaterial({ map: doorTextures[door.id], roughness: 0.8 });
@@ -5037,17 +5037,25 @@ function updateElevator(dt) {
   }
 }
 
+let staffLevel = 1;
 function updateStaffSign(dt) {
   if (!staffSignMat) return;
   staffSignTimer -= dt;
-  if (staffSignTimer > 0) return;
-  // mostly steady, with bursts of stutter and the odd full blackout
-  const r = Math.random();
-  const level = r < 0.55 ? 1 : r < 0.8 ? 0.45 + Math.random() * 0.4 : r < 0.92 ? 0.12 : 0;
-  staffSignTimer = level === 1 ? 0.15 + Math.random() * 0.9 : 0.04 + Math.random() * 0.1;
-  staffSignMat.color.setRGB(level, level, level);
-  if (staffHaloMat) staffHaloMat.opacity = level;
-  if (staffSignLight) staffSignLight.intensity = STAFF_SIGN_LEVEL * 1.1 * level;
+  if (staffSignTimer <= 0) {
+    // mostly steady, with bursts of stutter and the odd full blackout
+    const r = Math.random();
+    staffLevel = r < 0.55 ? 1 : r < 0.8 ? 0.45 + Math.random() * 0.4 : r < 0.92 ? 0.12 : 0;
+    staffSignTimer = staffLevel === 1 ? 0.15 + Math.random() * 0.9 : 0.04 + Math.random() * 0.1;
+  }
+  // walking up to the door: the sign, its halo and its light fade right down so nothing glares in your face
+  const p = yawObject.position;
+  const d = Math.hypot(p.x - 3.5, p.z - 8.0);
+  const prox = Math.max(0.06, Math.min(1, (d - 0.6) / 3.2));
+  const level = staffLevel;
+  const c = level * (0.25 + 0.75 * prox);
+  staffSignMat.color.setRGB(c, c, c);
+  if (staffHaloMat) staffHaloMat.opacity = level * prox * prox;
+  if (staffSignLight) staffSignLight.intensity = STAFF_SIGN_LEVEL * 1.1 * level * prox * prox;
 }
 
 // The first time you step through the front door your view drifts left, toward the flickering STAFF sign.
@@ -5102,8 +5110,17 @@ function measureBeam(dt) {
       const hit = beamRay.intersectObject(worldGroup, true).find((h) => h.object && h.object.isMesh !== false);
       beamDist = hit && hit.distance != null ? hit.distance : 15;
     } catch (e) { beamDist = 15; }
+    // backup: march the view ray through the map, so walls and floors count even if the mesh test misses
+    try {
+      for (let t = 0.1; t < Math.min(beamDist, 6); t += 0.1) {
+        const x = _bmO.x + _bmD.x * t, y = _bmO.y + _bmD.y * t, z = _bmO.z + _bmD.z * t;
+        if (y < 0 || y > WALL_HEIGHT || isWall(x, z)) { beamDist = t; break; }
+      }
+    } catch (e) {}
   }
-  const want = Math.max(0.05, Math.min(1, Math.pow(beamDist / 3.2, 1.7)));
+  // brightness on a surface falls with distance squared, so scale the beam with distance squared:
+  // anything within ~3.5 m is lit about as brightly as something 4 m away, never a blown-out disc
+  const want = beamDist >= 4.5 ? 1 : Math.max(0.02, Math.min(1, Math.pow(beamDist / 4, 2) * 0.8));
   beamScale += (want - beamScale) * Math.min(1, dt * 12);
   beamClose = 1 - beamScale;
 }
