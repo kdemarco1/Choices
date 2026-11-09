@@ -13,7 +13,7 @@ const state = {
   log: [],
   activeNpc: null,
   dialogueNode: "start",
-  settings: { showPrompts: true, soundOn: true },
+  settings: { showPrompts: true, soundOn: true, brightness: 1, sens: 1, volume: 1, binds: {} },
   settingsReturnTo: "title", // "title" | "paused" — where the Back button goes
   inventory: {}, // itemId -> true, once picked up
   flashlightOn: false,
@@ -100,6 +100,7 @@ function isOutside() {
 // ---- audio (procedural, Web Audio) --------------------------------------------
 
 let audioCtx = null;
+let masterGain = null;
 let ambientGains = [];
 let footstepTimer = 0;
 let noiseBuf = null;
@@ -116,6 +117,13 @@ function initAudio() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   audioCtx = new AC();
+  try {
+    // one master gain in front of everything, so the volume slider covers every sound
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = state.settings.volume;
+    masterGain.connect(audioCtx.destination);
+    Object.defineProperty(audioCtx, "destination", { value: masterGain, configurable: true });
+  } catch (e) {}
   noiseBuf = audioCtx.createBuffer(1, Math.floor(audioCtx.sampleRate * 0.1), audioCtx.sampleRate);
   const d = noiseBuf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
@@ -638,6 +646,10 @@ function showScreen(id) {
   ["screen-title", "screen-settings", "Story-screen", "screen-explore"].forEach((s) => {
     document.getElementById(s).classList.toggle("hidden", s !== id);
   });
+  if (id === "screen-title") {
+    const cb = document.getElementById("title-continue-button");
+    if (cb) cb.classList.toggle("hidden", !readSave());
+  }
 }
 
 // ---- title screen -----------------------------------------------------------
@@ -667,6 +679,7 @@ function resetRun() {
   state.swing = null;
   walkedDist = 0;
   clearFinale();
+  milestoneDone.clear();
   moveVX = moveVZ = 0;
   setFear(0);
   keys.clear();
@@ -733,6 +746,175 @@ document.getElementById("pause-leave-button").addEventListener("click", () => {
   showScreen("screen-title");
 });
 
+// ---- settings that stick, key rebinding, gamepad, checkpoints ------------------
+
+const ACTIONS = [
+  ["forward", "Move forward", "w"],
+  ["back", "Move back", "s"],
+  ["left", "Move left", "a"],
+  ["right", "Move right", "d"],
+  ["interact", "Interact", "e"],
+  ["flash", "Flashlight", "f"],
+  ["crouch", "Crouch", "c"],
+  ["sprint", "Run", "shift"],
+  ["inv", "Inventory", "tab"],
+  ["switch", "Switch item", "capslock"],
+];
+let rebindAction = null;
+let keyMap = {};
+let defaultKeys = new Set(ACTIONS.map((a) => a[2]));
+
+function boundKey(action) {
+  const a = ACTIONS.find((x) => x[0] === action);
+  return (state.settings.binds && state.settings.binds[action]) || a[2];
+}
+function rebuildKeyMap() {
+  keyMap = {};
+  ACTIONS.forEach(([id, , def]) => { keyMap[boundKey(id)] = def; });
+}
+// what the player pressed -> the key the game logic expects. Keys that were moved away from an action do nothing.
+function canonKey(k) {
+  if (k === " ") k = "space";
+  if (keyMap[k] !== undefined) return keyMap[k];
+  if (defaultKeys.has(k)) return "__unbound";
+  return k;
+}
+function kn(action) {
+  const k = boundKey(action);
+  return k === "capslock" ? "Caps Lock" : k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1);
+}
+function captureRebind(e) {
+  e.preventDefault();
+  const k = e.key === " " ? "space" : e.key.toLowerCase();
+  const act = rebindAction;
+  rebindAction = null;
+  if (k !== "escape" && !["escape", "enter"].includes(k)) {
+    // swap with whichever action already uses this key
+    const other = ACTIONS.find(([id]) => id !== act && boundKey(id) === k);
+    if (other) state.settings.binds[other[0]] = boundKey(act);
+    state.settings.binds[act] = k;
+    rebuildKeyMap();
+    saveSettings();
+  }
+  renderSettings();
+}
+
+function saveSettings() {
+  try { localStorage.setItem("hollowhouse.settings", JSON.stringify(state.settings)); } catch (e) {}
+}
+function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem("hollowhouse.settings") || "null");
+    if (s && typeof s === "object") {
+      ["showPrompts", "soundOn"].forEach((k) => { if (typeof s[k] === "boolean") state.settings[k] = s[k]; });
+      ["brightness", "sens", "volume"].forEach((k) => { if (typeof s[k] === "number" && isFinite(s[k])) state.settings[k] = s[k]; });
+      if (s.binds && typeof s.binds === "object") state.settings.binds = s.binds;
+    }
+  } catch (e) {}
+  rebuildKeyMap();
+}
+function applySettings() {
+  const b = state.settings.brightness;
+  renderer.toneMappingExposure = 1.25 * b;
+  ambientLight.intensity = 0.14 * b;
+  if (masterGain) masterGain.gain.value = state.settings.volume;
+}
+loadSettings();
+
+// ---- gamepad: left stick moves, right stick looks, A interact, X flashlight, B crouch, Y switch item,
+// triggers / L3 run, Select inventory, Start pause. A also presses the main button on menu screens.
+let padMoveX = 0, padMoveY = 0, padSprint = false;
+let padPrev = [];
+function pollGamepad(dt) {
+  let gp = null;
+  try { gp = (navigator.getGamepads && navigator.getGamepads()[0]) || null; } catch (e) {}
+  if (!gp) { padMoveX = padMoveY = 0; padSprint = false; return; }
+  const dz = (v) => (Math.abs(v) < 0.18 ? 0 : (v - Math.sign(v) * 0.18) / 0.82);
+  const b = (i) => !!(gp.buttons[i] && gp.buttons[i].pressed);
+  const edge = (i) => { const now = b(i); const was = !!padPrev[i]; padPrev[i] = now; return now && !was; };
+  const press = [0, 1, 2, 3, 8, 9].map((i) => [i, edge(i)]).reduce((o, [i, v]) => { o[i] = v; return o; }, {});
+  const ph = state.phase;
+  const click = (id) => { const el = document.getElementById(id); if (el && !el.classList.contains("hidden")) el.click(); };
+  if (ph === "explore" && !state.activeNpc && !state.transition) {
+    padMoveX = dz(gp.axes[0] || 0);
+    padMoveY = -dz(gp.axes[1] || 0);
+    padSprint = b(6) || b(7) || b(10);
+    const lx = dz(gp.axes[2] || 0), ly = dz(gp.axes[3] || 0);
+    yawObject.rotation.y -= lx * 2.6 * state.settings.sens * dt;
+    camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x - ly * 2.0 * state.settings.sens * dt));
+    if (press[0]) handleInteract();
+    if (press[2]) toggleFlashlight();
+    if (press[1]) state.crouch = !state.crouch;
+    if (press[3]) cycleHeld();
+    if (press[8]) openInventory();
+    if (press[9]) openPauseMenu();
+  } else {
+    padMoveX = padMoveY = 0;
+    padSprint = false;
+    if (ph === "title" && press[0]) click(readSave() ? "title-continue-button" : "title-start-button");
+    else if (ph === "story" && press[0]) document.getElementById("Story-screen").click();
+    else if (ph === "paused" && (press[0] || press[9])) closePauseMenu();
+    else if (ph === "inventory" && (press[1] || press[8] || press[9])) closeInventory();
+    else if (ph === "reading" && (press[0] || press[1])) closeReader();
+    else if (ph === "caught" && press[0]) click("caught-retry-button");
+    else if (ph === "ending" && press[0]) click("ending-return");
+    else if (ph === "inventory" && press[3]) cycleHeld();
+  }
+}
+
+// ---- checkpoints: saved at each major step; being caught, or Continue on the title screen, loads the last one
+const milestoneDone = new Set();
+const MILESTONES = [
+  ["staff key", () => state.inventory.staffKey],
+  ["power on", () => state.flags.powerOn],
+  ["second floor", () => state.flags.powerOn && levelOf(yawObject.position.x) === 1],
+  ["elevator key", () => state.inventory.elevKey],
+];
+let milestoneTick = 0;
+function checkMilestones(dt) {
+  milestoneTick -= dt;
+  if (milestoneTick > 0) return;
+  milestoneTick = 1;
+  if (state.phase !== "explore" || state.transition || state.flags.finale || state.flags.finaleWon || faceScare) return;
+  if (!["idle", "waiting", "gone", "done"].includes(state.entity.mode)) return; // not mid-chase
+  MILESTONES.forEach(([id, test]) => {
+    if (milestoneDone.has(id) || !test()) return;
+    milestoneDone.add(id);
+    saveCheckpoint(id);
+  });
+}
+function saveCheckpoint(name) {
+  try {
+    const p = yawObject.position;
+    const data = {
+      v: 1, name,
+      flags: state.flags, inventory: state.inventory, held: state.held, batteries: state.batteries,
+      batteryLevel: state.batteryLevel, frontDoorOpen: state.frontDoorOpen, doorsOpen: state.doorsOpen,
+      at: { x: p.x, z: p.z, yaw: yawObject.rotation.y },
+    };
+    localStorage.setItem("hollowhouse.save", JSON.stringify(data));
+  } catch (e) {}
+}
+function readSave() {
+  try {
+    const s = JSON.parse(localStorage.getItem("hollowhouse.save") || "null");
+    return s && s.v === 1 && s.at ? s : null;
+  } catch (e) { return null; }
+}
+function applySave(s) {
+  resetRun();
+  state.flags = s.flags || {};
+  state.inventory = s.inventory || {};
+  state.held = s.held || null;
+  state.batteries = s.batteries || 0;
+  state.batteryLevel = s.batteryLevel != null ? s.batteryLevel : 100;
+  state.frontDoorOpen = !!s.frontDoorOpen;
+  state.doorsOpen = s.doorsOpen || {};
+  state.flashlightOn = false;
+  MILESTONES.forEach(([id, test]) => { try { if (test()) milestoneDone.add(id); } catch (e) {} });
+  enterExplore(s.at);
+}
+
 // ---- settings screen ---------------------------------------------------------
 
 function renderSettings() {
@@ -742,16 +924,57 @@ function renderSettings() {
   const sb = document.getElementById("toggle-sound");
   sb.textContent = state.settings.soundOn ? "On" : "Off";
   sb.className = "toggle-button " + (state.settings.soundOn ? "on" : "off");
+  [["set-brightness", "brightness"], ["set-sens", "sens"], ["set-volume", "volume"]].forEach(([id, k]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = state.settings[k];
+  });
+  const list = document.getElementById("bind-list");
+  if (list) {
+    list.innerHTML = "";
+    ACTIONS.forEach(([id, label]) => {
+      const row = document.createElement("div");
+      row.className = "bind-row";
+      const span = document.createElement("span");
+      span.textContent = label;
+      const bt = document.createElement("button");
+      bt.className = "toggle-button on";
+      bt.textContent = rebindAction === id ? "press a key..." : kn(id);
+      bt.addEventListener("click", () => { rebindAction = id; renderSettings(); });
+      row.appendChild(span);
+      row.appendChild(bt);
+      list.appendChild(row);
+    });
+  }
 }
+[["set-brightness", "brightness"], ["set-sens", "sens"], ["set-volume", "volume"]].forEach(([id, k]) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener("input", () => {
+    state.settings[k] = parseFloat(el.value);
+    applySettings();
+    saveSettings();
+  });
+});
+const resetBindsBtn = document.getElementById("reset-binds");
+if (resetBindsBtn) resetBindsBtn.addEventListener("click", () => { state.settings.binds = {}; rebuildKeyMap(); saveSettings(); renderSettings(); });
+const continueBtn = document.getElementById("title-continue-button");
+if (continueBtn) continueBtn.addEventListener("click", () => {
+  const sv = readSave();
+  if (!sv) return;
+  initAudio();
+  applySave(sv);
+});
 
 document.getElementById("toggle-sound").addEventListener("click", () => {
   initAudio();
   setSoundEnabled(!state.settings.soundOn);
+  saveSettings();
   renderSettings();
 });
 
 document.getElementById("toggle-prompts").addEventListener("click", () => {
   state.settings.showPrompts = !state.settings.showPrompts;
+  saveSettings();
   renderSettings();
 });
 
@@ -773,11 +996,11 @@ document.getElementById("Story-screen").addEventListener("click", () => {
   enterExplore();
 });
 
-function enterExplore() {
+function enterExplore(at) {
   state.phase = "explore";
   showScreen("screen-explore");
-  yawObject.position.set(PLAYER_START.x, EYE_HEIGHT, PLAYER_START.y);
-  yawObject.rotation.y = 0;
+  yawObject.position.set(at ? at.x : PLAYER_START.x, EYE_HEIGHT, at ? at.z : PLAYER_START.y);
+  yawObject.rotation.y = at ? at.yaw : 0;
   camera.rotation.x = 0;
   buildWorld();
   clock.start();
@@ -830,6 +1053,7 @@ scene.add(yawObject);
 
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.14);
 scene.add(ambientLight);
+applySettings(); // saved brightness / volume
 
 
 const flashlightLight = new THREE.SpotLight(0xffe6bc, 0, 15, 0.38, 0.9, 2); // warm, soft-edged cone that falls off with distance
@@ -2087,6 +2311,7 @@ function buildWorld() {
 
   // The first thing you see on the left, just past the door.
   addReceptionDesk(3.0, 10.8);
+  addLobbyExtras();
   addMailboxes(19.9, 8.8);
   if (yawObject.position.x < 21) addWallDecor();
   addSofa(15.5, 11.6);
@@ -2866,6 +3091,49 @@ function playScoreBeat(vol) {
     o.stop(t + off + 0.25);
   });
 }
+let lastEventKind = "";
+let lastScareT = -999;
+function markScare() { lastScareT = performance.now() / 1000; }
+function sinceScare() { return performance.now() / 1000 - lastScareT; }
+// a heavy door shutting somewhere far off in the building
+function playDistantSlam() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  [[0, 0.2], [0.18, 0.08]].forEach(([off, gain]) => {
+    const n = audioCtx.createBufferSource();
+    const lp = audioCtx.createBiquadFilter();
+    const g = audioCtx.createGain();
+    n.buffer = noiseBuf;
+    n.loop = true;
+    lp.type = "lowpass";
+    lp.frequency.value = 260;
+    g.gain.setValueAtTime(gain, t + off);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + off + 0.6);
+    n.connect(lp).connect(g).connect(audioCtx.destination);
+    n.start(t + off);
+    n.stop(t + off + 0.7);
+  });
+}
+// slow footsteps on the floor above: they cross the ceiling, then stop
+function playOverhead() {
+  if (!audioReady()) return;
+  const count = 4 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      if (!audioReady()) return;
+      const t = audioCtx.currentTime;
+      const n = audioCtx.createBufferSource();
+      const lp = audioCtx.createBiquadFilter();
+      const g = audioCtx.createGain();
+      n.buffer = noiseBuf;
+      lp.type = "lowpass";
+      lp.frequency.value = 150;
+      g.gain.value = 0.2 * (1 - i / (count + 2));
+      n.connect(lp).connect(g).connect(audioCtx.destination);
+      n.start(t);
+    }, i * (620 + Math.random() * 120));
+  }
+}
 function updateMusic(dt) {
   if (!audioReady() || state.phase !== "explore" && state.phase !== "breaker") return;
   ensureMusicBus();
@@ -2885,15 +3153,25 @@ function updateMusic(dt) {
     musicStep++;
     musicTimer = (2.4 - tension * 1.6) * (0.7 + Math.random() * 0.8);
   }
-  // things in the walls: a knock, a skitter, a lights stutter. Only when there's no light on you.
+  // things in the building: a slam far off, footsteps overhead, a knock in the pipes, a light stutter.
+  // Random kind and timing each run, never right after a real scare, and never the same thing twice in a row.
   eventTimer -= dt;
   if (eventTimer <= 0 && state.phase === "explore" && !state.transition) {
-    eventTimer = 18 + Math.random() * 22 - tension * 10;
-    const r = Math.random();
-    if (r < 0.35) { playKnock(); setTimeout(playKnock, 420 + Math.random() * 300); }
-    else if (r < 0.65) playSkitter();
-    else if (r < 0.85) scareBlackout = 0.35 + Math.random() * 0.3;
-    else playSting();
+    if (sinceScare() < 20) eventTimer = 5;
+    else {
+      eventTimer = 20 + Math.random() * 35 - tension * 12;
+      const lv = levelOf(yawObject.position.x);
+      const kinds = ["slam", "knock", "skitter", "dark", "sting", "steps", "creak"].filter((k) => k !== lastEventKind && !(k === "steps" && lv === 2));
+      const k = kinds[Math.floor(Math.random() * kinds.length)];
+      lastEventKind = k;
+      if (k === "slam") playDistantSlam();
+      else if (k === "knock") { playKnock(); setTimeout(playKnock, 420 + Math.random() * 300); }
+      else if (k === "skitter") playSkitter();
+      else if (k === "dark") scareBlackout = 0.35 + Math.random() * 0.3;
+      else if (k === "steps") playOverhead();
+      else if (k === "creak") playDoorCreak({ creak: 0.7, creakGain: 0.35, creakTone: 1500 });
+      else { playSting(); markScare(); }
+    }
   }
 }
 
@@ -3245,6 +3523,7 @@ function updateFinale(dt) {
 }
 function startEnding() {
   state.phase = "ending";
+  try { localStorage.removeItem("hollowhouse.save"); } catch (e) {}
   keys.clear();
   setFear(0);
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
@@ -3266,7 +3545,7 @@ function startEnding() {
         "The elevator carries you up through the dark.",
         "The lobby is quiet. The front door stands open to the street.",
         "Behind you the shaft hums once, and then it is still.",
-        "You came here looking for your brother. You never learn what he became.",
+        "You came here looking for John. You never learn what he became.",
         "You walk out. You do not look back.",
       ];
   const box = document.getElementById("ending-lines");
@@ -3423,6 +3702,7 @@ function playScreech() {
 }
 function startFaceScare() {
   if (faceScare) return;
+  markScare();
   playScreamMusic();
   playVoice("gasp", 0.9, 1);
   faceScare = { t: 0, shown: false, el: null };
@@ -4426,6 +4706,47 @@ function addStreetLight(x, z) {
 // the room around it.
 // Built in its own frame (x along the desk, +z = customer side), then turned so the
 // customer side faces east into the lobby and the drawers/chair are on the west-wall side.
+// a side table with an old radio, and a bank of mailboxes on the north wall
+function addLobbyExtras() {
+  const wood = 0x3a2a1c;
+  addBox(0.8, 0.05, 0.5, 11.5, 0.72, 12.6, wood);
+  addBox(0.05, 0.7, 0.46, 11.15, 0.36, 12.6, wood);
+  addBox(0.05, 0.7, 0.46, 11.85, 0.36, 12.6, wood);
+  addSolid(11.5, 12.6, 0.8, 0.5);
+  addBox(0.32, 0.18, 0.12, 11.5, 0.84, 12.6, 0x4a3a28); // the radio
+  addBox(0.1, 0.1, 0.01, 11.42, 0.84, 12.535, 0x16120e);
+  addBox(0.06, 0.02, 0.01, 11.6, 0.87, 12.535, 0x9a8a60);
+  addBox(0.025, 0.28, 0.025, 11.62, 1.02, 12.6, 0x8a8a84); // aerial
+  addBox(2.0, 0.6, 0.08, 12.1, 1.3, 8.06, 0x44494a); // mailbox bank
+  [0, 1, 2, 3].forEach((i) => {
+    addBox(0.4, 0.22, 0.02, 11.4 + i * 0.5, 1.3, 8.11, i === 2 || i === 3 ? 0x5a5f58 : 0x3a3e3e);
+    addBox(0.12, 0.02, 0.01, 11.4 + i * 0.5, 1.37, 8.125, 0x15171a);
+  });
+}
+
+function playStatic() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource();
+  const bp = audioCtx.createBiquadFilter();
+  const g = audioCtx.createGain();
+  n.buffer = noiseBuf;
+  n.loop = true;
+  bp.type = "bandpass";
+  bp.Q.value = 2;
+  bp.frequency.setValueAtTime(900, t);
+  bp.frequency.linearRampToValueAtTime(2600, t + 0.5);
+  bp.frequency.linearRampToValueAtTime(1200, t + 1.1);
+  bp.frequency.linearRampToValueAtTime(3200, t + 1.8);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.22, t + 0.1);
+  g.gain.setValueAtTime(0.22, t + 1.4);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 2.0);
+  n.connect(bp).connect(g).connect(audioCtx.destination);
+  n.start(t);
+  n.stop(t + 2.1);
+}
+
 function addReceptionDesk(cx, cz) {
   const G = new THREE.Group();
   G.position.set(cx, 0, cz);
@@ -4892,6 +5213,8 @@ function tryMovePlayer(dt) {
   let strafeInput = 0;
   if (keys.has("d")) strafeInput += 1;
   if (keys.has("a")) strafeInput -= 1;
+  forwardInput = Math.max(-1, Math.min(1, forwardInput + padMoveY));
+  strafeInput = Math.max(-1, Math.min(1, strafeInput + padMoveX));
   if (keys.has("arrowleft")) yawObject.rotation.y += 1.6 * dt;
   if (keys.has("arrowright")) yawObject.rotation.y -= 1.6 * dt;
 
@@ -4904,7 +5227,7 @@ function tryMovePlayer(dt) {
   let wx = _forward.x * forwardInput + _right.x * strafeInput;
   let wz = _forward.z * forwardInput + _right.z * strafeInput;
   const wl = Math.hypot(wx, wz);
-  const wantSprint = keys.has("shift") && forwardInput > 0 && state.crouch !== true && wl > 0;
+  const wantSprint = (keys.has("shift") || padSprint) && forwardInput > 0 && state.crouch !== true && wl > 0;
   sprintK += ((wantSprint ? 1 : 0) - sprintK) * Math.min(1, dt * 6);
   let spd = MOVE_SPEED * (1 - 0.55 * crouchK) * (1 + (SPRINT_MULT - 1) * sprintK);
   if (forwardInput < 0) spd *= 0.7;
@@ -5200,8 +5523,8 @@ function onPointerLockChange() {
 
 function onMouseMove(e) {
   if (document.pointerLockElement !== renderer.domElement || state.activeNpc) return;
-  yawObject.rotation.y -= e.movementX * MOUSE_SENSITIVITY;
-  camera.rotation.x -= e.movementY * MOUSE_SENSITIVITY;
+  yawObject.rotation.y -= e.movementX * MOUSE_SENSITIVITY * state.settings.sens;
+  camera.rotation.x -= e.movementY * MOUSE_SENSITIVITY * state.settings.sens;
   camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x));
 }
 
@@ -5403,10 +5726,10 @@ function updateControlHints() {
   if (!state.settings.showPrompts || state.activeNpc || state.transition || state.phase !== "explore") return;
   const p = yawObject.position;
   if (!state.inventory.flashlight || state.flags.tut) { /* movement basics only before the light is found */ }
-  if (walkedDist < 1.5) hintOnce("move", "Move with W A S D, look with the mouse");
-  else if (walkedDist > 5) hintOnce("run", "Hold Shift to run");
-  if (state.inventory.flashlight && !state.flags.tut && !state.flashlightOn && state.batteryLevel > 0) hintOnce("f", "Click F to turn on flashlight");
-  if (p.x >= 5 && p.x < 16 && p.z < 4 && !state.flags.tut) hintOnce("c", "Click C to crouch and look underneath things");
+  if (walkedDist < 1.5) hintOnce("move", "Move with " + [kn("forward"), kn("left"), kn("back"), kn("right")].join(" ") + ", look with the mouse");
+  else if (walkedDist > 5) hintOnce("run", "Hold " + kn("sprint") + " to run");
+  if (state.inventory.flashlight && !state.flags.tut && !state.flashlightOn && state.batteryLevel > 0) hintOnce("f", "Press " + kn("flash") + " to turn on flashlight");
+  if (p.x >= 5 && p.x < 16 && p.z < 4 && !state.flags.tut) hintOnce("c", "Press " + kn("crouch") + " to crouch and look underneath things");
   const t = nearestInteractable();
 }
 
@@ -5432,7 +5755,7 @@ function updateInteractPrompt() {
     prompt.classList.add("hidden");
     return;
   }
-  prompt.textContent = "Press E to " + target.label.toLowerCase();
+  prompt.textContent = "Press " + kn("interact") + " to " + target.label.toLowerCase();
   prompt.classList.remove("hidden");
 }
 
@@ -5522,6 +5845,23 @@ function handleInteract() {
       }
     } else if (h.id === "guestLog") {
       openPaper(GUEST_PAPER);
+    } else if (h.id === "radio") {
+      playStatic();
+      setTimeout(() => openPaper(RADIO_PAPER), 700);
+    } else if (h.id === "mail3" || h.id === "mail4") {
+      const three = h.id === "mail3";
+      const need = three ? "apt3Key" : "johnKey";
+      if (!state.inventory[need]) {
+        playKnock();
+        addLog("Locked.");
+      } else {
+        playClick();
+        openPaper(three ? MAIL3_PAPER : MAIL4_PAPER);
+        if (three && !state.flags.mail3Open) {
+          state.flags.mail3Open = true;
+          setTimeout(() => collectItem("mailBatt"), 900);
+        }
+      }
     } else if (h.id === "breaker") {
       if (state.flags.powerOn) addLog("The power is on.");
       else openBreaker();
@@ -5583,7 +5923,7 @@ function collectItem(id) {
   if (id === "flashlight" || (id === "axe" && !state.held)) state.held = id;
   if (id === "flashlight") {
     state.inventory.hands = true; // empty hands, so there's always something to switch to
-    setTimeout(() => hintOnce("inv", "Tab: inventory   F: flashlight   Caps Lock: switch item"), 900);
+    setTimeout(() => hintOnce("inv", kn("inv") + ": inventory   " + kn("flash") + ": flashlight   " + kn("switch") + ": switch item"), 900);
   }
   if (!item.hidden) buildWorld(); // remove the collected item's marker from the scene (hidden ones have none)
 }
@@ -5624,7 +5964,7 @@ function renderInventory() {
         ? "F turns the flashlight on and off.<br />Caps Lock changes the item in your hand.<br /><b>Press Caps Lock now.</b>"
         : t === "switch2"
           ? "Your hands are empty.<br /><b>Press Caps Lock again</b> to take the flashlight back out."
-          : "Caps Lock: switch item in hand<br />Tab or Esc: close";
+          : kn("switch") + ": switch item in hand<br />" + kn("inv") + " or Esc: close";
   }
   const list = document.getElementById("inventory-list");
   list.innerHTML = "";
@@ -5723,7 +6063,8 @@ function closeInventory() {
 // ---- keyboard input -----------------------------------------------------------
 
 window.addEventListener("keydown", (e) => {
-  const key = e.key.toLowerCase();
+  if (rebindAction) { captureRebind(e); return; }
+  const key = canonKey(e.key.toLowerCase());
   if (state.phase === "breaker") {
     if (key >= "1" && key <= "5") pressBreaker(+key - 1);
     return;
@@ -5778,7 +6119,7 @@ window.addEventListener("keydown", (e) => {
 
 window.addEventListener("blur", () => keys.clear());
 window.addEventListener("keyup", (e) => {
-  keys.delete(e.key.toLowerCase());
+  keys.delete(canonKey(e.key.toLowerCase()));
 });
 
 // ---- dialogue ----------------------------------------------------------------
@@ -6305,6 +6646,7 @@ function caughtByEntity() {
   if (breakerEl) breakerEl.style.display = "none";
   state.breaker = null;
   state.phase = "caught";
+  markScare();
   state.entity.mode = "done";
   keys.clear();
   playSting();
@@ -6493,8 +6835,12 @@ function updateEntity(dt) {
 
 document.getElementById("caught-retry-button").addEventListener("click", () => {
   document.getElementById("caught-overlay").classList.add("hidden");
-  resetRun();
-  enterExplore();
+  const sv = readSave();
+  if (sv) applySave(sv);
+  else {
+    resetRun();
+    enterExplore();
+  }
 });
 
 document.getElementById("caught-leave-button").addEventListener("click", () => {
@@ -6892,6 +7238,7 @@ function playFreeze() {
 function wakeHusk(h) {
   if (h.mode !== "dormant") return;
   h.mode = "waking";
+  markScare();
   h.wake = h.kind === "hang" ? 0.9 : 0.5;
   playBang();
   playVoice("gasp2", 0.8, 3);
@@ -6969,7 +7316,7 @@ function updateHusks(dt) {
     if (h.mode === "dormant") {
       if (h.kind === "hang") { m.position.y = h.y + Math.sin(h.t * 1.3) * 0.03; m.rotation.z = Math.sin(h.t * 0.9) * 0.05; }
       else m.position.y = 0.12 + Math.sin(h.t * 1.6) * 0.01; // breathing
-      if (state.flags.huskAlarm || (d < h.trig && hasLineOfSight(p.x, p.z, h.x, h.z))) wakeHusk(h);
+      if ((state.flags.huskAlarm || (d < h.trig && hasLineOfSight(p.x, p.z, h.x, h.z))) && sinceScare() > 6) wakeHusk(h);
       return;
     }
     if (h.mode === "waking") {
@@ -7030,6 +7377,8 @@ const clock = new THREE.Clock();
 
 function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
+  pollGamepad(dt);
+  checkMilestones(dt);
   tryMovePlayer(dt);
   checkJohnRoom();
   updateEntity(dt);

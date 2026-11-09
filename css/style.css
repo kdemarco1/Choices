@@ -635,3 +635,10 @@ h1 {
 #ending-title { margin-top: 1.2em; letter-spacing: 0.4em; animation: endfade 3s ease both; }
 .ending-stats { color: #888; font-size: 0.85rem; margin: 0 0 1.4em; }
 @keyframes endfade { from { opacity: 0; } to { opacity: 1; } }
+
+/* settings: sliders and key bindings */
+#screen-settings .center-panel { max-height: 94vh; overflow-y: auto; padding-right: 8px; }
+#screen-settings input[type="range"] { width: 260px; max-width: 80vw; accent-color: var(--accent, #9aa88a); }
+.bind-grid { display: grid; gap: 6px; width: 320px; max-width: 86vw; margin: 6px auto 10px; }
+.bind-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.bind-row .toggle-button { min-width: 120px; }
