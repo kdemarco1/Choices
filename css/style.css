@@ -628,3 +628,10 @@ h1 {
   mix-blend-mode: overlay;
   image-rendering: auto;
 }
+
+/* ---- the ending ---- */
+.ending-lines { max-width: min(640px, 86vw); text-align: center; }
+.ending-lines p { margin: 0 0 1.1em; color: var(--ui-text, #ddd); letter-spacing: 0.04em; animation: endfade 2.4s ease both; }
+#ending-title { margin-top: 1.2em; letter-spacing: 0.4em; animation: endfade 3s ease both; }
+.ending-stats { color: #888; font-size: 0.85rem; margin: 0 0 1.4em; }
+@keyframes endfade { from { opacity: 0; } to { opacity: 1; } }

@@ -28,7 +28,7 @@
         <h1>Settings</h1>
 
         <label class="label">Controls</label>
-        <p class="settings-text">W/A/S/D to move. Click the view, then move the mouse to look in any direction, including behind you. E to interact. F to turn the flashlight on and off. Caps Lock to switch the item in your hand. Shift for inventory. Esc to pause.</p>
+        <p class="settings-text">W/A/S/D to move. Click the view, then move the mouse to look in any direction, including behind you. E to interact. F to turn the flashlight on and off. Caps Lock to switch the item in your hand. Tab for inventory, Shift to run. Esc to pause.</p>
 
         <label class="label" for="toggle-sound">Sound</label>
         <button id="toggle-sound" class="toggle-button"></button>
@@ -64,7 +64,7 @@
           <span id="battery-pct" class="battery-pct">100%</span>
         </div>
         <div id="pickup-popup" class="pickup-popup"></div>
-        <div id="tutorial-banner" class="tutorial-banner hidden">Press <b>SHIFT</b> to open your inventory</div>
+        <div id="tutorial-banner" class="tutorial-banner hidden">Press <b>TAB</b> to open your inventory</div>
         <div id="interact-prompt" class="interact-prompt hidden"></div>
         <div id="fear-vignette" class="fear-vignette"></div>
         <div id="pointer-lock-hint" class="pointer-lock-hint hidden">Click to look around</div>
@@ -93,7 +93,7 @@
           <div class="dialogue-box pause-box">
             <h1>Inventory</h1>
             <div id="inventory-list"></div>
-            <p id="inventory-hint" class="inv-hint">Caps Lock: switch item in hand<br />Shift or Esc: close</p>
+            <p id="inventory-hint" class="inv-hint">Caps Lock: switch item in hand<br />Tab or Esc: close</p>
           </div>
         </div>
 
@@ -113,6 +113,13 @@
         </div>
 
         <div id="transition-fade" class="transition-fade hidden"></div>
+
+        <div id="ending-overlay" class="overlay overlay-center hidden" style="background:#000;z-index:200;flex-direction:column">
+          <div id="ending-lines" class="ending-lines"></div>
+          <h1 id="ending-title" class="hidden">THE END</h1>
+          <p id="ending-stats" class="ending-stats"></p>
+          <button id="ending-return" class="primary-button hidden">Return to Title</button>
+        </div>
 
         <div id="caught-overlay" class="overlay overlay-center hidden">
           <div class="dialogue-box pause-box">
