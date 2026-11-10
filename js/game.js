@@ -30,6 +30,8 @@ const MOUSE_SENSITIVITY = 0.0022;
 const PITCH_LIMIT = 1.3; // radians, keeps the camera from flipping past vertical
 const PLAYER_RADIUS = 0.24;
 const INTERACT_DIST = 1.15;
+var loopOn = false; // true once the real game loop is running
+var ambience = false, ambSaved = null; // settings screen: the game draws an apartment beside the menu
 const EYE_HEIGHT = 1.5;
 const CROUCH_DROP = 0.95; // hold C: the eyes go this much lower
 let crouchK = 0; // 0 standing .. 1 crouched
@@ -646,6 +648,7 @@ function showScreen(id) {
   ["screen-title", "screen-settings", "Story-screen", "screen-explore"].forEach((s) => {
     document.getElementById(s).classList.toggle("hidden", s !== id);
   });
+  setAmbience(id === "screen-settings");
   if (id === "screen-title") {
     const cb = document.getElementById("title-continue-button");
     if (cb) cb.classList.toggle("hidden", !readSave());
@@ -1004,6 +1007,7 @@ function enterExplore(at) {
   camera.rotation.x = 0;
   buildWorld();
   clock.start();
+  loopOn = true;
   renderer.setAnimationLoop(gameLoop);
   renderer.domElement.requestPointerLock();
 }
@@ -7345,8 +7349,50 @@ function updateHusks(dt) {
 
 const clock = new THREE.Clock();
 
+// before a run starts there is no game loop: a tiny one just draws the apartment beside the settings menu
+function ambienceLoop() {
+  applyAmbiencePose();
+  try { if (postFX) postFX.render(0.016); else renderer.render(scene, camera); } catch (e) { renderer.render(scene, camera); }
+  drawAmbience();
+}
+function setAmbience(on) {
+  if (on === ambience) return;
+  ambience = on;
+  if (!loopOn) renderer.setAnimationLoop(on ? ambienceLoop : null);
+  if (on) {
+    if (!worldGroup.children.length) buildWorld(); // title screen has no world yet
+    ambSaved = { x: yawObject.position.x, y: yawObject.position.y, z: yawObject.position.z, ry: yawObject.rotation.y, rx: camera.rotation.x };
+  } else if (ambSaved) {
+    yawObject.position.set(ambSaved.x, ambSaved.y, ambSaved.z);
+    yawObject.rotation.y = ambSaved.ry;
+    camera.rotation.x = ambSaved.rx;
+    ambSaved = null;
+  }
+}
+// a slow, drifting view of apartment 2 by moonlight, only when the player is on the ground floor
+function applyAmbiencePose() {
+  if (!ambSaved || levelOf(ambSaved.x) !== 0) return;
+  const t = performance.now() / 1000;
+  yawObject.position.set(7.2 + Math.sin(t * 0.11) * 0.15, EYE_HEIGHT, 3.3);
+  yawObject.rotation.y = 0.15 + Math.sin(t * 0.17) * 0.2;
+  camera.rotation.x = -0.04 + Math.sin(t * 0.13) * 0.02;
+}
+function drawAmbience() {
+  const cv = document.getElementById("settings-view");
+  if (!cv || cv.offsetWidth === 0) return;
+  const w = Math.round(cv.offsetWidth * Math.min(1.5, window.devicePixelRatio || 1));
+  const h = Math.round(cv.offsetHeight * Math.min(1.5, window.devicePixelRatio || 1));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const src = renderer.domElement;
+  if (!src.width || !src.height) return;
+  const s = Math.max(w / src.width, h / src.height); // cover
+  const dw = src.width * s, dh = src.height * s;
+  cv.getContext("2d").drawImage(src, (w - dw) / 2, (h - dh) / 2, dw, dh);
+}
+
 function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
+  if (ambience) applyAmbiencePose();
   pollGamepad(dt);
   checkMilestones(dt);
   tryMovePlayer(dt);
@@ -7385,7 +7431,7 @@ function gameLoop() {
   const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  const ambientTarget = 0.03; // nearly none: only real lights and the beam show anything
+  const ambientTarget = Math.max(0, 0.03 + 0.05 * (state.settings.brightness - 1)); // nearly none: only real lights and the beam show anything
   ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();
@@ -7399,6 +7445,7 @@ function gameLoop() {
       renderer.render(scene, camera);
     }
   } else renderer.render(scene, camera);
+  if (ambience) drawAmbience();
 }
 
 // ---- boot --------------------------------------------------------------------

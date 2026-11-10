@@ -25,31 +25,32 @@
 
     <!-- Settings screen -->
     <section id="screen-settings" class="screen hidden">
-      <div class="center-panel">
-        <h1>Settings</h1>
-
-        <label class="label">Controls</label>
-        <p class="settings-text">W/A/S/D to move. Click the view, then move the mouse to look in any direction, including behind you. E to interact. F to turn the flashlight on and off. Caps Lock to switch the item in your hand. Tab for inventory, Shift to run. Esc to pause.</p>
-
-        <label class="label" for="set-brightness">Brightness</label>
-        <input id="set-brightness" type="range" min="0.6" max="2" step="0.05" value="1" />
-        <label class="label" for="set-sens">Mouse sensitivity</label>
-        <input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" value="1" />
-        <label class="label" for="set-volume">Volume</label>
-        <input id="set-volume" type="range" min="0" max="1" step="0.05" value="1" />
-
-        <label class="label" for="toggle-sound">Sound</label>
-        <button id="toggle-sound" class="toggle-button"></button>
-
-        <label class="label" for="toggle-prompts">On-screen interact prompts</label>
-        <button id="toggle-prompts" class="toggle-button"></button>
-
-        <label class="label">Keys (click one, then press the new key)</label>
-        <div id="bind-list" class="bind-grid"></div>
-        <button id="reset-binds" class="secondary-button">Reset keys</button>
-        <p class="settings-text">Gamepad: left stick move, right stick look, A interact, X flashlight, B crouch, Y switch item, triggers run, Select inventory, Start pause.</p>
-
-        <button id="settings-back-button" class="secondary-button" style="margin-top: 24px;">Back</button>
+      <div class="settings-layout">
+        <div class="settings-box">
+          <h1>Settings</h1>
+          <div class="settings-cols">
+            <div class="settings-col">
+              <label class="label" for="set-brightness">Brightness</label>
+              <input id="set-brightness" type="range" min="0.6" max="2" step="0.05" value="1" />
+              <label class="label" for="set-sens">Mouse sensitivity</label>
+              <input id="set-sens" type="range" min="0.3" max="2.5" step="0.05" value="1" />
+              <label class="label" for="set-volume">Volume</label>
+              <input id="set-volume" type="range" min="0" max="1" step="0.05" value="1" />
+              <label class="label" for="toggle-sound">Sound</label>
+              <button id="toggle-sound" class="toggle-button"></button>
+              <label class="label" for="toggle-prompts">On-screen interact prompts</label>
+              <button id="toggle-prompts" class="toggle-button"></button>
+              <p class="settings-text small">Look with the mouse (click the view first). Esc pauses. Gamepad: sticks move and look, A interact, X flashlight, B crouch, Y switch item, triggers run, Select inventory, Start pause.</p>
+            </div>
+            <div class="settings-col">
+              <label class="label">Keys (click one, then press the new key)</label>
+              <div id="bind-list" class="bind-grid"></div>
+              <button id="reset-binds" class="secondary-button">Reset keys</button>
+            </div>
+          </div>
+          <button id="settings-back-button" class="secondary-button">Back</button>
+        </div>
+        <canvas id="settings-view"></canvas>
       </div>
     </section>
 
