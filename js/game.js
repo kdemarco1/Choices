@@ -2653,34 +2653,7 @@ function addApartment(a) {
       b(0.2, 0.15, 0.2, 0, 0.8, 0, 0x6a5a40).rotation.z = 0.12;
       b(0.1, 0.05, 0.06, 0.12, 0.54, 0.05, 0x151515); // dead alarm clock
     });
-    // clothes and mess on the floor
-    [[0.9, 2.5, 0.5, 0.35, 0.4, 0x3a4a5a], [1.1, 2.7, 0.4, 0.3, 1.6, 0x5a3a3a], [0.8, 2.85, 0.35, 0.3, 0.2, 0x4a4a42]].forEach(([x, z, w, d, r, c]) => {
-      const m = addBox(w, 0.08, d, ox + x, 0.05, z, c);
-      m.rotation.y = r;
-    });
-    addBox(0.4, 0.4, 0.4, ox + 0.3, 0.2, 2.8, 0x2a3a2a); // laundry basket
-    addBox(0.33, 0.1, 0.33, ox + 0.3, 0.42, 2.8, 0x5a4a4a);
-    addBox(0.38, 0.06, 0.38, ox + 1.55, 0.03, 2.2, 0xb8a888).rotation.y = 0.3; // pizza box
-    addBox(0.3, 0.02, 0.3, ox + 1.55, 0.065, 2.2, 0xb44a2a);
-    [[0.9, 1.4], [1.7, 1.3], [1.3, 2.6], [1.95, 3.3]].forEach(([x, z], i) => { // cans and bottles
-      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.12, 8), new THREE.MeshStandardMaterial({ color: [0x7a2a2a, 0x2a5a3a, 0x8a8a80, 0x6a5a20][i] }));
-      c.position.set(ox + x, 0.04, z);
-      c.rotation.z = 1.4;
-      worldGroup.add(c);
-    });
-    furn(0.95, 3.8, Math.PI, [0.4, 0.4], (b) => { // overflowing bin
-      b(0.34, 0.5, 0.34, 0, 0.25, 0, 0x33322e);
-      b(0.3, 0.08, 0.3, 0, 0.54, 0, 0x6a6658);
-      b(0.14, 0.1, 0.1, 0.08, 0.62, 0.04, 0x8a8678);
-    });
-    furn(0.3, 3.5, 0, [0.5, 0.5], (b) => { // stack of old boxes
-      b(0.45, 0.35, 0.4, 0, 0.18, 0, 0x6a5a3e);
-      b(0.38, 0.3, 0.34, 0.02, 0.5, 0, 0x7a6a4a).rotation.y = 0.3;
-    });
-    // dishes piled on the counter, a kettle, a picture hanging crooked, stains
-    addBox(0.12, 0.1, 0.12, ox + 2.7, 0.96, 1.05, 0x9a9688);
-    addBox(0.2, 0.1, 0.2, ox + 2.62, 0.97, 0.88, 0x7a7870);
-    addBox(0.14, 0.14, 0.14, ox + 2.62, 1.0, 1.4, 0x6a6a68);
+    // (floor clutter, laundry, takeout, cans, bins and dishes removed: simple rooms read better)
     const pic = addBox(0.04, 0.4, 0.3, ox + 0.04, 1.75, 1.2, 0x2a2018);
     pic.rotation.x = 0.25;
     addBox(0.02, 0.33, 0.24, ox + 0.07, 1.75, 1.2, 0x5a6a5a).rotation.x = 0.25;
@@ -2741,10 +2714,6 @@ function addApartment(a) {
     const sb = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.9), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawStringBoard()), roughness: 1 }));
     sb.position.set(ox + 2.35, 1.7, 0.045);
     worldGroup.add(sb);
-    [[0.6, 3.5, 0.5, 0.2], [0.75, 3.6, 0.4, 0.35], [2.2, 2.0, 0.35, 0.15]].forEach(([x, z, s, h]) => {
-      const m = addBox(s, h, s * 0.8, ox + x, h / 2, z, 0x9a9484);
-      m.rotation.y = x;
-    });
   }
   // ---- damage
   (dmg.ceil || []).forEach(([x, z, w, d]) => {
@@ -2753,7 +2722,7 @@ function addApartment(a) {
     flap.rotation.z = 0.7;
   });
   const mess = [0x4a463e, 0x5a5448, 0x6a6558, 0x3a2a1c, 0x2c2c2a];
-  for (let i = 0; i < dmg.mess; i++) {
+  for (let i = 0; i < Math.ceil(dmg.mess * 0.3); i++) {
     const rx = 0.3 + rnd() * 2.4;
     const rz = 0.3 + rnd() * 3.4;
     const wx = ox + rx;
@@ -5730,7 +5699,7 @@ function updateControlHints() {
   else if (walkedDist > 5) hintOnce("run", "Hold " + kn("sprint") + " to run");
   if (state.inventory.flashlight && !state.flags.tut && !state.flashlightOn && state.batteryLevel > 0) hintOnce("f", "Press " + kn("flash") + " to turn on flashlight");
   if (p.x >= 5 && p.x < 16 && p.z < 4 && !state.flags.tut) hintOnce("c", "Press " + kn("crouch") + " to crouch and look underneath things");
-  const t = nearestInteractable();
+  if (state.batteries > 0 && state.inventory.flashlight) hintOnce("battUse", "Batteries: open inventory (" + kn("inv") + "), then press Use to recharge the flashlight");
 }
 
 function updateInteractPrompt() {
@@ -5755,6 +5724,7 @@ function updateInteractPrompt() {
     prompt.classList.add("hidden");
     return;
   }
+  if (hintBusy()) { prompt.classList.add("hidden"); return; } // one message at a time: a hint or "No power" replaces the prompt
   prompt.textContent = "Press " + kn("interact") + " to " + target.label.toLowerCase();
   prompt.classList.remove("hidden");
 }
@@ -5964,7 +5934,7 @@ function renderInventory() {
         ? "F turns the flashlight on and off.<br />Caps Lock changes the item in your hand.<br /><b>Press Caps Lock now.</b>"
         : t === "switch2"
           ? "Your hands are empty.<br /><b>Press Caps Lock again</b> to take the flashlight back out."
-          : kn("switch") + ": switch item in hand<br />" + kn("inv") + " or Esc: close";
+          : kn("switch") + ": switch item in hand<br />" + kn("inv") + " or Esc: close" + (state.batteries > 0 ? "<br /><b>Batteries: press Use to recharge the flashlight</b>" : "");
   }
   const list = document.getElementById("inventory-list");
   list.innerHTML = "";

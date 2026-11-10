@@ -637,8 +637,19 @@ h1 {
 @keyframes endfade { from { opacity: 0; } to { opacity: 1; } }
 
 /* settings: sliders and key bindings */
-#screen-settings .center-panel { max-height: 94vh; overflow-y: auto; padding-right: 8px; }
-#screen-settings input[type="range"] { width: 260px; max-width: 80vw; accent-color: var(--accent, #9aa88a); }
-.bind-grid { display: grid; gap: 6px; width: 320px; max-width: 86vw; margin: 6px auto 10px; }
+#screen-settings .center-panel {
+  max-height: 94vh;
+  overflow-y: auto;
+  padding-right: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #3a3236 #0d0b0d;
+}
+#screen-settings .center-panel::-webkit-scrollbar { width: 8px; }
+#screen-settings .center-panel::-webkit-scrollbar-track { background: #0d0b0d; }
+#screen-settings .center-panel::-webkit-scrollbar-thumb { background: #3a3236; border-radius: 4px; }
+#screen-settings input[type="range"] { width: 100%; accent-color: #5c6b52; margin: 2px 0 6px; }
+.bind-grid { display: grid; gap: 6px; width: 100%; margin: 6px 0 12px; }
 .bind-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.bind-row .toggle-button { min-width: 120px; }
+.bind-row span { color: #8c8478; font-size: 13px; font-family: "Courier New", monospace; }
+.bind-row .toggle-button { margin-top: 0; min-width: 130px; }
+#reset-binds { width: 100%; margin: 0 0 14px; }

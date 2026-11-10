@@ -81,6 +81,7 @@ const ITEMS = [
   },
   { id: "axe", name: "Axe", x: 13.6, y: 1.5, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
   { id: "johnNote", name: "Note - Sept 21", note: true, order: 4, h: 0.57, x: 14.25, y: 0.35, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at\nnight. i can't look at it.\ni hid the axe under my\nbed. just in case.", sloppy: 0.6, seed: 3 },
+  { id: "deskBatt", name: "Batteries", h: 0.77, x: 3.15, y: 11.5, pickupText: "Spare batteries." },
   { id: "batteries", name: "Batteries", h: 0.92, x: 14.95, y: 0.35, pickupText: "Spare batteries." },
   { id: "staffBatt1", name: "Batteries", h: 1.04, x: 1.5, y: 5.75, pickupText: "Spare batteries." },
   { id: "staffBatt2", name: "Batteries", h: 0.77, x: 4.5, y: 5.45, pickupText: "Spare batteries." },
@@ -99,7 +100,16 @@ const HOTSPOTS = [
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 53.2, y: 1.9, label: "Flip Breaker" },
   { id: "staffBoard", x: 4.6, y: 5.95, label: "Read Notice Board", board: true },
+  // lobby extras: a radio, and the mailboxes (3 opens with Key 3, 4 with John's key)
+  { id: "radio", x: 11.5, y: 12.1, label: "Turn On Radio" },
+  { id: "mail3", x: 11.75, y: 8.55, label: "Open Mailbox 3" },
+  { id: "mail4", x: 12.5, y: 8.55, label: "Open Mailbox 4" },
 ];
+
+const RADIO_PAPER = { paper: "[static]\n...residents of Hollow\nHouse are asked to stay in\ntheir units after dark.\nManagement says it is\nthe pipes. [static]\n...if you can hear this\n{leave}", sloppy: 0.2, seed: 171 };
+const MAIL4_PAPER = { paper: "Maria,\nI keep writing and not\nsending. if I send them\nyou will come.\nI could not stand it if\nyou came.\n- J", sloppy: 0.5, seed: 172 };
+const MAIL3_PAPER = { paper: "FINAL NOTICE\nUnit 3 is in arrears.\nThe tenant has not been\nseen since August.\nThe unit will be cleared.\n- Mgmt", sloppy: 0.1, seed: 173 };
+ITEMS.push({ id: "mailBatt", name: "Batteries", hidden: true });
 
 const PROTAGONIST = {
   name: "Maria Voss",
