@@ -102,8 +102,8 @@ const HOTSPOTS = [
   { id: "staffBoard", x: 4.6, y: 5.95, label: "Read Notice Board", board: true },
   // lobby extras: a radio, and the mailboxes (3 opens with Key 3, 4 with John's key)
   { id: "radio", x: 11.5, y: 12.1, label: "Turn On Radio" },
-  { id: "mail3", x: 11.75, y: 8.55, label: "Open Mailbox 3" },
-  { id: "mail4", x: 12.5, y: 8.55, label: "Open Mailbox 4" },
+  { id: "mail3", x: 15.65, y: 8.55, label: "Open Mailbox 3" },
+  { id: "mail4", x: 16.15, y: 8.55, label: "Open Mailbox 4" },
 ];
 
 const RADIO_PAPER = { paper: "[static]\n...residents of Hollow\nHouse are asked to stay in\ntheir units after dark.\nManagement says it is\nthe pipes. [static]\n...if you can hear this\n{leave}", sloppy: 0.2, seed: 171 };

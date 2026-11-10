@@ -683,6 +683,14 @@ function resetRun() {
   walkedDist = 0;
   clearFinale();
   milestoneDone.clear();
+  scareBlackout = 0;
+  eventTimer = 25;
+  lastScareT = -999;
+  lastEventKind = "";
+  stingIdx = 0;
+  voiceCool = 0;
+  if (faceScare && faceScare.el && faceScare.el.parentNode) faceScare.el.parentNode.removeChild(faceScare.el);
+  faceScare = null;
   moveVX = moveVZ = 0;
   setFear(0);
   keys.clear();
@@ -2862,11 +2870,13 @@ function startOpenAnim(h) {
   const G = new THREE.Group();
   let mover = null;
   let pillow = null;
+  let taken = null; // the things you can see in there: they disappear the moment you pick them up
   if (sp.anim === "pillow") {
     pillow = aptPillow[apt.id];
     if (!pillow) return false;
     G.position.set(pillow.bx, pillow.by - 0.04, pillow.bz);
-    G.add(buildContents(ids));
+    taken = buildContents(ids);
+    G.add(taken);
   } else {
     G.position.set(apt.ox + sp.fx, sp.y, sp.fz);
     G.rotation.y = sp.rot;
@@ -2881,6 +2891,7 @@ function startOpenAnim(h) {
     knob.position.set(0, 0, 0.045);
     const inner = buildContents(ids);
     inner.position.set(0, 0.06, -0.2);
+    taken = inner;
     mover.add(front, tray, knob, inner);
   } else if (sp.anim === "fridge" || sp.anim === "cabdoor") {
     mover = aptDoors[apt.id + "_" + parts[1]];
@@ -2893,7 +2904,7 @@ function startOpenAnim(h) {
   if (mover && !isDoor) G.add(mover);
   worldGroup.add(G);
   playDrawerSound(sp.anim === "fridge" || sp.anim === "cabdoor");
-  openAnims.push({ G, mover, kind: sp.anim, t: 0, pillow });
+  openAnims.push({ G, mover, kind: sp.anim, t: 0, pillow, taken, takeAt: 0.9 + (ids.length - 1) * 1.1 });
   return true;
 }
 function updateOpenAnims(dt) {
@@ -2902,6 +2913,7 @@ function updateOpenAnims(dt) {
     a.t += dt;
     const k = a.t < 0.4 ? a.t / 0.4 : a.t < 2.4 ? 1 : Math.max(0, 1 - (a.t - 2.4) / 0.4);
     const e = k * k * (3 - 2 * k);
+    if (a.taken && a.t >= a.takeAt) a.taken.visible = false;
     if (a.kind === "drawer") a.mover.position.z = 0.36 * e;
     else if (a.kind === "pillow") {
       const p = a.pillow;
@@ -3353,14 +3365,16 @@ postFX = initPost();
 const FINALE = { start: { x: 51.7, y: 16.5, yaw: -Math.PI / 2 }, lamp: { x: 60.5, z: 16.5 }, boss: { x: 62.1, z: 16.5 } };
 let finale = null;
 function startFinale() {
-  playDing();
   state.flags.finale = true;
   state.entity.mode = "done";
   entityGroup.visible = false;
   husks.forEach((h) => { h.mesh.visible = false; });
   clearFinaleBoss();
-  finale = { mode: "arrive", t: 0, stare: 0, frozen: 0, x: FINALE.boss.x, z: FINALE.boss.z, path: null, repath: 0, speed: 2.3, mesh: null };
-  startTransition(FINALE.start);
+  // the second ride: you turn the key, and the car goes down past the floor you know
+  playElevatorRide({ from: "2", to: "B" }, () => {
+    finale = { mode: "arrive", t: 0, stare: 0, frozen: 0, x: FINALE.boss.x, z: FINALE.boss.z, path: null, repath: 0, speed: 2.3, mesh: null };
+    startTransition(FINALE.start);
+  });
 }
 function clearFinaleBoss() {
   if (finale && finale.mesh) scene.remove(finale.mesh);
@@ -3688,27 +3702,48 @@ function updateFaceScare(dt) {
   if (!f.shown && f.t >= HIT) {
     f.shown = true;
     playScreech();
+    playSting(3);
     try {
       const wrap = document.createElement("div");
-      wrap.style.cssText = "position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;pointer-events:none;overflow:hidden";
-      const cv = document.createElement("canvas");
-      cv.style.cssText = "height:100vh;max-width:100vw;object-fit:contain";
-      drawCreepyFace(cv);
-      wrap.appendChild(cv);
+      wrap.style.cssText = "position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden";
+      const mk = () => {
+        const cv = document.createElement("canvas");
+        cv.style.cssText = "position:absolute;height:100vh;max-width:100vw;object-fit:contain";
+        drawCreepyFace(cv);
+        wrap.appendChild(cv);
+        return cv;
+      };
+      f.cvs = [mk(), mk()]; // two different faces that flicker against each other
+      const red = document.createElement("div");
+      red.style.cssText = "position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,rgba(255,0,0,0.0) 20%,rgba(200,0,0,0.75) 100%);mix-blend-mode:multiply;opacity:0";
+      wrap.appendChild(red);
+      const flash = document.createElement("div");
+      flash.style.cssText = "position:absolute;inset:0;background:#fff;opacity:1";
+      wrap.appendChild(flash);
       document.body.appendChild(wrap);
       f.el = wrap;
-      f.cv = cv;
+      f.red = red;
+      f.flash = flash;
     } catch (e) {}
   }
   if (f.shown) {
     const k = f.t - HIT;
-    if (f.cv) {
-      const s = 0.7 + Math.min(k / 0.25, 1) * 0.9 + k * 0.25;
-      f.cv.style.transform = `translate(${(Math.random() - 0.5) * 30}px,${(Math.random() - 0.5) * 30}px) scale(${s})`;
-      f.cv.style.filter = "contrast(1.4) saturate(0)";
-      if (f.el) f.el.style.filter = Math.random() < 0.12 ? "invert(1)" : "none";
+    if (f.cvs) {
+      // it lunges at you: tiny to enormous in a fraction of a second, then keeps creeping closer, shaking
+      const lunge = 1 - Math.pow(1 - Math.min(k / 0.16, 1), 4);
+      const s = 0.4 + lunge * 1.25 + k * 0.3;
+      const sh = 18 + 40 * (1 - Math.min(k / 0.6, 1));
+      const which = Math.floor(k / 0.07) % 2;
+      f.cvs.forEach((cv, i) => {
+        cv.style.opacity = i === which ? "1" : "0";
+        cv.style.transform = `translate(${(Math.random() - 0.5) * sh}px,${(Math.random() - 0.5) * sh}px) rotate(${(Math.random() - 0.5) * 7}deg) scale(${s * (i ? 1.08 : 1)}, ${s * (i ? 0.94 : 1.04)})`;
+        cv.style.filter = `contrast(${1.5 + Math.random() * 0.6}) saturate(0) brightness(${0.8 + Math.random() * 0.8})`;
+      });
+      if (f.flash) f.flash.style.opacity = String(Math.max(0, 1 - k / 0.09));
+      if (f.red) f.red.style.opacity = String(0.55 + Math.random() * 0.45);
+      f.el.style.filter = Math.random() < 0.22 ? "invert(1)" : "none";
     }
-    if (k > 0.85) {
+    if (k > 1.25) {
       if (f.el && f.el.parentNode) f.el.parentNode.removeChild(f.el);
       faceScare = null;
     }
@@ -4690,10 +4725,10 @@ function addLobbyExtras() {
   addBox(0.1, 0.1, 0.01, 11.42, 0.84, 12.535, 0x16120e);
   addBox(0.06, 0.02, 0.01, 11.6, 0.87, 12.535, 0x9a8a60);
   addBox(0.025, 0.28, 0.025, 11.62, 1.02, 12.6, 0x8a8a84); // aerial
-  addBox(2.0, 0.6, 0.08, 12.1, 1.3, 8.06, 0x44494a); // mailbox bank
+  addBox(2.0, 0.6, 0.08, 15.4, 1.3, 8.06, 0x44494a); // mailbox bank, well clear of the elevator
   [0, 1, 2, 3].forEach((i) => {
-    addBox(0.4, 0.22, 0.02, 11.4 + i * 0.5, 1.3, 8.11, i === 2 || i === 3 ? 0x5a5f58 : 0x3a3e3e);
-    addBox(0.12, 0.02, 0.01, 11.4 + i * 0.5, 1.37, 8.125, 0x15171a);
+    addBox(0.4, 0.22, 0.02, 14.65 + i * 0.5, 1.3, 8.11, i === 2 || i === 3 ? 0x5a5f58 : 0x3a3e3e);
+    addBox(0.12, 0.02, 0.01, 14.65 + i * 0.5, 1.37, 8.125, 0x15171a);
   });
 }
 
@@ -5345,8 +5380,142 @@ function updateElevator(dt) {
   if (elevAnim >= 1.3) {
     elevAnim = null;
     setElevatorOpen(1);
-    startTransition({ x: 24.5, y: 3.3, yaw: Math.PI }); // up to the second floor
+    // step inside, press the button, ride up, doors open on the second floor
+    playElevatorRide({ from: "1", to: "2" }, () => startTransition({ x: 24.5, y: 3.3, yaw: Math.PI }));
   }
+}
+
+// The ride: you are inside, a hand presses the button, the doors close, the car shakes upward, the doors open.
+// Two floors only (1 and 2); the keyhole is for the cellar key.
+function playElevatorRide(opt, done) {
+  const prevPhase = state.phase;
+  state.phase = "elevride";
+  keys.clear();
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "position:fixed;inset:0;z-index:9000;background:#000";
+  const cv = document.createElement("canvas");
+  cv.width = 1280; cv.height = 720;
+  cv.style.cssText = "width:100%;height:100%;object-fit:cover;display:block";
+  wrap.appendChild(cv);
+  document.body.appendChild(wrap);
+  const c = cv.getContext("2d");
+  const down = opt.to === "B";
+  const labels = down ? ["2", "1", "B"] : ["2", "1"];
+  const BTN = { "2": [980, 330], "1": [980, 410], B: [980, 495] };
+  const ease = (x) => { x = Math.max(0, Math.min(1, x)); return x * x * (3 - 2 * x); };
+  const seg = (t, a, b) => ease((t - a) / (b - a));
+  const T0 = performance.now();
+  let pressed = false, chimed = false, rumbled = false, slid1 = false, slid2 = false;
+  const rumble = () => {
+    if (!audioReady()) return;
+    const t = audioCtx.currentTime;
+    const n = audioCtx.createBufferSource(), lp = audioCtx.createBiquadFilter(), gn = audioCtx.createGain();
+    n.buffer = noiseBuf; n.loop = true; lp.type = "lowpass"; lp.frequency.value = 110;
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.linearRampToValueAtTime(0.3, t + 0.5);
+    gn.gain.setValueAtTime(0.3, t + 2.6); gn.gain.exponentialRampToValueAtTime(0.0001, t + 3.4);
+    n.connect(lp).connect(gn).connect(audioCtx.destination); n.start(t); n.stop(t + 3.5);
+  };
+  const slide = () => {
+    if (!audioReady()) return;
+    const t = audioCtx.currentTime;
+    const n = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), gn = audioCtx.createGain();
+    n.buffer = noiseBuf; n.loop = true; bp.type = "bandpass"; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(500, t); bp.frequency.linearRampToValueAtTime(900, t + 1.0);
+    gn.gain.setValueAtTime(0.0001, t); gn.gain.linearRampToValueAtTime(0.1, t + 0.15); gn.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
+    n.connect(bp).connect(gn).connect(audioCtx.destination); n.start(t); n.stop(t + 1.3);
+  };
+  const frame = () => {
+    const t = (performance.now() - T0) / 1000;
+    const TOTAL = 8.2;
+    // timeline
+    const closeK = seg(t, 2.6, 3.8); // doors closing
+    const openK = seg(t, 6.3, 7.5); // doors opening again
+    const o = t < 5 ? closeK : 1 - openK; // 0 = open, 1 = shut
+    const moving = t > 3.9 && t < 6.1;
+    if (t > 2.2 && !pressed) { pressed = true; playClick(); }
+    if (t > 2.6 && !slid1) { slid1 = true; slide(); }
+    if (t > 3.9 && !rumbled) { rumbled = true; rumble(); }
+    if (t > 6.2 && !chimed) { chimed = true; playDing(); }
+    if (t > 6.3 && !slid2) { slid2 = true; slide(); }
+    // light flickers harder while it moves, with one dead beat
+    let light = 0.85 + Math.random() * 0.15;
+    if (moving) light *= Math.random() < 0.18 ? 0.25 : 1;
+    if (t > 5.0 && t < 5.35) light = 0.03;
+    const sx = moving ? (Math.random() - 0.5) * 7 : 0, sy = moving ? (Math.random() - 0.5) * 7 : 0;
+    c.save();
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.fillStyle = "#000"; c.fillRect(0, 0, 1280, 720);
+    c.translate(sx, sy);
+    // walls: dull steel with seams
+    const wall = c.createLinearGradient(0, 0, 1280, 0);
+    wall.addColorStop(0, "#1a1c1e"); wall.addColorStop(0.5, "#2c2f32"); wall.addColorStop(1, "#1a1c1e");
+    c.fillStyle = wall; c.fillRect(-20, -20, 1320, 760);
+    c.strokeStyle = "rgba(0,0,0,0.5)"; c.lineWidth = 3;
+    [60, 200, 880, 1060, 1200].forEach((x) => { c.beginPath(); c.moveTo(x, 0); c.lineTo(x, 720); c.stroke(); });
+    // handrail
+    c.fillStyle = "#6a6d70"; c.fillRect(0, 470, 330, 10);
+    // doors: gap behind them, then two panels
+    const gap = c.createLinearGradient(0, 120, 0, 720);
+    if (down || t < 5) { gap.addColorStop(0, "#050505"); gap.addColorStop(1, "#0b0a0a"); }
+    else { gap.addColorStop(0, "#07090f"); gap.addColorStop(0.7, "#10152a"); gap.addColorStop(1, "#0a0c18"); }
+    c.fillStyle = gap; c.fillRect(330, 120, 470, 600);
+    const panel = (x0, x1) => {
+      const gp = c.createLinearGradient(x0, 0, x1, 0);
+      gp.addColorStop(0, "#5d6166"); gp.addColorStop(0.5, "#7a7f84"); gp.addColorStop(1, "#555a5e");
+      c.fillStyle = gp; c.fillRect(x0, 120, x1 - x0, 600);
+      c.strokeStyle = "rgba(0,0,0,0.45)"; c.strokeRect(x0, 120, x1 - x0, 600);
+    };
+    panel(330 - 235 * (1 - o), 330 + 235 * o);
+    panel(800 - 235 * o, 800 + 235 * (1 - o));
+    c.fillStyle = "#222"; c.fillRect(325, 100, 480, 22); // lintel
+    // floor indicator above the doors
+    c.fillStyle = "#050505"; c.fillRect(530, 52, 80, 40);
+    const shown = t < 4.6 ? "1" : down ? (t < 5.6 ? "1" : "B") : "2";
+    c.fillStyle = t > 6.2 || t < 4.6 ? "#d13a1a" : "#7a2412";
+    c.font = "bold 30px Courier New"; c.textAlign = "center"; c.fillText(down && t > 5.6 ? "B" : shown, 570, 84);
+    // the button panel
+    c.fillStyle = "#34383b"; c.fillRect(900, 250, 160, down ? 300 : 230);
+    c.strokeStyle = "#111"; c.lineWidth = 4; c.strokeRect(900, 250, 160, down ? 300 : 230);
+    labels.forEach((l) => {
+      const [bx, by] = BTN[l];
+      const lit = pressed && l === opt.to;
+      c.beginPath(); c.arc(bx, by, 27, 0, 7);
+      c.fillStyle = lit ? "#ffb347" : "#1d1f21"; c.fill();
+      c.strokeStyle = lit ? "#ffe0a0" : "#6a6d70"; c.lineWidth = 4; c.stroke();
+      if (lit) { const gl = c.createRadialGradient(bx, by, 5, bx, by, 70); gl.addColorStop(0, "rgba(255,180,70,0.45)"); gl.addColorStop(1, "rgba(255,180,70,0)"); c.fillStyle = gl; c.fillRect(bx - 80, by - 80, 160, 160); }
+      c.fillStyle = lit ? "#2a1400" : "#c9c4b4"; c.font = "bold 26px Courier New"; c.textAlign = "center";
+      c.fillText(l === "B" ? "B" : l, bx, by + 9);
+    });
+    // a hand reaching in from the lower right to press the button
+    const target = BTN[opt.to];
+    const reach = seg(t, 1.0, 2.0) * (1 - seg(t, 2.4, 3.1));
+    if (reach > 0.01) {
+      const press = t > 2.0 && t < 2.35 ? 14 : 0;
+      const tx = 1250 + (target[0] + 16 - press - 1250) * reach, ty = 800 + (target[1] + 6 - 800) * reach;
+      c.lineCap = "round";
+      c.strokeStyle = "#7d6b5a"; c.lineWidth = 62; c.beginPath(); c.moveTo(1180 + 120 * (1 - reach), 860); c.lineTo(tx + 90, ty + 190); c.stroke();
+      c.strokeStyle = "#b39a82"; c.lineWidth = 44; c.beginPath(); c.moveTo(tx + 90, ty + 190); c.lineTo(tx, ty); c.stroke();
+      c.fillStyle = "#c4ab92"; c.beginPath(); c.arc(tx, ty, 21, 0, 7); c.fill();
+    }
+    // the light in the car, and the dark around it
+    c.fillStyle = `rgba(0,0,0,${1 - light})`; c.fillRect(-20, -20, 1320, 760);
+    const vg = c.createRadialGradient(640, 330, 140, 640, 360, 820);
+    vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,0.88)");
+    c.fillStyle = vg; c.fillRect(-20, -20, 1320, 760);
+    c.restore();
+    // fade in at the start, out at the end
+    const fade = t < 0.8 ? 1 - t / 0.8 : t > TOTAL - 0.7 ? (t - (TOTAL - 0.7)) / 0.7 : 0;
+    wrap.style.background = "#000";
+    cv.style.opacity = String(1 - Math.max(0, Math.min(1, fade)));
+    if (t >= TOTAL) {
+      if (wrap.parentNode) wrap.parentNode.removeChild(wrap);
+      state.phase = prevPhase === "elevride" ? "explore" : prevPhase;
+      done();
+      return;
+    }
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
 }
 
 let staffLevel = 1;
@@ -6809,12 +6978,9 @@ function updateEntity(dt) {
 
 document.getElementById("caught-retry-button").addEventListener("click", () => {
   document.getElementById("caught-overlay").classList.add("hidden");
-  const sv = readSave();
-  if (sv) applySave(sv);
-  else {
-    resetRun();
-    enterExplore();
-  }
+  // dying starts the whole run over: outside the building, no lights, no flashlight, nothing
+  resetRun();
+  enterExplore();
 });
 
 document.getElementById("caught-leave-button").addEventListener("click", () => {
