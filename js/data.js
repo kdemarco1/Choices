@@ -18,9 +18,9 @@
 //             the road runs behind you past row 19 and can't be crossed
 const MAP_ROWS_TEXT = [
   "#####...#...#...######################################################", // 0
-  "#####...#...#...#...###....#....#....#....#..##........#.#.......#...#", // 1  apartments 1-3 and John's (4), then the stairwell
-  "#####...#...#...#...###....#....#....#....#..##........#.#.#######...#", // 2
-  "#####...#...#...#...###....#....#....#....#..##..........#.#.#.#.....#", // 3
+  "#####...#...#...#....##....#....#....#....#..##........#.#.......#...#", // 1  apartments 1-3 and John's (4), then the stairwell
+  "#####...#...#...#....##....#....#....#....#..##........#.#.#######...#", // 2
+  "#####...#...#...#....##....#....#....#....#..##..........#.#.#.#.....#", // 3
   "########################.######################........#.#.#.#.#.#...#", // 4  apartment + stairwell doors
   "#....#..............###......................##........#.#.......#...#", // 5  hallway
   "#....#..............###......................#####.#####.#.#...#.#####", // 6
@@ -81,6 +81,11 @@ const ITEMS = [
   },
   { id: "axe", name: "Axe", x: 13.6, y: 1.5, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
   { id: "johnNote", name: "Note - Sept 21", note: true, order: 4, h: 0.57, x: 14.25, y: 0.35, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at\nnight. i can't look at it.\ni hid the axe under my\nbed. just in case.", sloppy: 0.6, seed: 3 },
+  { id: "radioBatt", name: "Batteries", h: 0.76, x: 11.9, y: 12.55, pickupText: "Spare batteries." },
+  { id: "hallBatt", name: "Batteries", h: 0.04, x: 12.5, y: 6.3, pickupText: "Spare batteries." },
+  { id: "stairBatt", name: "Batteries", h: 0.04, x: 19.65, y: 3.8, pickupText: "Spare batteries." },
+  { id: "cellarBatt", name: "Batteries", h: 0.04, x: 50.3, y: 5.3, pickupText: "Spare batteries." },
+  { id: "f2Batt2", name: "Batteries", h: 0.04, x: 30.2, y: 5.5, pickupText: "Spare batteries." },
   { id: "deskBatt", name: "Batteries", h: 0.77, x: 3.15, y: 11.5, pickupText: "Spare batteries." },
   { id: "batteries", name: "Batteries", h: 0.92, x: 14.95, y: 0.35, pickupText: "Spare batteries." },
   { id: "staffBatt1", name: "Batteries", h: 1.04, x: 1.5, y: 5.75, pickupText: "Spare batteries." },
@@ -100,16 +105,11 @@ const HOTSPOTS = [
   { id: "guestLog", x: 3.1, y: 11.15, label: "Read Guest Log" },
   { id: "breaker", x: 53.2, y: 1.9, label: "Flip Breaker" },
   { id: "staffBoard", x: 4.6, y: 5.95, label: "Read Notice Board", board: true },
-  // lobby extras: a radio, and the mailboxes (3 opens with Key 3, 4 with John's key)
+  // lobby extra: a radio
   { id: "radio", x: 11.5, y: 12.1, label: "Turn On Radio" },
-  { id: "mail3", x: 15.65, y: 8.55, label: "Open Mailbox 3" },
-  { id: "mail4", x: 16.15, y: 8.55, label: "Open Mailbox 4" },
 ];
 
 const RADIO_PAPER = { paper: "[static]\n...residents of Hollow\nHouse are asked to stay in\ntheir units after dark.\nManagement says it is\nthe pipes. [static]\n...if you can hear this\n{leave}", sloppy: 0.2, seed: 171 };
-const MAIL4_PAPER = { paper: "Maria,\nI keep writing and not\nsending. if I send them\nyou will come.\nI could not stand it if\nyou came.\n- J", sloppy: 0.5, seed: 172 };
-const MAIL3_PAPER = { paper: "FINAL NOTICE\nUnit 3 is in arrears.\nThe tenant has not been\nseen since August.\nThe unit will be cleared.\n- Mgmt", sloppy: 0.1, seed: 173 };
-ITEMS.push({ id: "mailBatt", name: "Batteries", hidden: true });
 
 const PROTAGONIST = {
   name: "Maria Voss",
@@ -185,7 +185,7 @@ const GUEST_PAPER = {
 // Real staircases. Flights run north-south: you step on at z0 (height 0) and the floor rises (or falls) by `rise`
 // by z1. Reaching the far end fades out and puts you on the next level (the levels sit apart on the map).
 const STAIRS = [
-  { id: "gDown", x0: 17.5, x1: 19.5, z0: 3.9, z1: 1.25, rise: -3.0, to: { x: 49.3, y: 5.4, yaw: -Math.PI / 2 } },
+  { id: "gDown", x0: 17.1, x1: 19.5, z0: 3.9, z1: 1.25, rise: -3.0, to: { x: 49.3, y: 5.4, yaw: -Math.PI / 2 } },
   { id: "bUp", x0: 47.2, x1: 48.6, z0: 5.8, z1: 3.15, rise: 3.0, to: { x: 18.5, y: 3.65, yaw: Math.PI } },
 ];
 const STAIR_STEPS = 12;
@@ -205,7 +205,7 @@ const SCARES = [
   { id: "baseCrawl", level: 2, kind: "crawler", trigger: { x: 50.5, z: 7.4, r: 1.0 }, at: { x: 53.6, z: 10.8 }, to: { x: 51.0, z: 8.9 }, dur: 1.0 },
   { id: "baseDrop", level: 2, kind: "drop", trigger: { x: 51.8, z: 9.6, r: 1.1 }, at: { x: 52.4, z: 9.0 } },
   // on the stairs themselves
-  { id: "downStairs", level: 0, kind: "lurker", trigger: { x: 19.25, z: 3.5, r: 0.7 }, at: { x: 19.25, z: 1.7 }, delay: 0.2, life: 4, near: 1.0 },
+  { id: "downStairs", level: 0, kind: "lurker", trigger: { x: 18.3, z: 3.5, r: 0.8 }, at: { x: 18.3, z: 1.7 }, delay: 0.2, life: 4, near: 1.0 },
   { id: "upStairs", level: 2, kind: "lurker", trigger: { x: 47.9, z: 5.5, r: 0.7 }, at: { x: 47.9, z: 3.5 }, delay: 0.2, life: 4, near: 1.0 },
 ];
 

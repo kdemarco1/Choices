@@ -649,10 +649,6 @@ function showScreen(id) {
     document.getElementById(s).classList.toggle("hidden", s !== id);
   });
   setAmbience(id === "screen-settings");
-  if (id === "screen-title") {
-    const cb = document.getElementById("title-continue-button");
-    if (cb) cb.classList.toggle("hidden", !readSave());
-  }
 }
 
 // ---- title screen -----------------------------------------------------------
@@ -682,7 +678,6 @@ function resetRun() {
   state.swing = null;
   walkedDist = 0;
   clearFinale();
-  milestoneDone.clear();
   scareBlackout = 0;
   eventTimer = 25;
   lastScareT = -999;
@@ -770,6 +765,7 @@ const ACTIONS = [
   ["sprint", "Run", "shift"],
   ["inv", "Inventory", "tab"],
   ["switch", "Switch item", "capslock"],
+  ["battery", "Change batteries", "r"],
 ];
 let rebindAction = null;
 let keyMap = {};
@@ -836,6 +832,13 @@ loadSettings();
 // triggers / L3 run, Select inventory, Start pause. A also presses the main button on menu screens.
 let padMoveX = 0, padMoveY = 0, padSprint = false;
 let padPrev = [];
+function padButtonEdge(i) {
+  const gp = navigator.getGamepads && navigator.getGamepads()[0];
+  const now = !!(gp && gp.buttons[i] && gp.buttons[i].pressed);
+  const was = !!padPrev[i];
+  padPrev[i] = now;
+  return now && !was;
+}
 function pollGamepad(dt) {
   let gp = null;
   try { gp = (navigator.getGamepads && navigator.getGamepads()[0]) || null; } catch (e) {}
@@ -857,12 +860,13 @@ function pollGamepad(dt) {
     if (press[2]) toggleFlashlight();
     if (press[1]) state.crouch = !state.crouch;
     if (press[3]) cycleHeld();
+    if (padButtonEdge(5)) useBatteries();
     if (press[8]) openInventory();
     if (press[9]) openPauseMenu();
   } else {
     padMoveX = padMoveY = 0;
     padSprint = false;
-    if (ph === "title" && press[0]) click(readSave() ? "title-continue-button" : "title-start-button");
+    if (ph === "title" && press[0]) click("title-start-button");
     else if (ph === "story" && press[0]) document.getElementById("Story-screen").click();
     else if (ph === "paused" && (press[0] || press[9])) closePauseMenu();
     else if (ph === "inventory" && (press[1] || press[8] || press[9])) closeInventory();
@@ -871,59 +875,6 @@ function pollGamepad(dt) {
     else if (ph === "ending" && press[0]) click("ending-return");
     else if (ph === "inventory" && press[3]) cycleHeld();
   }
-}
-
-// ---- checkpoints: saved at each major step; being caught, or Continue on the title screen, loads the last one
-const milestoneDone = new Set();
-const MILESTONES = [
-  ["staff key", () => state.inventory.staffKey],
-  ["power on", () => state.flags.powerOn],
-  ["second floor", () => state.flags.powerOn && levelOf(yawObject.position.x) === 1],
-  ["elevator key", () => state.inventory.elevKey],
-];
-let milestoneTick = 0;
-function checkMilestones(dt) {
-  milestoneTick -= dt;
-  if (milestoneTick > 0) return;
-  milestoneTick = 1;
-  if (state.phase !== "explore" || state.transition || state.flags.finale || state.flags.finaleWon || faceScare) return;
-  if (!["idle", "waiting", "gone", "done"].includes(state.entity.mode)) return; // not mid-chase
-  MILESTONES.forEach(([id, test]) => {
-    if (milestoneDone.has(id) || !test()) return;
-    milestoneDone.add(id);
-    saveCheckpoint(id);
-  });
-}
-function saveCheckpoint(name) {
-  try {
-    const p = yawObject.position;
-    const data = {
-      v: 1, name,
-      flags: state.flags, inventory: state.inventory, held: state.held, batteries: state.batteries,
-      batteryLevel: state.batteryLevel, frontDoorOpen: state.frontDoorOpen, doorsOpen: state.doorsOpen,
-      at: { x: p.x, z: p.z, yaw: yawObject.rotation.y },
-    };
-    localStorage.setItem("hollowhouse.save", JSON.stringify(data));
-  } catch (e) {}
-}
-function readSave() {
-  try {
-    const s = JSON.parse(localStorage.getItem("hollowhouse.save") || "null");
-    return s && s.v === 1 && s.at ? s : null;
-  } catch (e) { return null; }
-}
-function applySave(s) {
-  resetRun();
-  state.flags = s.flags || {};
-  state.inventory = s.inventory || {};
-  state.held = s.held || null;
-  state.batteries = s.batteries || 0;
-  state.batteryLevel = s.batteryLevel != null ? s.batteryLevel : 100;
-  state.frontDoorOpen = !!s.frontDoorOpen;
-  state.doorsOpen = s.doorsOpen || {};
-  state.flashlightOn = false;
-  MILESTONES.forEach(([id, test]) => { try { if (test()) milestoneDone.add(id); } catch (e) {} });
-  enterExplore(s.at);
 }
 
 // ---- settings screen ---------------------------------------------------------
@@ -968,13 +919,7 @@ function renderSettings() {
 });
 const resetBindsBtn = document.getElementById("reset-binds");
 if (resetBindsBtn) resetBindsBtn.addEventListener("click", () => { state.settings.binds = {}; rebuildKeyMap(); saveSettings(); renderSettings(); });
-const continueBtn = document.getElementById("title-continue-button");
-if (continueBtn) continueBtn.addEventListener("click", () => {
-  const sv = readSave();
-  if (!sv) return;
-  initAudio();
-  applySave(sv);
-});
+
 
 document.getElementById("toggle-sound").addEventListener("click", () => {
   initAudio();
@@ -3510,7 +3455,6 @@ function updateFinale(dt) {
 }
 function startEnding() {
   state.phase = "ending";
-  try { localStorage.removeItem("hollowhouse.save"); } catch (e) {}
   keys.clear();
   setFear(0);
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
@@ -4714,7 +4658,7 @@ function addStreetLight(x, z) {
 // the room around it.
 // Built in its own frame (x along the desk, +z = customer side), then turned so the
 // customer side faces east into the lobby and the drawers/chair are on the west-wall side.
-// a side table with an old radio, and a bank of mailboxes on the north wall
+// a side table with an old radio
 function addLobbyExtras() {
   const wood = 0x3a2a1c;
   addBox(0.8, 0.05, 0.5, 11.5, 0.72, 12.6, wood);
@@ -4725,11 +4669,6 @@ function addLobbyExtras() {
   addBox(0.1, 0.1, 0.01, 11.42, 0.84, 12.535, 0x16120e);
   addBox(0.06, 0.02, 0.01, 11.6, 0.87, 12.535, 0x9a8a60);
   addBox(0.025, 0.28, 0.025, 11.62, 1.02, 12.6, 0x8a8a84); // aerial
-  addBox(2.0, 0.6, 0.08, 15.4, 1.3, 8.06, 0x44494a); // mailbox bank, well clear of the elevator
-  [0, 1, 2, 3].forEach((i) => {
-    addBox(0.4, 0.22, 0.02, 14.65 + i * 0.5, 1.3, 8.11, i === 2 || i === 3 ? 0x5a5f58 : 0x3a3e3e);
-    addBox(0.12, 0.02, 0.01, 14.65 + i * 0.5, 1.37, 8.125, 0x15171a);
-  });
 }
 
 function playStatic() {
@@ -4948,15 +4887,67 @@ function addStairs() {
       worldGroup.add(cap);
     }
   });
-  // Boards nailed across the top of the cellar stairs, until they're chopped.
+  // Boards nailed across the top of the cellar stairs, until they're chopped: wide, pale and obvious.
   if (!state.flags.boardsChopped && yawObject.position.x < 21) {
-    const zb = 3.4;
-    const base = floorHeight(18.5, zb);
-    [0.3, 0.62, 0.94, 1.26].forEach((dy, i) => {
-      const plank = addBox(2.0, 0.17, 0.05, 18.5, base + dy, zb - (i % 2) * 0.05, 0x3a2a1c);
-      plank.rotation.z = ((i % 3) - 1) * 0.07;
+    const zb = 3.45;
+    const base = 0; // across the opening at ground level, whatever the steps below are doing
+    [0.25, 0.55, 0.85, 1.15, 1.45].forEach((dy, i) => {
+      const plank = addBox(2.6, 0.2, 0.06, 18.3, base + dy, zb - (i % 2) * 0.06, i % 2 ? 0x8a6a42 : 0x7a5a38);
+      plank.rotation.z = ((i % 3) - 1) * 0.05;
+      [17.25, 18.3, 19.35].forEach((nx) => addBox(0.06, 0.06, 0.03, nx, base + dy, zb + 0.04 - (i % 2) * 0.06, 0x2a2a28)); // nails
     });
-    addSolid(18.5, zb, 2.0, 0.35);
+    [17.15, 19.45].forEach((px) => addBox(0.12, 1.7, 0.12, px, base + 0.85, zb, 0x4a3420)); // posts the boards are nailed to
+    addSolid(18.3, zb, 2.5, 0.35);
+  }
+  // the flight going up, right beside it: the first steps are gone, the rest carries on into the dark
+  if (yawObject.position.x < 21) {
+    const x0 = 19.85, x1 = 20.95, cx = (x0 + x1) / 2, w = x1 - x0;
+    const NS = 12, z0 = 3.9, dz = -0.2208, rise = 2.9;
+    for (let i = 0; i < NS; i++) {
+      if (i < 4) continue; // the missing steps
+      const top = (rise * (i + 1)) / NS;
+      const zmid = z0 + dz * (i + 0.5);
+      addBox(w, top, Math.abs(dz), cx, top / 2, zmid, 0x5a4632);
+      addBox(w - 0.04, 0.03, 0.14, cx, top + 0.015, z0 + dz * i - 0.07, 0xb09060);
+    }
+    // splintered ends where the lower flight broke off, and rubble at the foot
+    [[0.1, 0.6, 3.05], [-0.25, 0.4, 3.0], [0.3, 0.5, 2.98]].forEach(([dx, h, z], i) => {
+      const sp = addBox(0.1, h, 0.08, cx + dx, 1.0 + h / 2 - 0.2, z - 0.1 * i, 0x6a4a2a);
+      sp.rotation.z = (i - 1) * 0.5;
+    });
+    [[20.2, 3.7, 0.5, 0.15], [20.6, 3.55, 0.35, 0.3], [20.05, 3.3, 0.4, 0.12], [20.75, 3.9, 0.3, 0.1]].forEach(([x, z, s, h], i) => {
+      const r = addBox(s, h, s * 0.8, x, h / 2, z, i % 2 ? 0x4a4038 : 0x5a5248);
+      r.rotation.y = i * 0.8;
+    });
+    // banister up the open side and a post at the first surviving step
+    const rail = addBox(0.05, 0.05, Math.hypot(1.75, 1.9), x0 + 0.04, 2.9, 2.125, 0x2a1a10);
+    rail.rotation.x = Math.atan2(1.9, 1.75);
+    for (let i = 4; i <= 12; i += 2) addBox(0.04, 0.95, 0.04, x0 + 0.04, (rise * i) / NS + 0.48, z0 + dz * i, 0x2a1a10);
+    // you can't walk onto it: solid from the first surviving step to the top, plus the rail
+    addSolid(cx, 2.35, w, 2.0);
+    addSolid(x0 - 0.05, 2.6, 0.08, 2.9);
+    entityBlock.push({ minX: x0 - 0.2, maxX: x1 + 0.2, minZ: 1.0, maxZ: 3.6 });
+    // a plain dark hatch where it meets the ceiling
+    addBox(w, 0.2, 0.9, cx, 3.0, 1.45, 0x050505);
+  }
+  // a faint cold glow down in the stairwell pit, so the way down reads as stairs and not a hole
+  if (yawObject.position.x < 21) {
+    const pit = new THREE.PointLight(0x9fb4c8, 1.1, 5, 2);
+    pit.position.set(18.3, -1.0, 2.4);
+    worldGroup.add(pit);
+  }
+  // a hanging work lamp in the stairwell, like the STAFF sign: a warm glow so the boards can be seen even with the axe in hand
+  if (yawObject.position.x < 21) {
+    addBox(0.06, 0.5, 0.06, 20.4, 2.75, 2.7, 0x222222);
+    addBox(0.3, 0.1, 0.3, 20.4, 2.45, 2.7, 0x333333);
+    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe2a8 });
+    const bulbM = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 10), bulbMat);
+    bulbM.position.set(20.4, 2.33, 2.7);
+    worldGroup.add(bulbM);
+    const wl = new THREE.PointLight(0xffd9a0, 2.2, 8, 2);
+    wl.position.set(20.3, 2.3, 2.7);
+    worldGroup.add(wl);
+    flickerLights.push({ light: wl, base: 2.2, phase: 1.3 });
   }
   // upstairs: the elevator is the only way back down
   if (levelOf(yawObject.position.x) === 1) {
@@ -4968,8 +4959,8 @@ function addStairs() {
     el.position.set(24.5, 2.3, 1.6);
     worldGroup.add(el);
   }
-  const bulb = new THREE.PointLight(0xaabbaa, 0.1, 4, 2);
-  bulb.position.set(17.75, 2.5, 3.4);
+  const bulb = new THREE.PointLight(0xaabbaa, 0.35, 5, 2);
+  bulb.position.set(18.3, 2.5, 3.9);
   worldGroup.add(bulb);
   // a failing red emergency lamp on the stairwell wall
   const lvl = levelOf(yawObject.position.x);
@@ -5640,6 +5631,15 @@ function updateFlashlight(dt) {
   updateBatteryHud();
 }
 
+// change batteries: the quick key (R) or Use in the inventory
+function useBatteries() {
+  if (state.batteries <= 0 || state.batteryLevel >= 100) return false;
+  state.batteries -= 1;
+  state.batteryLevel = 100;
+  playClick();
+  return true;
+}
+
 function updateBatteryHud() {
   const hud = document.getElementById("battery-hud");
   if (!state.inventory.flashlight) {
@@ -5651,7 +5651,9 @@ function updateBatteryHud() {
   const fill = document.getElementById("battery-fill");
   fill.style.width = pct + "%";
   fill.style.background = pct < 20 ? "#8a1f1f" : pct < 50 ? "#c9a15c" : "#5c8a52";
-  document.getElementById("battery-pct").textContent = pct + "%";
+  // spare batteries are shown right next to the charge, so it is always clear how many you carry
+  document.getElementById("battery-pct").textContent = pct + "%" + (state.batteries > 0 ? "  +" + state.batteries + " spare" : "");
+  if (state.batteries > 0 && pct < 40) hintOnce("battLow", "Flashlight low: press " + kn("battery") + " to change batteries");
 }
 
 // ---- mouse look (pointer lock) -------------------------------------------------
@@ -5872,7 +5874,7 @@ function updateControlHints() {
   else if (walkedDist > 5) hintOnce("run", "Hold " + kn("sprint") + " to run");
   if (state.inventory.flashlight && !state.flags.tut && !state.flashlightOn && state.batteryLevel > 0) hintOnce("f", "Press " + kn("flash") + " to turn on flashlight");
   if (p.x >= 5 && p.x < 16 && p.z < 4 && !state.flags.tut) hintOnce("c", "Press " + kn("crouch") + " to crouch and look underneath things");
-  if (state.batteries > 0 && state.inventory.flashlight) hintOnce("battUse", "Batteries: open inventory (" + kn("inv") + "), then press Use to recharge the flashlight");
+  if (state.batteries > 0) hintOnce("battUse", "Spare batteries: press " + kn("battery") + " to change them when the flashlight runs low");
 }
 
 function updateInteractPrompt() {
@@ -5991,20 +5993,6 @@ function handleInteract() {
     } else if (h.id === "radio") {
       playStatic();
       setTimeout(() => openPaper(RADIO_PAPER), 700);
-    } else if (h.id === "mail3" || h.id === "mail4") {
-      const three = h.id === "mail3";
-      const need = three ? "apt3Key" : "johnKey";
-      if (!state.inventory[need]) {
-        playKnock();
-        addLog("Locked.");
-      } else {
-        playClick();
-        openPaper(three ? MAIL3_PAPER : MAIL4_PAPER);
-        if (three && !state.flags.mail3Open) {
-          state.flags.mail3Open = true;
-          setTimeout(() => collectItem("mailBatt"), 900);
-        }
-      }
     } else if (h.id === "breaker") {
       if (state.flags.powerOn) addLog("The power is on.");
       else openBreaker();
@@ -6107,7 +6095,7 @@ function renderInventory() {
         ? "F turns the flashlight on and off.<br />Caps Lock changes the item in your hand.<br /><b>Press Caps Lock now.</b>"
         : t === "switch2"
           ? "Your hands are empty.<br /><b>Press Caps Lock again</b> to take the flashlight back out."
-          : kn("switch") + ": switch item in hand<br />" + kn("inv") + " or Esc: close" + (state.batteries > 0 ? "<br /><b>Batteries: press Use to recharge the flashlight</b>" : "");
+          : kn("switch") + ": switch item in hand<br />" + kn("inv") + " or Esc: close" + (state.batteries > 0 ? "<br /><b>Batteries: press Use here, or " + kn("battery") + " any time</b>" : "");
   }
   const list = document.getElementById("inventory-list");
   list.innerHTML = "";
@@ -6133,10 +6121,7 @@ function renderInventory() {
   });
   if (state.batteries > 0) {
     add(`Batteries x${state.batteries}`, "Use", () => {
-      if (state.batteries <= 0) return;
-      state.batteries -= 1;
-      state.batteryLevel = 100;
-      playClick();
+      useBatteries();
       renderInventory();
     }, state.batteryLevel >= 100);
   }
@@ -6258,6 +6243,7 @@ window.addEventListener("keydown", (e) => {
   if (key === "e") handleInteract();
   if (key === "c" && !e.repeat) state.crouch = !state.crouch; // press C to crouch, press again to stand
   if (key === "f") toggleFlashlight();
+  if (key === "r" && !e.repeat && state.phase === "explore") useBatteries();
 });
 
 window.addEventListener("blur", () => keys.clear());
@@ -7560,7 +7546,6 @@ function gameLoop() {
   const dt = Math.min(0.1, clock.getDelta());
   if (ambience) applyAmbiencePose();
   pollGamepad(dt);
-  checkMilestones(dt);
   tryMovePlayer(dt);
   checkJohnRoom();
   updateEntity(dt);
