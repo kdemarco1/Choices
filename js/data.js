@@ -39,7 +39,7 @@ const MAP_ROWS_TEXT = [
   "xxxxxxxxxxxxxxxxxxxxx#################################################", // 19
 ];
 // Three studio flats sit right behind the hallway doors, 3 wide x 4 deep (rows 0-3).
-const CELLAR = {"levers": [{"c": 64, "r": 9, "side": "S", "color": 0}, {"c": 60, "r": 3, "side": "N", "color": 1}, {"c": 64, "r": 1, "side": "E", "color": 2}], "order": [1, 0, 2], "notes": [{"c": 62, "r": 3}, {"c": 56, "r": 11}], "husks": [{"c": 60, "r": 9, "kind": "hang"}, {"c": 58, "r": 1, "kind": "crawl"}, {"c": 64, "r": 7, "kind": "hang"}, {"c": 58, "r": 11, "kind": "crawl"}, {"c": 62, "r": 1, "kind": "hang"}, {"c": 58, "r": 7, "kind": "crawl"}], "gate": {"c": 65, "r": 3}, "nest": {"c0": 66, "c1": 68, "r0": 1, "r1": 5}}; // generated maze extras: lever spots, colour order for the gate, notes, husk nests
+const CELLAR = {"levers": [{"c": 64, "r": 9, "side": "S", "color": 0}, {"c": 60, "r": 3, "side": "N", "color": 1}, {"c": 64, "r": 1, "side": "E", "color": 2}], "order": [1, 0, 2], "notes": [{"c": 62, "r": 3}, {"c": 56, "r": 11}], "husks": [{"c": 52, "r": 2, "kind": "hang"}, {"c": 48, "r": 4, "kind": "crawl"}, {"c": 51, "r": 10, "kind": "hang"}, {"c": 49, "r": 11, "kind": "crawl"}, {"c": 55, "r": 9, "kind": "crawl"}, {"c": 60, "r": 9, "kind": "hang"}, {"c": 58, "r": 1, "kind": "crawl"}, {"c": 64, "r": 7, "kind": "hang"}, {"c": 58, "r": 11, "kind": "crawl"}, {"c": 62, "r": 1, "kind": "hang"}, {"c": 58, "r": 7, "kind": "crawl"}], "gate": {"c": 65, "r": 3}, "nest": {"c0": 66, "c1": 68, "r0": 1, "r1": 5}}; // generated maze extras: lever spots, colour order for the gate, notes, husk nests
 const APT_W = 3;
 const APT_DEFS = [
   { id: "apt2", door: "apt2", ox: 5 },

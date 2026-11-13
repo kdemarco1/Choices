@@ -45,7 +45,7 @@ const DOOR_ROW = Math.floor(FRONT_DOOR.y); // row 6 — everything south of this
 // distance. Outdoors always uses the dimmer, moonlit street range.
 const LIT_RANGE = 12;
 const DARK_RANGE = 2.6;
-const MOON_RANGE = 12;
+const MOON_RANGE = 42; // how far you can see out on the lit street
 const ELEVATOR = FIXTURES.find((f) => f.id === "elevator");
 const FACADE_H = 9; // the street-facing walls are three storeys tall
 
@@ -1914,10 +1914,12 @@ function addOutdoors(cols, rows) {
     dash.material.emissive = new THREE.Color(0x15150f);
   }
 
-  // street lamps along the curb — one of them is failing
-  addStreetLight(4.5, rows - 0.5);
-  addStreetLight(12.5, rows - 0.5);
-  brokenLamp = addStreetLight(19, rows - 0.5);
+  // proper streetlights, bright and steady, so the yard, the road and the front of the building can be seen
+  brokenLamp = null;
+  addStreetLight(2.5, rows - 0.6);
+  addStreetLight(10.5, rows - 0.6);
+  addStreetLight(18.5, rows - 0.6);
+  addStreetLight(6.5, rows + 9.6, -1); // across the road, leaning back over it
 
   // trees: four in the yard (their trunks block you), more beyond the hedges and across the road
   [[2.5, 15.5, 1.0, false], [4.5, 17.5, 0.9, true], [14.5, 15.5, 1.1, false], [17.5, 17.5, 0.95, false]].forEach((t) =>
@@ -2269,7 +2271,6 @@ function buildWorld() {
   // The first thing you see on the left, just past the door.
   addReceptionDesk(3.0, 10.8);
   addLobbyExtras();
-  addMailboxes(19.9, 8.8);
   if (yawObject.position.x < 21) addWallDecor();
   addSofa(15.5, 11.6);
   addPlant(18.6, 8.7);
@@ -2326,8 +2327,53 @@ const FLUORESCENTS = [
   [18.5, 3.4], // stairwell
   [3.0, 6.0], // staff room
 ];
+let f2Tubes = [];
+let f2Timer = 0;
+function addF2Tubes() {
+  f2Tubes = [];
+  if (!state.flags.powerOn || levelOf(yawObject.position.x) !== 1) return;
+  [25.5, 31, 36.5, 42].forEach((x) => {
+    addBox(1.3, 0.05, 0.22, x, WALL_HEIGHT - 0.03, 6.5, 0x9a9a96);
+    const out = !!state.flags.f2Out;
+    const mat = new THREE.MeshBasicMaterial({ color: out ? 0x1c1d1c : 0xeaf6e0 });
+    const tube = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.03, 0.12), mat);
+    tube.position.set(x, WALL_HEIGHT - 0.07, 6.5);
+    worldGroup.add(tube);
+    if (out) return;
+    const l = new THREE.PointLight(0xe4f2dc, 16, 12, 2);
+    l.position.set(x, WALL_HEIGHT - 0.2, 6.5);
+    worldGroup.add(l);
+    f2Tubes.push({ l, mat, base: 16 * 1.1 });
+  });
+}
+function updateF2Lights(dt) {
+  if (!f2Tubes.length || state.phase !== "explore" || state.transition) return;
+  f2Timer += dt;
+  const T0 = 2.2, T1 = T0 + 3.4; // steady at first, then a stuttering death
+  let k = 1;
+  if (f2Timer > T0) {
+    const u = f2Timer - T0;
+    k = Math.sin(u * 41) * Math.sin(u * 13.7) > 0.1 - u * 0.12 ? 0.05 + Math.random() * 0.2 : 1 - u / 3.4 * 0.5;
+  }
+  if (f2Timer > T1) {
+    state.flags.f2Out = true;
+    playBang();
+    scareBlackout = 0.35;
+    doorShake = 0.25;
+    f2Tubes.forEach((t) => { t.l.parent && t.l.parent.remove(t.l); t.mat.color.set(0x1c1d1c); });
+    f2Tubes = [];
+    return;
+  }
+  f2Tubes.forEach((t, i) => {
+    const kk = i % 2 ? Math.min(1, k * 1.3) : k;
+    t.l.intensity = t.base * kk;
+    t.mat.color.setRGB(0.92 * kk + 0.05, 0.96 * kk + 0.05, 0.88 * kk + 0.05);
+  });
+}
 function addFluorescents() {
   fluoLights = [];
+  f2Timer = 0;
+  addF2Tubes();
   const px = yawObject.position.x;
   if (!state.flags.powerOn || px >= 21) return;
   // the hallway/lobby tubes, plus one small flickering tube in each studio
@@ -4632,23 +4678,31 @@ function addLevels() {
 // A single street lamp: a dark pole, a lamp head, and a real warm light
 // source — meant to be one of only two visible light sources on an
 // otherwise empty, dark street (the other being the door's glow).
-function addStreetLight(x, z) {
-  const poleMat = new THREE.MeshStandardMaterial({ color: 0x1c1c1a, roughness: 0.8 });
-  const pole = new THREE.Mesh(new THREE.BoxGeometry(0.08, 2.6, 0.08), poleMat);
-  pole.position.set(x, 1.3, z);
+function addStreetLight(x, z, armDir) {
+  const dir = armDir == null ? 1 : armDir; // which way the arm reaches (+z = over the road)
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2c2e, roughness: 0.7, metalness: 0.4 });
+  const pole = new THREE.Mesh(new THREE.BoxGeometry(0.14, 4.4, 0.14), poleMat);
+  pole.position.set(x, 2.2, z);
   worldGroup.add(pole);
-
-  const headMat = new THREE.MeshStandardMaterial({
-    color: 0x2a2a26,
-    emissive: 0x554422,
-    emissiveIntensity: 0.5,
-  });
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.32), headMat);
-  head.position.set(x, 2.62, z);
+  addBox(0.3, 0.25, 0.3, x, 0.12, z, 0x222426); // base
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 1.0), poleMat);
+  arm.position.set(x, 4.35, z + 0.5 * dir);
+  worldGroup.add(arm);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.12, 0.3), new THREE.MeshStandardMaterial({ color: 0x3a3c3e, roughness: 0.6 }));
+  head.position.set(x, 4.36, z + 1.0 * dir);
   worldGroup.add(head);
-
-  const lamp = new THREE.PointLight(0xffdca0, 1.3, 6, 2);
-  lamp.position.set(x, 2.55, z);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.04, 0.24), new THREE.MeshBasicMaterial({ color: 0xfff1cc }));
+  glass.position.set(x, 4.29, z + 1.0 * dir);
+  worldGroup.add(glass);
+  // a soft cone of light you can see falling from it
+  const cone = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.25, 2.6, 4.2, 20, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffe9b8, transparent: true, opacity: 0.02, depthWrite: false, side: THREE.DoubleSide, fog: false })
+  );
+  cone.position.set(x, 2.15, z + 1.0 * dir);
+  worldGroup.add(cone);
+  const lamp = new THREE.PointLight(0xffecc4, 42, 24, 2);
+  lamp.position.set(x, 4.1, z + 1.0 * dir);
   worldGroup.add(lamp);
   return lamp;
 }
@@ -5098,14 +5152,6 @@ function addBox(w, h, d, x, y, z, color) {
   return m;
 }
 
-// A block of metal mailboxes on the lobby's west wall.
-function addMailboxes(x, z) {
-  for (let r = 0; r < 2; r++) {
-    for (let c = 0; c < 6; c++) {
-      addBox(0.14, 0.22, 0.34, x, 1.0 + r * 0.26, z + c * 0.38, r ? 0x3d4146 : 0x35393d);
-    }
-  }
-}
 
 function addSofa(x, z) {
   addSolid(x, z, 2.0, 0.85);
@@ -5477,16 +5523,64 @@ function playElevatorRide(opt, done) {
       c.fillStyle = lit ? "#2a1400" : "#c9c4b4"; c.font = "bold 26px Courier New"; c.textAlign = "center";
       c.fillText(l === "B" ? "B" : l, bx, by + 9);
     });
-    // a hand reaching in from the lower right to press the button
-    const target = BTN[opt.to];
-    const reach = seg(t, 1.0, 2.0) * (1 - seg(t, 2.4, 3.1));
-    if (reach > 0.01) {
-      const press = t > 2.0 && t < 2.35 ? 14 : 0;
-      const tx = 1250 + (target[0] + 16 - press - 1250) * reach, ty = 800 + (target[1] + 6 - 800) * reach;
-      c.lineCap = "round";
-      c.strokeStyle = "#7d6b5a"; c.lineWidth = 62; c.beginPath(); c.moveTo(1180 + 120 * (1 - reach), 860); c.lineTo(tx + 90, ty + 190); c.stroke();
-      c.strokeStyle = "#b39a82"; c.lineWidth = 44; c.beginPath(); c.moveTo(tx + 90, ty + 190); c.lineTo(tx, ty); c.stroke();
-      c.fillStyle = "#c4ab92"; c.beginPath(); c.arc(tx, ty, 21, 0, 7); c.fill();
+    // a hand reaching in from the lower right: sleeve, wrist, palm, curled fingers, one finger pressing
+    {
+      const target = BTN[opt.to];
+      const ease = (u) => u * u * (3 - 2 * u);
+      const rin = ease(seg(t, 0.9, 1.9)), rout = ease(seg(t, 2.6, 3.4));
+      const reach = rin * (1 - rout);
+      if (reach > 0.005) {
+        const hov = t < 2.0 ? Math.sin(t * 9) * 2.5 * rin : 0; // slight tremor before the press
+        const push = ease(seg(t, 1.95, 2.2)) * (1 - ease(seg(t, 2.3, 2.6))); // 0..1 finger press
+        const bx = target[0], by = target[1];
+        // fingertip: hovers off the button, then touches it
+        const tipX = bx + 8 + (1 - push) * 20 + hov, tipY = by + 10 + (1 - push) * 16;
+        const sx = 1330 + (tipX - 1330) * reach, sy = 880 + (tipY - 880) * reach;
+        const ang = Math.atan2(sy - 880, sx - 1330); // direction of travel
+        c.save();
+        c.translate(sx, sy);
+        c.rotate(ang + Math.PI);
+        // now +x points back along the arm, tip at the origin, drawn pointing "left"
+        c.lineCap = "round"; c.lineJoin = "round";
+        // soft shadow on the panel
+        c.fillStyle = "rgba(0,0,0,0.18)"; c.beginPath(); c.ellipse(40, 24, 110, 22, 0, 0, 7); c.fill();
+        // sleeve and forearm
+        const sl = c.createLinearGradient(0, -50, 0, 50); sl.addColorStop(0, "#3a3f45"); sl.addColorStop(1, "#23262a");
+        c.fillStyle = sl; c.beginPath(); c.moveTo(250, -52); c.lineTo(520, -70); c.lineTo(520, 70); c.lineTo(250, 54); c.closePath(); c.fill();
+        c.strokeStyle = "#181a1d"; c.lineWidth = 3; c.stroke();
+        c.strokeStyle = "rgba(0,0,0,0.35)"; c.lineWidth = 3; [330, 400].forEach((x) => { c.beginPath(); c.moveTo(x, -58); c.quadraticCurveTo(x - 12, 0, x, 60); c.stroke(); });
+        // cuff
+        c.fillStyle = "#2c3036"; c.fillRect(236, -54, 22, 110);
+        // wrist and palm
+        const sk = c.createLinearGradient(0, -40, 0, 40); sk.addColorStop(0, "#d2b8a0"); sk.addColorStop(0.6, "#b99c84"); sk.addColorStop(1, "#8f7761");
+        c.fillStyle = sk; c.beginPath();
+        c.moveTo(246, -40); c.bezierCurveTo(200, -42, 160, -52, 112, -46);
+        c.lineTo(92, -30); c.lineTo(92, 34); c.bezierCurveTo(140, 50, 200, 46, 246, 42); c.closePath(); c.fill();
+        c.strokeStyle = "rgba(60,40,28,0.55)"; c.lineWidth = 2; c.stroke();
+        // curled fingers (middle, ring, little) as knuckled bumps under the pointer
+        [[-22, 30], [-4, 29], [14, 28]].forEach(([oy, w], i) => {
+          c.fillStyle = i % 2 ? "#b3977f" : "#bfa38a";
+          c.beginPath(); c.ellipse(86, 10 + oy + 14 * i * 0.2, 30, 11, 0, 0, 7); c.fill();
+          c.strokeStyle = "rgba(60,40,28,0.5)"; c.lineWidth = 2; c.stroke();
+        });
+        // thumb folded along the side
+        c.fillStyle = "#c2a68e"; c.beginPath(); c.ellipse(116, 38, 38, 13, -0.12, 0, 7); c.fill();
+        c.strokeStyle = "rgba(60,40,28,0.5)"; c.stroke();
+        // index finger: two segments, bends a little more on the press
+        const bend = 0.12 + push * 0.12;
+        const k1x = 70, k1y = -22; // knuckle
+        const j2x = k1x - 62 * Math.cos(bend), j2y = k1y + 62 * Math.sin(bend) * -1 + 8;
+        const tx2 = j2x - 52, ty2 = j2y + 6 + push * 3;
+        c.strokeStyle = "#bda189"; c.lineWidth = 30; c.beginPath(); c.moveTo(k1x + 8, k1y); c.lineTo(j2x, j2y); c.stroke();
+        c.strokeStyle = "#c8ad95"; c.lineWidth = 26; c.beginPath(); c.moveTo(j2x, j2y); c.lineTo(tx2, ty2); c.stroke();
+        // nail and joint creases
+        c.fillStyle = "#e0cbb8"; c.beginPath(); c.ellipse(tx2 + 6, ty2 - 6, 12, 7, 0.1, 0, 7); c.fill();
+        c.strokeStyle = "rgba(60,40,28,0.45)"; c.lineWidth = 2;
+        [j2x + 2, k1x - 14].forEach((x) => { c.beginPath(); c.moveTo(x, j2y - 11); c.lineTo(x, j2y + 13); c.stroke(); });
+        c.restore();
+        // press ring flashes on the button as it goes in
+        if (push > 0.6) { c.strokeStyle = `rgba(255,200,110,${(push - 0.6) * 1.4})`; c.lineWidth = 4; c.beginPath(); c.arc(bx, by, 36 + (1 - push) * 40, 0, 7); c.stroke(); }
+      }
     }
     // the light in the car, and the dark around it
     c.fillStyle = `rgba(0,0,0,${1 - light})`; c.fillRect(-20, -20, 1320, 760);
@@ -5597,6 +5691,7 @@ function measureBeam(dt) {
   beamClose = 1 - beamScale;
 }
 let _bmO = null, _bmD = null;
+let lowBattTimer = 1, lowBattBlink = 0;
 function updateFlashlight(dt) {
   const wantsOn = hasFlashlightOn();
   measureBeam(dt);
@@ -5611,6 +5706,20 @@ function updateFlashlight(dt) {
 
   let targetIntensity = hasFlashlightOn() && scareBlackout <= 0 ? FLASHLIGHT_MAX_INTENSITY * beamScale : 0;
 
+  // under 25% it blinks now and then, so you know it's running out
+  if (hasFlashlightOn() && state.batteryLevel < 25) {
+    lowBattTimer -= dt;
+    if (lowBattTimer <= 0) {
+      lowBattTimer = 2.5 + Math.random() * 3 - (25 - state.batteryLevel) * 0.08;
+      lowBattBlink = 0.32;
+    }
+    if (lowBattBlink > 0) {
+      lowBattBlink -= dt;
+      // two quick drops of the beam
+      const ph = 0.32 - lowBattBlink;
+      if (ph < 0.08 || (ph > 0.15 && ph < 0.23)) targetIntensity *= 0.04;
+    }
+  } else lowBattBlink = 0;
   if (hasFlashlightOn() && state.batteryLevel < 20) {
     flashlightFlickerTimer += dt;
     if (flashlightFlickerTimer > 0.07) {
@@ -5720,7 +5829,10 @@ function nearestInteractable() {
     if (isDoorOpen(door)) {
       // an open door can be shut again, as long as you're not standing in it
       const dd = Math.hypot(door.x - px, door.y - py);
-      if (dd > 0.9 && dd < 1.5 && dd < doorDist && !door.noClose) {
+      // facing it, close enough to reach, but not standing in the doorway itself
+      const fx = -Math.sin(yawObject.rotation.y), fz = -Math.cos(yawObject.rotation.y);
+      const facing = dd > 0 && ((door.x - px) * fx + (door.y - py) * fz) / dd > 0.3;
+      if (dd > 0.8 && dd < 2.6 && facing && dd < doorDist && !door.noClose) {
         doorDist = dd;
         doorTarget = { type: "door", id: door.id, label: "Close Door" };
       }
@@ -5949,6 +6061,7 @@ function handleInteract() {
       if (door.locked) playClick(); // key turning
       state.doorsOpen[door.id] = true;
       playDoorCreak(door);
+      setTimeout(() => hintOnce("closeDoor", "You can shut doors behind you: face an open door and press " + kn("interact") + ". It can't open them."), 2200);
       if (door.id === "apt2" && !(state.flags.faceSeen)) { state.flags.faceSeen = true; startFaceScare(); }
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
@@ -6315,6 +6428,9 @@ const ENTITY_SPEED_DARK = 1.3; // how fast it creeps when you've only just lost 
 const ENTITY_SPEED_RUSH = 6.4; // where it ends up if you stay in the dark: far faster than you
 const ENTITY_DARK_RAMP = 7; // seconds in the dark to reach full rush
 const ENTITY_SPEED_WATCHING = 0.25;
+const ENTITY_CHASE_SPEED = 3.5; // when it sees you it RUNS: faster than your walk (2.6), slower than your sprint (4.2)
+const ENTITY_SIGHT = 16;
+const ENTITY_RECOIL_SPEED = 0.9; // m/s it backs away while the beam is on it
 const ENTITY_STARE_LIMIT = 10; // seconds of staring (light on it) before it gives up and vanishes
 const ENTITY_CATCH_DIST = 0.85;
 const ENTITY_BEAM_COS = 0.96; // matches the small beam (about 16 degrees)
@@ -6879,13 +6995,27 @@ function updateEntity(dt) {
   let speed;
   let dir = 1;
   if (inBeam) {
-    speed = 0; // caught in the light: it freezes, screaming
+    speed = ENTITY_RECOIL_SPEED; // caught in the light: it can't bear it and slowly backs away into the dark
+    dir = -1;
     state.flags.entityRecoiled = true;
   } else if (lit) {
     speed = ENTITY_SPEED_WATCHING + k * 0.5;
   } else {
     speed = ENTITY_SPEED_DARK + k * k * (ENTITY_SPEED_RUSH - ENTITY_SPEED_DARK);
   }
+  // it sees you: it runs. Only the beam (it backs off) or a shut door stops it.
+  if (!inBeam && !breaking) {
+    const sees = Math.hypot(p.x - e.x, p.z - e.z) < ENTITY_SIGHT && hasLineOfSight(e.x, e.z, p.x, p.z);
+    if (sees) e.chase = 3;
+    else e.chase = Math.max(0, (e.chase || 0) - dt);
+    if (e.chase > 0) {
+      speed = Math.max(speed, ENTITY_CHASE_SPEED);
+      if (!e.running) {
+        e.running = true;
+        if (sinceScare() > 6) { playSting(); playVoice("gasp", 0.8, 2); markScare(); }
+      }
+    } else e.running = false;
+  } else e.running = false;
 
   if (breaking && state.breaker) {
     // it arrives exactly as the time runs out, getting faster the whole way
@@ -6918,9 +7048,21 @@ function updateEntity(dt) {
         tz = p.z;
       }
     } else if (!e.path) {
-      tx = e.x; // no way through right now (a closed door): it waits
+      tx = e.x; // no way through right now (a closed door): it waits, pounding on it, then loses interest
       tz = e.z;
+      e.stuck = (e.stuck || 0) + dt;
+      e.bang = (e.bang || 0) - dt;
+      if (e.bang <= 0 && e.stuck < 7) { e.bang = 1.1 + Math.random() * 1.2; playBang(); }
+      if (e.stuck > 7) {
+        e.stuck = 0;
+        e.mode = "gone";
+        e.timer = 10 + Math.random() * 8;
+        entityGroup.visible = false;
+        setFear(0);
+        return;
+      }
     }
+    if (e.path) e.stuck = 0;
     const mx = tx - e.x;
     const mz = tz - e.z;
     const md = Math.hypot(mx, mz);
@@ -7567,6 +7709,7 @@ function gameLoop() {
   applyTension(entityTension);
   updateDoorAnimation(dt);
   updateFluorescents(dt);
+  updateF2Lights(dt);
   syncAmbient();
   updateDeskLampFlicker(dt);
   updateStaffSign(dt);
@@ -7579,10 +7722,10 @@ function gameLoop() {
 
   const outside = isOutside();
   scene.fog.far = currentLightRange(); // indoor range; the street range is baked into the fog shader
-  const bgColor = outside ? 0x0a0918 : 0x0b0a0d;
+  const bgColor = outside ? 0x141a2e : 0x0b0a0d;
   scene.background.set(bgColor);
   scene.fog.color.set(bgColor);
-  const ambientTarget = Math.max(0, 0.03 + 0.05 * (state.settings.brightness - 1)); // nearly none: only real lights and the beam show anything
+  const ambientTarget = Math.max(0, (outside ? 0.22 : 0.03) + 0.05 * (state.settings.brightness - 1)); // night glow out on the street; indoors only real lights and the beam show anything
   ambientLight.intensity += (ambientTarget - ambientLight.intensity) * Math.min(1, dt * 4); // no sudden jump at the door
 
   updateInteractPrompt();
