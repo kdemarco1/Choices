@@ -2571,11 +2571,6 @@ function addApartment(a) {
     pm.rotation.y = 0.06;
     aptPillow[a.id] = { m: pm, bx: ox + 0.55, by: 0.53, bz: 0.88 };
   }
-  // things under the bed (you have to crouch to see them)
-  [[0.45, 2.0, 0.22, 0.12, 0.3, 0x7a6a50], [0.7, 1.2, 0.3, 0.06, 1.1, 0x3a3a38], [0.3, 1.4, 0.16, 0.02, 0.5, 0x4a4a46], [0.62, 2.2, 0.12, 0.03, 0.9, 0x5a2a2a]].forEach(([x, z, s, h2, r, c]) => {
-    const m = addBox(s * 1.5, h2, s, ox + x, h2 / 2, z, c);
-    m.rotation.y = r;
-  });
   if (a.id === "apt2") {
     const eyes = new THREE.Group();
     const em = new THREE.MeshBasicMaterial({ color: 0xe8e4b0, fog: false });
@@ -4192,32 +4187,16 @@ function addWallDecor() {
   // every picture is different: no kind is hung twice
   // hallway (north wall faces south; south wall faces north)
   addArt("maskA", 8.5, 1.65, 5.0, 0, 0.7, 1);
-  addArt("house", 12.5, 1.6, 5.0, 0, 0.45, 2, 0.04);
   addArt("family", 16.5, 1.6, 5.0, 0, 0.6, 7);
-  addArt("eyes", 11.0, 1.6, 7.0, P, 0.7, 8);
   addArt("clock", 14.2, 2.0, 7.0, P, 0.35, 9);
-  addArt("mirror", 17.2, 1.6, 7.0, P, 0.75, 10);
-  addArt("stitched", 6.0, 1.65, 6.0, P / 2, 0.65, 12, -0.05);
   // lobby (it runs from z 8 to z 13)
-  addArt("krampus", 6.0, 1.7, 8.0, 0, 0.5, 14);
-  addArt("skull", 14.5, 1.7, 8.0, 0, 0.8, 15);
   addArt("portrait", 17.5, 1.7, 8.0, 0, 0.6, 16, 0.05);
-  addArt("grin", 1.0, 1.7, 9.2, P / 2, 0.7, 17);
   addArt("doll", 1.0, 1.7, 11.2, P / 2, 0.6, 18);
-  addArt("maskB", 3.0, 1.7, 13.0, P, 0.7, 19);
-  addArt("krampusB", 12.0, 1.7, 13.0, P, 0.5, 20);
   // apartment 2 (olive)
   addArt("child", 7.95, 1.6, 3.0, -P / 2, 0.45, 22);
-  addArt("figure", 5.0, 1.9, 3.2, P / 2, 0.45, 23);
-  addArt("grinB", 7.4, 1.7, 4.0, P, 0.38, 24);
   // apartment 3 (mauve)
-  addArt("landscape", 9.0, 1.7, 1.5, P / 2, 0.45, 26);
-  addArt("flowers", 10.8, 1.7, 0.0, 0, 0.5, 27, -0.04);
-  addArt("skullB", 9.5, 1.7, 4.0, P, 0.5, 28);
   // John's (dark red)
   addArt("handprints", 16.0, 1.6, 1.4, -P / 2, 0.5, 30);
-  addArt("stitchedB", 13.0, 1.5, 1.1, P / 2, 0.45, 31, 0.1);
-  addArt("stairs", 13.5, 1.6, 4.0, P, 0.5, 32);
   // floors: wood, carpet, tile where it belongs
   floorPatch("tile", 1, 8, 19, 5, 1.0, 0.004); // lobby
   floorPatch("plankDark", 6, 5, 14, 2, 1.0, 0.004); // hallway boards
@@ -4501,7 +4480,7 @@ function addFloor2() {
   // corridor: boards, a runner, a few pictures, two weak sconces
   floorPatch("plankDark", 23, 5, 22, 3, 1.0, 0.004);
   floorPatch("runner", 23.4, 5.5, 21.2, 1.0, 1.0, 0.007);
-  [["house", 27, 0], ["clock", 31.5, 0], ["portrait", 36.5, 0], ["flowers", 41, 0], ["landscape", 27, 1], ["eyes", 31.5, 1], ["stairs", 36.5, 1], ["child", 41, 1]].forEach(([k, x, s], i) =>
+  [["house", 27, 0], ["portrait", 37.5, 0], ["eyes", 31.5, 1], ["child", 41.5, 1]].forEach(([k, x, s], i) =>
     addArt(k, x, 1.65, s ? 8.0 : 5.0, s ? P : 0, 0.5, 40 + i, (i % 3 - 1) * 0.03)
   );
   [31.5, 41].forEach((x, i) => {
@@ -5802,6 +5781,23 @@ function nearestInteractable() {
   const py = yawObject.position.z; // grid "y" is world Z
   let closest = null;
   let closestDist = INTERACT_DIST;
+
+  // Shutting a door matters (it's how you get away), so looking straight at an open door beats clutter beside it.
+  {
+    const fx = -Math.sin(yawObject.rotation.y), fz = -Math.cos(yawObject.rotation.y);
+    const aim = (x, y) => { const dd = Math.hypot(x - px, y - py); return dd > 0 ? ((x - px) * fx + (y - py) * fz) / dd : 1; };
+    let best = null, bd = Infinity;
+    doorList().forEach((door) => {
+      if (door.noClose || !isDoorOpen(door)) return;
+      const dd = Math.hypot(door.x - px, door.y - py);
+      if (dd > 0.8 && dd < 2.4 && aim(door.x, door.y) > 0.93 && dd < bd) { bd = dd; best = door; }
+    });
+    if (best) {
+      const rival = ITEMS.some((it) => !state.inventory[it.id] && !it.hidden && Math.hypot(it.x - px, it.y - py) < 1.0 && aim(it.x, it.y) > 0.93)
+        || HOTSPOTS.some((h) => h.id !== "boards" && Math.hypot(h.x - px, h.y - py) < Math.min(1.0, bd - 0.15) && aim(h.x, h.y) > 0.93);
+      if (!rival) return { type: "door", id: best.id, label: "Close Door" };
+    }
+  }
 
   NPCS.forEach((npc) => {
     const d = Math.hypot(npc.x - px, npc.y - py);

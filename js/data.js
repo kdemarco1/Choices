@@ -88,6 +88,7 @@ const ITEMS = [
   { id: "f2Batt2", name: "Batteries", h: 0.04, x: 30.2, y: 5.5, pickupText: "Spare batteries." },
   { id: "deskBatt", name: "Batteries", h: 0.77, x: 3.15, y: 11.5, pickupText: "Spare batteries." },
   { id: "batteries", name: "Batteries", h: 0.92, x: 14.95, y: 0.35, pickupText: "Spare batteries." },
+  { id: "apt2Key", name: "Key 2", key: true, h: 0.77, x: 4.1, y: 5.7, pickupText: "A key tagged 2." },
   { id: "staffBatt1", name: "Batteries", h: 1.04, x: 1.5, y: 5.75, pickupText: "Spare batteries." },
   { id: "staffBatt2", name: "Batteries", h: 0.77, x: 4.5, y: 5.45, pickupText: "Spare batteries." },
   { id: "staffNote", name: "Notice", note: true, h: 0.77, x: 3.7, y: 5.4, paper: "Power out again?\nMain breaker is down in\nthe cellar. Stairs at the\nend of the hall.\nBring a light.\n- Mgmt", sloppy: 0.1, seed: 7 },
@@ -147,7 +148,7 @@ const DOORS = [
   { id: "hallDoor", x: 8.5, y: 7.5, interactionDistance: 1.4, label: "Open Door", locked: false,
     style: "hall", baseColor: "#3b2f27", frame: "#1c1612", handle: "pull", metal: "#b0a68a", kick: true, creak: 0.9, creakTone: 6500, creakGain: 0.85, creakStart: 0.03 },
   // apartment 2: yellowed cream six-panel door, lever handle
-  { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Open Door", locked: false,
+  { id: "apt2", x: 6.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "apt2Key", unlockLabel: "Unlock Apartment 2", lockedText: "Locked.",
     style: "wood6", plate: "2", baseColor: "#8a7f62", frame: "#4a4030", handle: "lever", peephole: true, metal: "#9a8a50", creak: 1.15, creakTone: 11000, creakGain: 0.7, creakStart: 0.06 }, // light and quick
   // apartment 3: modern blue-grey flush door, steel lever and deadbolt
   { id: "apt3", x: 10.5, y: 4.5, interactionDistance: 1.4, label: "Try Door", locked: true, keyId: "apt3Key",
@@ -258,9 +259,9 @@ const APT_SPOTS = [
 ];
 // What each spot holds: an item id, or null (empty, you only find that out by looking).
 const LOOT = {
-  apt2: { fridge: null, under: ["a2Cans", "apt3Key"], desk: "nSep2", bed: "johnKey" },
-  apt3: { bed: null, nightstand: null, desk: "a3Photo", drawer: "a3Box", dresser: "nSep9", under: "a3Batt", couch: "a3Batt2", fridge: null },
-  john: { dresser: null, desk: null, bed: "nOct4", couch: "nOct1", fridge: null, under: "jBatt", drawer: "jTag", nightstand: "jPhoto" },
+  apt2: { desk: "nSep2", bed: "johnKey" },
+  apt3: { desk: "a3Photo", drawer: "a3Box" },
+  john: { bed: "nOct4", couch: "nOct1", under: "jBatt" },
 };
 // Writing scrawled on John's walls (readable). rot: the way the writing faces (0 = south, PI/2 = east, PI = north)
 const WALL_WRITING = [
@@ -276,7 +277,7 @@ APT_DEFS.forEach((a) => {
 });
 HOTSPOTS.push({ id: "apt3_calendar", x: 11.2, y: 3.4, label: "Read Calendar", paper: { paper: "SEPTEMBER\n14  boiler man - no show\n20  plumber - left early\n28  {circled three times}\nit knocks three times.\nthen the lights go.\n{don't answer.}", sloppy: 0.5, seed: 92 } });
 HOTSPOTS.push({ id: "apt2_switch", x: 5.9, y: 3.6, label: "Flip Light Switch", lightSwitch: true });
-WALL_WRITING.forEach((w) => HOTSPOTS.push({ id: w.id, x: APT_DEFS.find((a) => a.id === w.apt).ox + w.rx + Math.sin(w.rot) * 0.9, y: w.rz + Math.cos(w.rot) * 0.9, label: w.label, paper: { paper: w.paper, sloppy: w.sloppy, seed: w.seed } }));
+/* wall writing is scenery only now */ WALL_WRITING.slice(0, 0).forEach((w) => HOTSPOTS.push({ id: w.id, x: APT_DEFS.find((a) => a.id === w.apt).ox + w.rx + Math.sin(w.rot) * 0.9, y: w.rz + Math.cos(w.rot) * 0.9, label: w.label, paper: { paper: w.paper, sloppy: w.sloppy, seed: w.seed } }));
 
 // ---- second floor: a corridor of closed apartment doors. Rooms are 3 deep; v counts from the far wall. ----
 // side N: rooms at z 1-4, door in the wall at z 4. side S: rooms at z 9-12, door in the wall at z 9.
@@ -346,7 +347,7 @@ const PORTALS = []; // (the flats are real rooms behind the doors now)
 
 // Damage and clutter that differs between flats.
 const APT_DAMAGE = {
-  apt2: { holes: [], ceil: [], mess: 6 },
-  apt3: { holes: [], ceil: [[1.5, 2.0, 1.0, 0.9]], mess: 14 },
-  john: { holes: [], ceil: [], mess: 10 },
+  apt2: { holes: [], ceil: [], mess: 0 },
+  apt3: { holes: [], ceil: [[1.5, 2.0, 1.0, 0.9]], mess: 3 },
+  john: { holes: [], ceil: [], mess: 3 },
 };
