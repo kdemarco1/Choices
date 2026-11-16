@@ -238,13 +238,16 @@ const johnNote = (id, name, order, paper, sloppy, seed, spot) => {
   ITEMS.push(it);
 };
 johnNote("nSep2", "Sept 5", 0.5, "Sept 5\nMaria - if anything\nhappens to me, my key\nis yours. the thing we\ndiscussed is under my\nbed. don't let anyone\nelse in. - J", 0.15, 59);
-johnNote("nSep3", "Sept 3", 1, "Sept 3\nmoved into 4 today.\nquiet building, good rent.\nthe manager would not look\nat me when he gave me\nthe key. told Maria.\nshe worries too much.", 0.1, 61);
-johnNote("nSep9", "Sept 9", 2, "Sept 9\nsomeone walks the halls\nat night. slow. heavy.\nchecked the peephole.\nnothing there.\nprobably the pipes.", 0.2, 62);
-johnNote("nSep14", "Sept 14", 3, "Sept 14\nit is not the pipes.\nthe walking stops outside\nmy door. every night 3:13.\nstopped using the peephole.", 0.4, 63, [26.2, 2.2]);
 johnNote("nSep25", "Sept 25", 5, "Sept 25\npower cut again.\nthat is when it moves.\nin the dark it is {fast}\nin the light it only watches\nkeep the light on", 0.85, 65, [34.6, 10.4]);
-johnNote("nOct1", "Oct 1", 7, "Oct 1\nboarded the stairs.\nit does not use the stairs.\nit is {already upstairs}\nit is {already below}\nit is in the walls", 1.3, 67);
-johnNote("nOct3", "Oct 3", 8, "Oct 3\nhaven't eaten in 4 days.\nit knows my name now.\nit says it from the {vents}\nthe light is the only\nthing it is afraid of", 1.55, 68, [39.5, 2.2]);
-johnNote("nOct4", "Oct 4", 9, "Oct 4\nit is wearing my coat.\nit is standing behind\nwhoever is reading this.\n{turn around}\nMaria. i'm sorry.", 1.85, 69);
+
+
+// John's journal, under the pillow in his flat: five pages, his hand and his mind coming apart page by page.
+const jr = (n, date, text, sloppy, seed) => ITEMS.push({ id: "jr" + n, name: "Journal - page " + n, note: true, hidden: true, paper: date + "\n" + text, sloppy, seed });
+jr(1, "Sept 1", "new place. quiet.\nunit 4, top of the stairs.\nthe manager gave me the key\nwithout looking up.\nslept well. first time in months.", 0.1, 71);
+jr(2, "Sept 12", "the building hums at night.\nlow. like someone holding\none note on purpose.\ncounted the doors in the hall.\nthere were four. there were four.", 0.45, 72);
+jr(3, "Sept 20", "i keep finding the hall\nlonger than i left it.\nthe number on my door\nis the right number\nbut {it is not my door}\nwho is writing this", 0.9, 73);
+jr(4, "Sept 27", "the {walls} are wet and\nwarm and they know\nthe taste of rooms\nblue blue blue the stairs\nare {eating} down\nfour four four", 1.45, 74);
+jr(5, "Oct 2", "MARIA\n{it is wearing my coat}\nthe house has {no inside}\nonly doors that\n{breathe}\nturn around", 1.95, 75);
 
 // Furniture you can search: position inside a studio (x, z from its west wall / north wall), prompt.
 const APT_SPOTS = [
@@ -261,7 +264,7 @@ const APT_SPOTS = [
 const LOOT = {
   apt2: { desk: "nSep2", bed: "johnKey" },
   apt3: { desk: "a3Photo", drawer: "a3Box" },
-  john: { bed: "nOct4", couch: "nOct1", under: "jBatt" },
+  john: { bed: ["jr1", "jr2", "jr3", "jr4", "jr5"], under: "jBatt" },
 };
 // Writing scrawled on John's walls (readable). rot: the way the writing faces (0 = south, PI/2 = east, PI = north)
 const WALL_WRITING = [

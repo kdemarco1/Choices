@@ -3500,9 +3500,9 @@ function startEnding() {
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   const ov = document.getElementById("ending-overlay");
   // two endings: how much of John's story you pieced together decides which one you get
-  const STORY_IDS = ["nSep2", "nSep3", "nSep9", "nSep14", "nSep25", "nOct1", "nOct3", "nOct4", "note5", "johnNote", "mazeNote0", "mazeNote1", "nestNote"];
+  const STORY_IDS = ["nSep2", "nSep25", "jr1", "jr2", "jr3", "jr4", "jr5", "note5", "johnNote", "mazeNote0", "mazeNote1", "nestNote"];
   const found = STORY_IDS.filter((id) => state.inventory[id]).length;
-  const knowsAll = found >= 8 && state.inventory.nestNote;
+  const knowsAll = found >= 7 && state.inventory.nestNote;
   const lines = knowsAll
     ? [
         "The elevator carries you up through the dark.",
@@ -5735,7 +5735,10 @@ function updateFlashlight(dt) {
   const step = FLASHLIGHT_RAMP_SPEED * dt;
   flashlightCurrentIntensity =
     Math.abs(diff) <= step ? targetIntensity : flashlightCurrentIntensity + Math.sign(diff) * step;
-  flashlightLight.intensity = flashlightCurrentIntensity;
+  // down in the basement the beam throws further and brighter so you can actually see the rooms
+  const inCellar = levelOf(yawObject.position.x) === 2;
+  flashlightLight.distance = inCellar ? 24 : 15;
+  flashlightLight.intensity = flashlightCurrentIntensity * (inCellar ? 1.6 : 1);
 
   updateBatteryHud();
 }
@@ -5811,11 +5814,11 @@ function nearestInteractable() {
     doorList().forEach((door) => {
       if (door.noClose || !isDoorOpen(door)) return;
       const dd = Math.hypot(door.x - px, door.y - py);
-      if (dd > 0.8 && dd < 2.4 && aim(door.x, door.y) > 0.93 && dd < bd) { bd = dd; best = door; }
+      if (dd > 0.45 && dd < 3.0 && aim(door.x, door.y) > 0.8 && dd < bd) { bd = dd; best = door; }
     });
     if (best) {
-      const rival = ITEMS.some((it) => !state.inventory[it.id] && !it.hidden && Math.hypot(it.x - px, it.y - py) < 1.0 && aim(it.x, it.y) > 0.93)
-        || HOTSPOTS.some((h) => h.id !== "boards" && Math.hypot(h.x - px, h.y - py) < Math.min(1.0, bd - 0.15) && aim(h.x, h.y) > 0.93);
+      const rival = ITEMS.some((it) => !state.inventory[it.id] && !it.hidden && Math.hypot(it.x - px, it.y - py) < 0.6 && aim(it.x, it.y) > 0.93)
+        || HOTSPOTS.some((h) => h.id !== "boards" && Math.hypot(h.x - px, h.y - py) < Math.min(0.7, bd - 0.2) && aim(h.x, h.y) > 0.93);
       if (!rival) return { type: "door", id: best.id, label: "Close Door" };
     }
   }
@@ -5849,7 +5852,7 @@ function nearestInteractable() {
       // facing it, close enough to reach, but not standing in the doorway itself
       const fx = -Math.sin(yawObject.rotation.y), fz = -Math.cos(yawObject.rotation.y);
       const facing = dd > 0 && ((door.x - px) * fx + (door.y - py) * fz) / dd > 0.3;
-      if (dd > 0.8 && dd < 2.6 && facing && dd < doorDist && !door.noClose) {
+      if (dd > 0.45 && dd < 3.0 && facing && dd < doorDist && !door.noClose) {
         doorDist = dd;
         doorTarget = { type: "door", id: door.id, label: "Close Door" };
       }
@@ -7613,10 +7616,33 @@ function updateHusks(dt) {
     }
     // awake
     const los = d < 9 && hasLineOfSight(p.x, p.z, h.x, h.z);
+    if (h.fleeing) {
+      // held in the light long enough: it stiffens, turns its head away too far, then bolts on all fours
+      h.fleeT += dt;
+      const away = Math.atan2(-dx, -dz);
+      if (h.fleeT < 1.1) {
+        let da = away - m.rotation.y; da = Math.atan2(Math.sin(da), Math.cos(da));
+        m.rotation.y += da * Math.min(1, dt * 2.2) + (Math.random() - 0.5) * 0.05;
+        m.position.x = h.x + (Math.random() - 0.5) * 0.015; m.position.z = h.z + (Math.random() - 0.5) * 0.015;
+        animateCreature(ud, h.t, 0, 0.7, true);
+        return;
+      }
+      const sp = 4.6 * dt;
+      const wob = Math.sin(h.t * 17) * 0.6;
+      const ang = away + wob * 0.35;
+      entityStep(h, Math.sin(ang) * sp, Math.cos(ang) * sp);
+      m.rotation.y = away + Math.sin(h.t * 9) * 0.25;
+      animateCreature(ud, h.t, 6, 0.7, false);
+      m.position.x = h.x; m.position.z = h.z;
+      if (h.fleeT > 5.5 || d > 15) { h.mode = "dead"; m.visible = false; }
+      return;
+    }
     if (entityInBeam(h)) {
       if (h.frozen <= 0) playFreeze();
       h.frozen = 2.6;
-    }
+      h.lit = (h.lit || 0) + dt;
+      if (h.lit >= 5) { h.fleeing = true; h.fleeT = 0; playSkitter(); }
+    } else h.lit = Math.max(0, (h.lit || 0) - dt * 0.4);
     h.frozen = Math.max(0, h.frozen - dt);
     h.stun = Math.max(0, h.stun - dt);
     const frozen = h.frozen > 0;
