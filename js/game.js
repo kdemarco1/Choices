@@ -761,7 +761,6 @@ const ACTIONS = [
   ["right", "Move right", "d"],
   ["interact", "Interact", "e"],
   ["flash", "Flashlight", "f"],
-  ["crouch", "Crouch", "c"],
   ["sprint", "Run", "shift"],
   ["inv", "Inventory", "tab"],
   ["switch", "Switch item", "capslock"],
@@ -828,7 +827,7 @@ function applySettings() {
 }
 loadSettings();
 
-// ---- gamepad: left stick moves, right stick looks, A interact, X flashlight, B crouch, Y switch item,
+// ---- gamepad: left stick moves, right stick looks, A interact, X flashlight, Y switch item,
 // triggers / L3 run, Select inventory, Start pause. A also presses the main button on menu screens.
 let padMoveX = 0, padMoveY = 0, padSprint = false;
 let padPrev = [];
@@ -858,7 +857,6 @@ function pollGamepad(dt) {
     camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x - ly * 2.0 * state.settings.sens * dt));
     if (press[0]) handleInteract();
     if (press[2]) toggleFlashlight();
-    if (press[1]) state.crouch = !state.crouch;
     if (press[3]) cycleHeld();
     if (padButtonEdge(5)) useBatteries();
     if (press[8]) openInventory();
@@ -2297,6 +2295,7 @@ function buildWorld() {
   ITEMS.filter((it) => !state.inventory[it.id] && !it.hidden).forEach((it) => {
     if (it.id === "flashlight") addFlashlightModel(it.x, 0.78, it.y);
     else if (it.id === "johnKey") addKeyModel(it.x, 0.775, it.y);
+    else if (it.id === "apt2Key") addKeyModel(it.x, it.h + 0.005, it.y);
     else if (it.id === "axe") addAxeModel(it.x, 0.07, it.y);
     else if (it.name === "Batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, it.h + 0.02, it.y + o - 0.03, 0x9a7a1a));
     else if (it.note) {
@@ -2965,14 +2964,14 @@ function updateWindowRun(dt) {
 }
 
 
-// something under apartment 2's bed looks back at you, but only if you crouch down to look
+// something under apartment 2's bed looks back at you when you come near
 function updateBedEyes(dt) {
   const b = bedEyes;
   if (!b || b.gone) return;
   const p = yawObject.position;
   const d = Math.hypot(p.x - b.g.position.x, p.z - b.g.position.z);
   b.t += dt;
-  const watching = crouchK > 0.7 && d < 3.6 && state.phase === "explore";
+  const watching = d < 3.0 && state.phase === "explore";
   b.g.visible = watching && Math.sin(b.t * 2.3) > -0.85 && !(b.t % 4 > 3.7);
   if (watching && d < 1.15) {
     b.gone = true;
@@ -4937,19 +4936,27 @@ function addStairs() {
     const x0 = 19.85, x1 = 20.95, cx = (x0 + x1) / 2, w = x1 - x0;
     const NS = 12, z0 = 3.9, dz = -0.2208, rise = 2.9;
     for (let i = 0; i < NS; i++) {
-      if (i < 4) continue; // the missing steps
       const top = (rise * (i + 1)) / NS;
       const zmid = z0 + dz * (i + 0.5);
       addBox(w, top, Math.abs(dz), cx, top / 2, zmid, 0x5a4632);
       addBox(w - 0.04, 0.03, 0.14, cx, top + 0.015, z0 + dz * i - 0.07, 0xb09060);
     }
-    // splintered ends where the lower flight broke off, and rubble at the foot
-    [[0.1, 0.6, 3.05], [-0.25, 0.4, 3.0], [0.3, 0.5, 2.98]].forEach(([dx, h, z], i) => {
-      const sp = addBox(0.1, h, 0.08, cx + dx, 1.0 + h / 2 - 0.2, z - 0.1 * i, 0x6a4a2a);
-      sp.rotation.z = (i - 1) * 0.5;
-    });
-    [[20.2, 3.7, 0.5, 0.15], [20.6, 3.55, 0.35, 0.3], [20.05, 3.3, 0.4, 0.12], [20.75, 3.9, 0.3, 0.1]].forEach(([x, z, s, h], i) => {
-      const r = addBox(s, h, s * 0.8, x, h / 2, z, i % 2 ? 0x4a4038 : 0x5a5248);
+    // the way up is barricaded with wrecked furniture: a big couch on its end, a toppled dresser, planks and a chair
+    const cb = (w_, h_, d_, x_, y_, z_, c_, ry, rz, rx) => { const m = addBox(w_, h_, d_, x_, y_, z_, c_); m.rotation.set(rx || 0, ry || 0, rz || 0); return m; };
+    cb(1.0, 0.45, 0.8, 20.4, 0.25, 3.45, 0x4a3a3c, 0.1, 0.0); // couch seat
+    cb(1.05, 0.8, 0.22, 20.4, 0.85, 3.05, 0x3e3033, 0.1, 0.0, 0.25); // couch back, tipped against the stairs
+    cb(0.2, 0.55, 0.8, 19.95, 0.55, 3.4, 0x3a2c2e, 0.1); // arm
+    cb(0.2, 0.55, 0.8, 20.85, 0.5, 3.5, 0x3a2c2e, 0.1); // arm
+    cb(0.9, 0.95, 0.5, 20.35, 1.45, 2.55, 0x4a3524, -0.15, 0.2); // dresser wedged on the steps
+    cb(0.86, 0.04, 0.46, 20.33, 1.73, 2.5, 0x5a4330, -0.15, 0.2);
+    [0.25, 0.65].forEach((dy, i) => cb(0.78, 0.2, 0.03, 20.38 + i * 0.01, 1.2 + dy * 0.7, 2.29, 0x2a1c12, -0.15, 0.2)); // drawer fronts
+    cb(0.12, 1.5, 0.05, 20.2, 1.2, 2.0, 0x7a5a38, 0, 0.9); // planks jammed through
+    cb(0.12, 1.4, 0.05, 20.6, 1.3, 2.2, 0x6a4a2a, 0, -0.8);
+    cb(0.1, 0.9, 0.05, 20.4, 0.6, 3.85, 0x7a5a38, 0.3, 1.1);
+    cb(0.45, 0.04, 0.45, 20.7, 0.45, 3.85, 0x4a3a28, 0.6, 0.0, 0.3); // chair seat
+    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([dx, dz]) => cb(0.04, 0.45, 0.04, 20.7 + dx, 0.62, 3.85 + dz, 0x4a3a28, 0.6, dx * 2, 0.3));
+    [[20.2, 3.75, 0.4, 0.12], [20.65, 3.2, 0.3, 0.2]].forEach(([x, z, s_, h], i) => {
+      const r = addBox(s_, h, s_ * 0.8, x, h / 2, z, i % 2 ? 0x4a4038 : 0x5a5248);
       r.rotation.y = i * 0.8;
     });
     // banister up the open side and a post at the first surviving step
@@ -4957,7 +4964,7 @@ function addStairs() {
     rail.rotation.x = Math.atan2(1.9, 1.75);
     for (let i = 4; i <= 12; i += 2) addBox(0.04, 0.95, 0.04, x0 + 0.04, (rise * i) / NS + 0.48, z0 + dz * i, 0x2a1a10);
     // you can't walk onto it: solid from the first surviving step to the top, plus the rail
-    addSolid(cx, 2.35, w, 2.0);
+    addSolid(cx, 2.7, w, 2.8);
     addSolid(x0 - 0.05, 2.6, 0.08, 2.9);
     entityBlock.push({ minX: x0 - 0.2, maxX: x1 + 0.2, minZ: 1.0, maxZ: 3.6 });
     // a plain dark hatch where it meets the ceiling
@@ -4967,6 +4974,7 @@ function addStairs() {
   if (yawObject.position.x < 21) {
     const pit = new THREE.PointLight(0x9fb4c8, 1.1, 5, 2);
     pit.position.set(18.3, -1.0, 2.4);
+    pit.intensity = 2.4;
     worldGroup.add(pit);
   }
   // a hanging work lamp in the stairwell, like the STAFF sign: a warm glow so the boards can be seen even with the axe in hand
@@ -4981,6 +4989,19 @@ function addStairs() {
     wl.position.set(20.3, 2.3, 2.7);
     worldGroup.add(wl);
     flickerLights.push({ light: wl, base: 2.2, phase: 1.3 });
+    // more caged lamps over the flights: brighter, stuttering, so both stairs read even with the axe out
+    [[18.3, 2.7, 0.0, 5.5, 0.4], [18.3, 1.5, 0.0, 4.5, 2.9], [20.4, 1.7, 0.0, 4.5, 5.1]].forEach(([lx, lz, , inten, ph], i) => {
+      addBox(0.05, 0.3, 0.05, lx, 2.85, lz, 0x222222);
+      addBox(0.22, 0.08, 0.22, lx, 2.68, lz, 0x333333);
+      const bm = new THREE.MeshBasicMaterial({ color: 0xffe2a8 });
+      const bb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 10, 10), bm);
+      bb.position.set(lx, 2.6, lz);
+      worldGroup.add(bb);
+      const L = new THREE.PointLight(0xffd9a0, inten, 9, 2);
+      L.position.set(lx, 2.5, lz);
+      worldGroup.add(L);
+      flickerLights.push({ light: L, base: inten, phase: ph, mat: bm });
+    });
   }
   // upstairs: the elevator is the only way back down
   if (levelOf(yawObject.position.x) === 1) {
@@ -5981,7 +6002,6 @@ function updateControlHints() {
   if (walkedDist < 1.5) hintOnce("move", "Move with " + [kn("forward"), kn("left"), kn("back"), kn("right")].join(" ") + ", look with the mouse");
   else if (walkedDist > 5) hintOnce("run", "Hold " + kn("sprint") + " to run");
   if (state.inventory.flashlight && !state.flags.tut && !state.flashlightOn && state.batteryLevel > 0) hintOnce("f", "Press " + kn("flash") + " to turn on flashlight");
-  if (p.x >= 5 && p.x < 16 && p.z < 4 && !state.flags.tut) hintOnce("c", "Press " + kn("crouch") + " to crouch and look underneath things");
   if (state.batteries > 0) hintOnce("battUse", "Spare batteries: press " + kn("battery") + " to change them when the flashlight runs low");
 }
 
@@ -6350,7 +6370,6 @@ window.addEventListener("keydown", (e) => {
     keys.add(key);
   }
   if (key === "e") handleInteract();
-  if (key === "c" && !e.repeat) state.crouch = !state.crouch; // press C to crouch, press again to stand
   if (key === "f") toggleFlashlight();
   if (key === "r" && !e.repeat && state.phase === "explore") useBatteries();
 });
@@ -7332,6 +7351,7 @@ function updateScares(dt) {
   flickerLights.forEach((f) => {
     const n = Math.sin(T * 23 + f.phase) * Math.sin(T * 7.3 + f.phase * 2);
     f.light.intensity = f.base * (n > 0.55 ? 0.1 : 0.75 + 0.25 * Math.sin(T * 3 + f.phase));
+    if (f.mat) f.mat.color.setScalar(n > 0.55 ? 0.15 : 1);
   });
   swayers.forEach((s) => {
     s.grp.rotation.z = Math.sin(T * 0.9 + s.phase) * 0.08;
