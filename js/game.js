@@ -674,6 +674,7 @@ function resetRun() {
   entityGroup.visible = false;
   clearScares();
   clearHusks();
+  if (typeof vanishWatcher === "function") { vanishWatcher(true); watchers.cd = 14; }
   closeBreaker();
   state.swing = null;
   walkedDist = 0;
@@ -2298,6 +2299,11 @@ function buildWorld() {
     else if (it.id === "apt2Key") addKeyModel(it.x, it.h + 0.005, it.y);
     else if (it.id === "axe") addAxeModel(it.x, 0.07, it.y);
     else if (it.name === "Batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, it.h + 0.02, it.y + o - 0.03, 0x9a7a1a));
+    else if (it.tape) {
+      addBox(0.19, 0.03, 0.1, it.x, (it.h || 0.02) + 0.015, it.y, 0x151515);
+      addBox(0.08, 0.005, 0.06, it.x, (it.h || 0.02) + 0.032, it.y, 0xd8d2bc);
+      addBox(0.03, 0.006, 0.02, it.x - 0.05, (it.h || 0.02) + 0.036, it.y, 0x8a1c14);
+    }
     else if (it.note) {
       const paper = new THREE.Mesh(
         new THREE.PlaneGeometry(0.22, 0.28),
@@ -6183,6 +6189,7 @@ function collectItem(id) {
   if (!item.note) showPickup(item.name);
   if (item.note) openPaper(item);
   if (item.name === "Batteries") state.batteries += 1;
+  if (id === "elevKey") setTimeout(spawnGrinner, 1200); // the thing that guards the key wakes up
   if (id === "flashlight" || (id === "axe" && !state.held)) state.held = id;
   if (id === "flashlight") {
     state.inventory.hands = true; // empty hands, so there's always something to switch to
@@ -6258,7 +6265,7 @@ function renderInventory() {
     }, state.batteryLevel >= 100);
   }
   const noteDate = (it) => { const m = /^(Sept|Oct)\s+(\d+)/.exec(it.paper || ""); return m ? (m[1] === "Oct" ? 100 : 0) + +m[2] : 0; }; // oldest first
-  ITEMS.filter((it) => it.note && state.inventory[it.id]).sort((p, q) => noteDate(p) - noteDate(q)).forEach((it) => add(it.name, "Read", () => {
+  ITEMS.filter((it) => it.note && state.inventory[it.id]).sort((p, q) => noteDate(p) - noteDate(q)).forEach((it) => add(it.name, it.tape ? "Play" : "Read", () => {
     document.getElementById("inventory-overlay").classList.add("hidden");
     openPaper(it);
   }));
@@ -6285,16 +6292,91 @@ function openReader(title, lines) {
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
 }
 
+// ---- tapes: a handheld screen with static, John's voice as a transcript that frays, and a hiss under it ----
+let tapeRun = null;
+function stopTape() {
+  if (!tapeRun) return;
+  tapeRun.stop = true;
+  try { tapeRun.nodes.forEach((n) => { try { n.stop && n.stop(); } catch (e) {} try { n.disconnect(); } catch (e) {} }); } catch (e) {}
+  clearInterval(tapeRun.iv);
+  tapeRun = null;
+}
+function playTape(it, canvas) {
+  stopTape();
+  canvas.width = 640; canvas.height = 480;
+  const c = canvas.getContext("2d");
+  const noise = document.createElement("canvas"); noise.width = 160; noise.height = 120;
+  const nc = noise.getContext("2d"); const img = nc.createImageData(160, 120);
+  const lines = (it.paper || "").replace(/[{}]/g, "").split("\n");
+  const text = lines.join("\n");
+  const g = Math.min(2, (it.sloppy || 0.5) + 0.3); // how badly the recording is coming apart
+  const run = { stop: false, t0: performance.now(), nodes: [], iv: 0 };
+  tapeRun = run;
+  if (audioReady()) {
+    const n = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), gn = audioCtx.createGain();
+    n.buffer = noiseBuf; n.loop = true; bp.type = "bandpass"; bp.frequency.value = 3200; bp.Q.value = 0.6; gn.gain.value = 0.05 + g * 0.02;
+    n.connect(bp).connect(gn).connect(audioCtx.destination); n.start();
+    const hum = audioCtx.createOscillator(), hg = audioCtx.createGain();
+    hum.type = "sawtooth"; hum.frequency.value = 50; hg.gain.value = 0.02; hum.connect(hg).connect(audioCtx.destination); hum.start();
+    run.nodes.push(n, hum);
+    run.iv = setInterval(() => { if (Math.random() < 0.35 + g * 0.2) playWhisper(0.2 + g * 0.1); }, 2400);
+  }
+  const frame = () => {
+    if (run.stop || document.getElementById("paper-overlay").classList.contains("hidden")) { if (!run.stop) stopTape(); return; }
+    const t = (performance.now() - run.t0) / 1000;
+    c.fillStyle = "#050806"; c.fillRect(0, 0, 640, 480);
+    // the picture: a dark room, a slow shape
+    const gr = c.createRadialGradient(320, 240, 20, 320, 240, 340); gr.addColorStop(0, "#1b2a22"); gr.addColorStop(1, "#020403");
+    c.fillStyle = gr; c.fillRect(0, 0, 640, 480);
+    // typed transcript, with letters going wrong as the tape degrades
+    const shown = Math.min(text.length, Math.floor(t * 16));
+    c.font = "bold 26px 'Courier New', monospace"; c.textBaseline = "top";
+    let x = 50, y = 90; const junk = "#%&@?/\\01";
+    for (let i = 0; i < shown; i++) {
+      const ch = text[i];
+      if (ch === "\n") { x = 50; y += 40; continue; }
+      let out = ch;
+      if (ch !== " " && Math.random() < 0.012 + g * 0.03) out = junk[Math.floor(Math.random() * junk.length)];
+      const jx = (Math.random() - 0.5) * g * 3, jy = (Math.random() - 0.5) * g * 3;
+      c.fillStyle = "rgba(200,255,214,0.88)"; c.fillText(out, x + jx, y + jy);
+      x += 16;
+    }
+    // static, scanlines, tracking glitch
+    for (let i = 0; i < img.data.length; i += 4) { const v = Math.random() * 255; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    nc.putImageData(img, 0, 0);
+    c.globalAlpha = 0.1 + g * 0.07 + (Math.random() < 0.05 ? 0.25 : 0); c.drawImage(noise, 0, 0, 640, 480); c.globalAlpha = 1;
+    c.fillStyle = "rgba(0,0,0,0.28)"; for (let yy = 0; yy < 480; yy += 4) c.fillRect(0, yy, 640, 1.5);
+    const by = (t * 90) % 560 - 40;
+    c.fillStyle = "rgba(255,255,255,0.05)"; c.fillRect(0, by, 640, 24);
+    if (Math.random() < 0.04 + g * 0.04) { const gy = Math.random() * 440; c.drawImage(canvas, 0, gy, 640, 18, (Math.random() - 0.5) * 60, gy, 640, 18); }
+    // OSD
+    c.font = "bold 22px 'Courier New', monospace"; c.fillStyle = "#e8e8e8";
+    c.fillText("\u25B6 PLAY", 30, 24);
+    const sec = Math.floor(t), mm = String(Math.floor(sec / 60)).padStart(2, "0"), ss = String(sec % 60).padStart(2, "0");
+    c.fillText("03:" + mm + ":" + ss, 500, 24);
+    if (Math.floor(t * 1.6) % 2 === 0) { c.fillStyle = "#d02a22"; c.beginPath(); c.arc(470, 36, 7, 0, 7); c.fill(); }
+    c.fillStyle = "rgba(220,220,220,0.5)"; c.font = "18px 'Courier New', monospace"; c.fillText((it.name || "TAPE").toUpperCase(), 30, 446);
+    requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
 function openPaper(it) {
   state.phase = "reading";
   keys.clear();
-  if (it.draw) it.draw(document.getElementById("paper-canvas"));
-  else drawPaper(document.getElementById("paper-canvas"), it.paper, it.sloppy, it.seed);
+  const pc = document.getElementById("paper-canvas");
+  stopTape();
+  if (it.tape) playTape(it, pc);
+  else {
+    pc.width = 512; pc.height = 640;
+    if (it.draw) it.draw(pc);
+    else drawPaper(pc, it.paper, it.sloppy, it.seed);
+  }
   document.getElementById("paper-overlay").classList.remove("hidden");
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
 }
 
 function closeReader() {
+  stopTape();
   document.getElementById("paper-overlay").classList.add("hidden");
   document.getElementById("reader-overlay").classList.add("hidden");
   state.phase = "explore";
@@ -7167,6 +7249,125 @@ function playBang() {
   o.start(t);
   o.stop(t + 0.45);
 }
+// ---- creepier sounds ---------------------------------------------------------------
+// a slow, wet, detuned growl with a tremor in it
+function playGrowl(vol) {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime, v = vol || 1;
+  const g = audioCtx.createGain(), lp = audioCtx.createBiquadFilter(), trem = audioCtx.createOscillator(), tg = audioCtx.createGain();
+  lp.type = "lowpass"; lp.frequency.setValueAtTime(420, t); lp.frequency.exponentialRampToValueAtTime(140, t + 1.6);
+  trem.frequency.value = 23; tg.gain.value = 0.35; trem.connect(tg).connect(g.gain);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.28 * v, t + 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + 1.7);
+  [58, 61.5, 87].forEach((f, i) => {
+    const o = audioCtx.createOscillator();
+    o.type = i === 2 ? "triangle" : "sawtooth";
+    o.frequency.setValueAtTime(f * 1.4, t); o.frequency.exponentialRampToValueAtTime(f * 0.8, t + 1.6);
+    o.connect(lp); o.start(t); o.stop(t + 1.75);
+  });
+  trem.start(t); trem.stop(t + 1.75);
+  lp.connect(g).connect(audioCtx.destination);
+}
+// a breathy whisper that never quite makes words: formant-swept noise
+function playWhisper(vol) {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime, v = vol || 1;
+  for (let k = 0; k < 4; k++) {
+    const at = t + k * 0.28 + Math.random() * 0.12;
+    const n = audioCtx.createBufferSource(), bp = audioCtx.createBiquadFilter(), bp2 = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
+    n.buffer = noiseBuf; n.loop = true;
+    bp.type = "bandpass"; bp.Q.value = 6; bp.frequency.setValueAtTime(700 + Math.random() * 500, at); bp.frequency.linearRampToValueAtTime(1500 + Math.random() * 1500, at + 0.22);
+    bp2.type = "highpass"; bp2.frequency.value = 500;
+    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.1 * v, at + 0.07); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.25);
+    n.connect(bp).connect(bp2).connect(g).connect(audioCtx.destination);
+    n.start(at); n.stop(at + 0.27);
+  }
+}
+// something sucks the air out of the room as it leaves
+function playVanish() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime;
+  const n = audioCtx.createBufferSource(), lp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
+  n.buffer = noiseBuf; n.loop = true;
+  lp.type = "lowpass"; lp.frequency.setValueAtTime(3000, t); lp.frequency.exponentialRampToValueAtTime(90, t + 0.7);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.22, t + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.8);
+  n.connect(lp).connect(g).connect(audioCtx.destination);
+  n.start(t); n.stop(t + 0.85);
+  const o = audioCtx.createOscillator(), og = audioCtx.createGain();
+  o.type = "sine"; o.frequency.setValueAtTime(52, t); o.frequency.exponentialRampToValueAtTime(30, t + 0.6);
+  og.gain.setValueAtTime(0.3, t); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.7);
+  o.connect(og).connect(audioCtx.destination); o.start(t); o.stop(t + 0.75);
+}
+
+// ---- watchers: they never attack. They stand where you can't quite see them, and are gone when you look. ----
+const watchers = { cur: null, cd: 14, lookT: 0, life: 0, lvl: -1 };
+function makeWatcher(level) {
+  const g = new THREE.Group();
+  if (level === 0) { // ground floor: the tall pale shroud, seen at the far end of a room
+    const a = makeApparition();
+    g.add(a.mesh || a);
+    return g;
+  }
+  const pale = new THREE.MeshStandardMaterial({ color: 0xcfc9b8, roughness: 0.8, emissive: 0x1a1a18 });
+  const blk = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const eye = new THREE.MeshBasicMaterial({ color: level === 2 ? 0xff3a22 : 0xffffff });
+  if (level === 1) { // upstairs: a long pale face leaning out of the dark, too high and too thin
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), pale);
+    head.scale.set(0.75, 1.7, 0.8); head.position.set(0, 1.75, 0); g.add(head);
+    [-0.05, 0.05].forEach((x) => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), blk); e.scale.set(0.8, 1.6, 0.6); e.position.set(x, 1.82, 0.1); g.add(e); });
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), blk); m.scale.set(1, 2.4, 0.5); m.position.set(0, 1.62, 0.1); g.add(m);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 1.1, 8), pale); neck.position.set(0, 1.1, 0); g.add(neck);
+    const body = new THREE.Mesh(new THREE.ConeGeometry(0.3, 1.2, 8, 1, true), new THREE.MeshStandardMaterial({ color: 0x08080a, side: THREE.DoubleSide })); body.position.y = 0.6; g.add(body);
+  } else { // basement: a crouched shape, and only its eyes show
+    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), new THREE.MeshStandardMaterial({ color: 0x0a0a0a, roughness: 1 }));
+    sh.scale.set(1, 1.3, 0.8); sh.position.y = 0.45; g.add(sh);
+    [-0.07, 0.07].forEach((x) => { const e = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 6), eye); e.position.set(x, 0.62, 0.2); g.add(e); });
+    const glow = new THREE.PointLight(0xff2a14, 0.35, 2.5, 2); glow.position.set(0, 0.62, 0.3); g.add(glow);
+  }
+  return g;
+}
+function vanishWatcher(quiet) {
+  const w = watchers;
+  if (!w.cur) return;
+  scene.remove(w.cur);
+  w.cur = null;
+  w.cd = 22 + Math.random() * 28;
+  if (!quiet) { playVanish(); if (Math.random() < 0.5) playWhisper(0.5); }
+}
+function updateWatchers(dt) {
+  const w = watchers;
+  if (state.phase !== "explore" || state.flags.tut === "open" || state.flags.finale || state.transition || state.activeNpc) { if (w.cur) vanishWatcher(true); return; }
+  const p = yawObject.position, lvl = levelOf(p.x);
+  if (w.cur && lvl !== w.lvl) vanishWatcher(true);
+  if (!state.inventory.flashlight && lvl === 0 && !state.flags.powerOn) return; // nothing watches before you've even gone in
+  if (isOutside()) { if (w.cur) vanishWatcher(true); return; }
+  const fx = -Math.sin(yawObject.rotation.y), fz = -Math.cos(yawObject.rotation.y);
+  if (!w.cur) {
+    w.cd -= dt;
+    if (w.cd > 0 || sinceScare() < 8) return;
+    for (let i = 0; i < 24; i++) { // find a spot 6-13 m away, in line of sight, behind or beside you
+      const a = Math.random() * Math.PI * 2, r = 6 + Math.random() * 7;
+      const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+      if (levelOf(x) !== lvl || isWall(x, z) || !canStand(x, z) || !hasLineOfSight(p.x, p.z, x, z)) continue;
+      const dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
+      if ((dx * fx + dz * fz) / d > 0.35) continue; // not where you're looking right now
+      const m = makeWatcher(lvl);
+      m.position.set(x, 0, z);
+      m.rotation.y = Math.atan2(-dx, -dz);
+      scene.add(m);
+      Object.assign(w, { cur: m, lookT: 0, life: 0, lvl, x, z });
+      if (Math.random() < 0.6) playWhisper(0.35);
+      return;
+    }
+    w.cd = 4; // nowhere good to stand this time; try again soon
+    return;
+  }
+  w.life += dt;
+  const dx = w.x - p.x, dz = w.z - p.z, d = Math.hypot(dx, dz) || 1;
+  w.cur.rotation.y = Math.atan2(-dx, -dz); // keeps its face on you
+  const seen = (dx * fx + dz * fz) / d > Math.cos(0.5) && hasLineOfSight(p.x, p.z, w.x, w.z);
+  w.lookT = seen ? w.lookT + dt : 0;
+  if (w.lookT > 0.2 || d < 2.8 || w.life > 40) vanishWatcher(false);
+}
 function playSkitter() {
   if (!audioReady()) return;
   const t = audioCtx.currentTime;
@@ -7480,14 +7681,82 @@ function addCellarMaze() {
 }
 
 // the husks: starved things that sleep in the maze. The light freezes them; the axe finishes them.
-function makeHuskMesh() {
-  return makeCreature(0.8);
+const HUSK_VARIANTS = [
+  { name: "common", s: 0.8, tint: 0x8e8c84, spd: 1.0, hp: 2 },
+  { name: "pale", s: 0.62, tint: 0xd2d0c4, spd: 1.35, hp: 1 }, // small, bone white, quick
+  { name: "brute", s: 1.05, tint: 0x5c504a, spd: 0.75, hp: 4 }, // big, bruised, slow and hard to put down
+];
+// "Mr. Grin": an original toy-shop horror. Tall and mustard-yellow with a stitched seam, button eyes and far too many teeth.
+function makeGrinner() {
+  const grp = new THREE.Group(), body = new THREE.Group();
+  grp.add(body);
+  const fur = new THREE.MeshStandardMaterial({ color: 0xc8a83a, roughness: 1 });
+  const seam = new THREE.MeshBasicMaterial({ color: 0x1a1208 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf2eedc, roughness: 0.5 });
+  const black = new THREE.MeshBasicMaterial({ color: 0x050505 });
+  const red = new THREE.MeshStandardMaterial({ color: 0x8a1018, roughness: 0.6, emissive: 0x200204 });
+  const E = (rx, ry, rz, m, x, y, z, par) => { const o = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), m); o.scale.set(rx, ry, rz); o.position.set(x, y, z); (par || body).add(o); return o; };
+  E(0.36, 0.62, 0.28, fur, 0, 1.2, 0);                         // torso
+  E(0.4, 0.4, 0.3, fur, 0, 0.7, 0);                            // belly
+  for (let i = 0; i < 6; i++) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.018, 0.02), seam); st.position.set(0, 1.5 - i * 0.14, 0.275); body.add(st); }
+  const head = new THREE.Group(); head.position.set(0, 2.0, 0.02); body.add(head);
+  E(0.34, 0.31, 0.3, fur, 0, 0, 0, head);
+  [-0.12, 0.12].forEach((x) => { E(0.075, 0.075, 0.04, white, x, 0.1, 0.27, head); E(0.03, 0.03, 0.03, black, x, 0.1, 0.3, head); }); // button eyes
+  E(0.24, 0.09, 0.05, red, 0, -0.1, 0.27, head);               // the mouth, a wide red slit
+  for (let i = 0; i < 11; i++) {                               // two rows of small white teeth
+    const x = -0.22 + i * 0.044;
+    const up = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.06, 4), white); up.position.set(x, -0.06, 0.31); up.rotation.x = Math.PI; head.add(up);
+    const dn = new THREE.Mesh(new THREE.ConeGeometry(0.014, 0.06, 4), white); dn.position.set(x + 0.02, -0.14, 0.31); head.add(dn);
+  }
+  [-0.3, 0.3].forEach((x) => E(0.1, 0.12, 0.05, fur, x, 0.27, 0, head)); // ears
+  const arms = [];
+  [-1, 1].forEach((sd) => {
+    const sh = new THREE.Group(); sh.position.set(sd * 0.4, 1.65, 0); body.add(sh);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.045, 1.45, 8), fur); arm.position.y = -0.72; sh.add(arm);
+    E(0.1, 0.13, 0.08, white, 0, -1.5, 0, sh);                 // mitten
+    arms.push(sh);
+  });
+  [-0.17, 0.17].forEach((x) => { const lg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.5, 8), fur); lg.position.set(x, 0.25, 0); body.add(lg); });
+  grp.userData = { skin: fur, arms, head, body };
+  return grp;
+}
+function animateGrinner(ud, t) {
+  ud.arms.forEach((a, i) => { a.rotation.x = Math.sin(t * 7 + i * Math.PI) * 0.7; a.rotation.z = (i ? -1 : 1) * (0.12 + Math.abs(Math.sin(t * 3.5)) * 0.1); });
+  ud.body.rotation.z = Math.sin(t * 3.5) * 0.06;
+  ud.head.rotation.z = Math.sin(t * 1.9) * 0.18; // the head lolls from side to side
+}
+function spawnGrinner() {
+  if (state.flags.grinner || typeof husks === "undefined") return;
+  state.flags.grinner = true;
+  const p = yawObject.position;
+  if (levelOf(p.x) !== 2) return;
+  let sx = null, sz = null;
+  for (let i = 0; i < 80 && sx === null; i++) {
+    const a = Math.random() * Math.PI * 2, r = 7 + Math.random() * 8;
+    const x = p.x + Math.cos(a) * r, z = p.z + Math.sin(a) * r;
+    if (levelOf(x) !== 2 || isWall(x, z) || !canStand(x, z)) continue;
+    if (!entityPath(x, z, p.x, p.z)) continue;
+    sx = x; sz = z;
+  }
+  if (sx === null) return;
+  const mesh = makeGrinner();
+  mesh.position.set(sx, 0, sz);
+  scene.add(mesh);
+  husks.push({ mesh, boss: true, v: null, tint: 0xc8a83a, spd: 1.25, x: sx, z: sz, kind: "walk", hp: 6, mode: "awake", frozen: 0, stun: 0, wake: 0, y: 0, vy: 0, t: 0, trig: 0, path: null, repath: 0 });
+  markScare(); playBang(); playGrowl(1.4); playWhisper(0.6);
+  scareBlackout = 0.8; doorShake = 0.5;
+}
+function makeHuskMesh(v) {
+  const m = makeCreature((v || HUSK_VARIANTS[0]).s);
+  if (v && m.userData.skin) m.userData.skin.color.set(v.tint);
+  return m;
 }
 function ensureHusks() {
   if (husks.length || typeof CELLAR === "undefined") return;
   CELLAR.husks.forEach((h, i) => {
-    const mesh = makeHuskMesh();
-    const o = { mesh, x: h.c + 0.5, z: h.r + 0.5, kind: h.kind, hp: 2, mode: "dormant", frozen: 0, stun: 0, wake: 0, y: h.kind === "hang" ? 1.4 : 0.12, vy: 0, t: Math.random() * 6, trig: i === 0 ? 3.4 : 2.5, path: null, repath: 0 };
+    const v = HUSK_VARIANTS[i % 3 === 1 ? 1 : i % 4 === 3 ? 2 : 0];
+    const mesh = makeHuskMesh(v);
+    const o = { mesh, v, tint: v.tint, spd: v.spd, x: h.c + 0.5, z: h.r + 0.5, kind: h.kind, hp: v.hp, mode: "dormant", frozen: 0, stun: 0, wake: 0, y: h.kind === "hang" ? 1.4 : 0.12, vy: 0, t: Math.random() * 6, trig: i === 0 ? 3.4 : 2.5, path: null, repath: 0 };
     mesh.position.set(o.x, o.y, o.z);
     if (h.kind === "crawl") mesh.scale.y = 0.4; // curled up on the floor
     scene.add(mesh);
@@ -7528,6 +7797,7 @@ function wakeHusk(h) {
   markScare();
   h.wake = h.kind === "hang" ? 0.9 : 0.5;
   playBang();
+  playGrowl(1);
   playVoice("gasp2", 0.8, 3);
   scareBlackout = 0.5;
   doorShake = 0.4;
@@ -7641,14 +7911,14 @@ function updateHusks(dt) {
       if (h.frozen <= 0) playFreeze();
       h.frozen = 2.6;
       h.lit = (h.lit || 0) + dt;
-      if (h.lit >= 5) { h.fleeing = true; h.fleeT = 0; playSkitter(); }
+      if (h.lit >= 5 && !h.boss) { h.fleeing = true; h.fleeT = 0; playSkitter(); playGrowl(0.6); }
     } else h.lit = Math.max(0, (h.lit || 0) - dt * 0.4);
     h.frozen = Math.max(0, h.frozen - dt);
     h.stun = Math.max(0, h.stun - dt);
     const frozen = h.frozen > 0;
-    ud.skin.color.set(frozen ? 0x6f93bd : 0x8e8c84);
+    ud.skin.color.set(frozen ? 0x6f93bd : h.tint);
     if (!frozen && h.stun <= 0) {
-      const speed = los && d < 4.5 ? 2.9 : 2.2;
+      const speed = (los && d < 4.5 ? 2.9 : 2.2) * h.spd;
       h.repath -= dt;
       if (h.repath <= 0 || !h.path) { h.path = entityPath(h.x, h.z, p.x, p.z); h.repath = 0.25; }
       let tx = p.x, tz = p.z;
@@ -7664,6 +7934,7 @@ function updateHusks(dt) {
         m.rotation.y = Math.atan2(mx, mz);
       }
       animateCreature(ud, h.t, 2.6, 0.7, false);
+      if (ud.arms) animateGrinner(ud, h.t);
       if (los) near = Math.max(near, 1 - Math.min(1, d / 7));
       if (d < 0.9 && los) { caughtByEntity(); return; }
     } else if (frozen) {
@@ -7734,6 +8005,7 @@ function gameLoop() {
   checkJohnRoom();
   updateEntity(dt);
   updateHusks(dt);
+  updateWatchers(dt);
   updateFinale(dt);
   updateBreaker(dt);
   updateScares(dt);

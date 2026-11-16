@@ -354,3 +354,9 @@ const APT_DAMAGE = {
   apt3: { holes: [], ceil: [[1.5, 2.0, 1.0, 0.9]], mess: 3 },
   john: { holes: [], ceil: [], mess: 3 },
 };
+
+// the notes down in the cellar are recordings John left on tape
+["note5", "mazeNote0", "mazeNote1", "nestNote"].forEach((id) => {
+  const it = ITEMS.find((i) => i.id === id);
+  if (it) { it.tape = true; it.name = it.name.replace("Note", "Tape"); }
+});
