@@ -79,8 +79,7 @@ const ITEMS = [
     height: 0.9,
     pickupText: "A brass key on a paper tag: 4.",
   },
-  { id: "axe", name: "Axe", x: 13.6, y: 1.5, /* under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
-  { id: "johnNote", name: "Note - Sept 21", note: true, order: 4, h: 0.57, x: 14.25, y: 0.35, paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at\nnight. i can't look at it.\ni hid the axe under my\nbed. just in case.", sloppy: 0.6, seed: 3 },
+  { id: "axe", name: "Axe", x: 13.8, y: 1.75, /* deep under John's bed */ color: "#999999", height: 0.9, pickupText: "A fire axe." },
   { id: "radioBatt", name: "Batteries", h: 0.76, x: 11.9, y: 12.55, pickupText: "Spare batteries." },
   { id: "hallBatt", name: "Batteries", h: 0.04, x: 12.5, y: 6.3, pickupText: "Spare batteries." },
   { id: "stairBatt", name: "Batteries", h: 0.04, x: 19.65, y: 3.8, pickupText: "Spare batteries." },
@@ -92,7 +91,7 @@ const ITEMS = [
   { id: "staffBatt1", name: "Batteries", h: 1.04, x: 1.5, y: 5.75, pickupText: "Spare batteries." },
   { id: "staffBatt2", name: "Batteries", h: 0.77, x: 4.5, y: 5.45, pickupText: "Spare batteries." },
   { id: "staffNote", name: "Notice", note: true, h: 0.77, x: 3.7, y: 5.4, paper: "Power out again?\nMain breaker is down in\nthe cellar. Stairs at the\nend of the hall.\nBring a light.\n- Mgmt", sloppy: 0.1, seed: 7 },
-  { id: "note5", name: "Note - Sept 28", note: true, order: 6, x: 51.5, y: 2.4, paper: "Sept 28\nfollowed it down.\nthe cellar door under\nthe stairs. the boiler is\nwarm. it is {breathing}\nnothing down there\nshould be warm", sloppy: 1.05, seed: 66 },
+  { id: "note5", name: "Note - Sept 28", note: true, order: 6, x: 51.5, y: 2.4, paper: "Sept 28\nfollowed it down.\nthe cellar door under\nthe stairs. the boiler is\nwarm. it is {breathing}\nnothing down there\nshould be warm\nthe gauge is stuck\non seven", sloppy: 1.05, seed: 66 },
   { id: "batteries2", name: "Batteries", x: 50.5, y: 9.4, h: 0.5, pickupText: "Spare batteries." },
 ];
 
@@ -242,12 +241,19 @@ johnNote("nSep25", "Sept 25", 5, "Sept 25\npower cut again.\nthat is when it mov
 
 
 // John's journal, under the pillow in his flat: five pages, his hand and his mind coming apart page by page.
-const jr = (n, date, text, sloppy, seed) => ITEMS.push({ id: "jr" + n, name: "Journal - page " + n, note: true, hidden: true, paper: date + "\n" + text, sloppy, seed });
-jr(1, "Sept 1", "new place. quiet.\nunit 4, top of the stairs.\nthe manager gave me the key\nwithout looking up.\nslept well. first time in months.", 0.1, 71);
-jr(2, "Sept 12", "the building hums at night.\nlow. like someone holding\none note on purpose.\ncounted the doors in the hall.\nthere were four. there were four.", 0.45, 72);
-jr(3, "Sept 20", "i keep finding the hall\nlonger than i left it.\nthe number on my door\nis the right number\nbut {it is not my door}\nwho is writing this", 0.9, 73);
-jr(4, "Sept 27", "the {walls} are wet and\nwarm and they know\nthe taste of rooms\nblue blue blue the stairs\nare {eating} down\nfour four four", 1.45, 74);
-jr(5, "Oct 2", "MARIA\n{it is wearing my coat}\nthe house has {no inside}\nonly doors that\n{breathe}\nturn around", 1.95, 75);
+const JOURNAL_PAGES = [
+  { paper: "Sept 1\nnew place. quiet.\nunit 4, top of the stairs.\nthe manager gave me the key\nwithout looking up.\nslept well. first time in months.", sloppy: 0.1, seed: 71 },
+  { paper: "Sept 8\nboxes still unpacked.\nnobody here speaks to me.\nthe lobby clock runs\nbackwards. or i do.\nmaria would laugh at that.", sloppy: 0.2, seed: 76 },
+  { paper: "Sept 12\nthe building hums at night.\nlow. like someone holding\none note on purpose.\ncounted the doors in the hall.\nthere were four. there were four.", sloppy: 0.45, seed: 72 },
+  { paper: "Sept 15\nwrote to maria. tore it up.\nshe would come looking\nand i don't want her\nin this building.\nnot at night. not ever.", sloppy: 0.55, seed: 77 },
+  { paper: "Sept 20\ni keep finding the hall\nlonger than i left it.\nthe number on my door\nis the right number\nbut {it is not my door}\nwho is writing this", sloppy: 0.9, seed: 73 },
+  { paper: "Sept 21\nthird week. no sleep.\nit stands in the hall at\nnight. i can't look at it.\ni hid the axe under my\nbed. just in case.", sloppy: 0.7, seed: 3 },
+  { paper: "Sept 24\nthe lights go and it moves.\nthe lights come back and\nit is {somewhere else}\ni started sleeping with\nthe lamp on", sloppy: 1.1, seed: 78 },
+  { paper: "Sept 27\nthe {walls} are wet and\nwarm and they know\nthe taste of rooms\nblue blue blue the stairs\nare {eating} down\nfour four four", sloppy: 1.45, seed: 74 },
+  { paper: "Oct 1\nit knows my {name}\nit says it in the\nwrong voice\nhe is not me\nhe is not me", sloppy: 1.75, seed: 79 },
+  { paper: "Oct 2\nMARIA\n{it is wearing my coat}\nthe house has {no inside}\nonly doors that\n{breathe}\nturn around", sloppy: 1.95, seed: 75 },
+];
+ITEMS.push({ id: "johnJournal", name: "John's Journal", note: true, journal: true, pages: JOURNAL_PAGES, paper: "Sept 1", x: 13.55, y: 0.95, h: 0.49 });
 
 // Furniture you can search: position inside a studio (x, z from its west wall / north wall), prompt.
 const APT_SPOTS = [
@@ -264,7 +270,7 @@ const APT_SPOTS = [
 const LOOT = {
   apt2: { desk: "nSep2", bed: "johnKey" },
   apt3: { desk: "a3Photo", drawer: "a3Box" },
-  john: { bed: ["jr1", "jr2", "jr3", "jr4", "jr5"], under: "jBatt" },
+  john: { under: "jBatt" },
 };
 // Writing scrawled on John's walls (readable). rot: the way the writing faces (0 = south, PI/2 = east, PI = north)
 const WALL_WRITING = [
@@ -333,7 +339,7 @@ ITEMS.push(
 // The cellar maze: three coloured levers (the gate's lintel shows the order), a couple of notes and a hidden nest.
 CELLAR.levers.forEach((l, i) => HOTSPOTS.push({ id: "lever" + i, x: l.c + 0.5, y: l.r + 0.5, label: "Pull Lever", lever: i }));
 const MAZE_NOTES = [
-  "Sept 26\nthe walls here are {wet}\nwhen i hold the light on\nthem they stop.\nthey only stop.",
+  "Sept 26\nthe walls here are {wet}\nwhen i hold the light on\nthem they stop.\nthey only stop.\nthere is one door in them.\nonly one.",
   "Sept 27\nthree handles. i pulled\nthem the way that felt right\nand something up there\n{laughed}",
 ];
 CELLAR.notes.forEach((n, i) =>
@@ -360,3 +366,16 @@ const APT_DAMAGE = {
   const it = ITEMS.find((i) => i.id === id);
   if (it) { it.tape = true; it.name = it.name.replace("Note", "Tape"); }
 });
+
+// iron lever handles: the cellar levers are bare plates until you bring handles down from around the building
+[[0, 16.5, 6.3], [1, 26.2, 2.2], [2, 39.5, 2.2]].forEach(([i, x, y]) => ITEMS.push({ id: "handle" + i, name: "Iron Handle", x, y, h: 0.02, color: "#8a8a92", height: 0.3, pickupText: "A heavy iron lever handle." }));
+
+// things to do: an old coin in the hall, a ringing payphone in the lobby, a vending machine upstairs
+ITEMS.push({ id: "hallCoin", name: "Old Coin", trinket: true, x: 9.0, y: 6.0, h: 0.02, color: "#d4b04a", height: 0.1, pickupText: "An old coin." });
+HOTSPOTS.push({ id: "payphone", x: 1.75, y: 10.5, label: "Answer Phone", phone: true });
+HOTSPOTS.push({ id: "vending", x: 30.0, y: 1.7, label: "Vending Machine", vend: true });
+
+// lockers to hide in (yaw faces you out of the locker), and a wall safe
+HOTSPOTS.push({ id: "locker0", x: 1.75, y: 11.35, lx: 1.2, ly: 11.35, yaw: -Math.PI / 2, label: "Hide", hide: true });
+HOTSPOTS.push({ id: "locker1", x: 36.0, y: 1.7, lx: 36.0, ly: 1.1, yaw: Math.PI, label: "Hide", hide: true });
+HOTSPOTS.push({ id: "safe", x: 1.8, y: 12.45, label: "Try Safe", safe: true });

@@ -3749,9 +3749,9 @@ function startEnding() {
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   const ov = document.getElementById("ending-overlay");
   // two endings: how much of John's story you pieced together decides which one you get
-  const STORY_IDS = ["nSep2", "nSep25", "johnJournal", "note5", "johnNote", "mazeNote0", "mazeNote1", "nestNote"];
+  const STORY_IDS = ["nSep2", "nSep25", "johnJournal", "note5", "mazeNote0", "mazeNote1", "nestNote"];
   const found = STORY_IDS.filter((id) => state.inventory[id]).length;
-  const knowsAll = found >= 5 && state.inventory.nestNote;
+  const knowsAll = found >= 4 && state.inventory.nestNote;
   const lines = knowsAll
     ? [
         "The elevator carries you up through the dark.",
@@ -6666,50 +6666,55 @@ function playTape(it, canvas) {
   };
   requestAnimationFrame(frame);
 }
-// ---- John's notebook: a small book you can flip through, one page at a time ----
+// ---- John's journal: opens like a book, two pages at a time ----
 let journalState = null;
 function openJournal(it, pc) {
-  pc.width = 512; pc.height = 640;
+  pc.width = 1024; pc.height = 640;
   const imgs = it.pages.map((p) => { const c = document.createElement("canvas"); drawPaper(c, p.paper, p.sloppy, p.seed); return c; });
-  journalState = { imgs, page: 0, flip: null, pc };
+  journalState = { imgs, spread: 0, flip: null, pc, n: Math.ceil(imgs.length / 2) };
   drawJournal();
 }
 function drawJournal() {
   const s = journalState; if (!s) return;
   const ctx = s.pc.getContext("2d"), W = 512, H = 640;
-  ctx.clearRect(0, 0, W, H);
-  const n = s.imgs.length;
+  ctx.fillStyle = "#1a120c"; ctx.fillRect(0, 0, 1024, H);
+  const L = (sp) => s.imgs[sp * 2], R = (sp) => s.imgs[sp * 2 + 1];
+  const put = (img, x, w) => { if (img && w > 1) ctx.drawImage(img, 0, 0, W, H, x, 0, w, H); };
   const fl = s.flip;
-  if (!fl) ctx.drawImage(s.imgs[s.page], 0, 0);
+  let shown = s.spread;
+  if (!fl) { put(L(s.spread), 0, W); put(R(s.spread), W, W); }
   else {
-    const a = fl.t; // 0..1
-    if (fl.dir > 0) { // turning forward: current page folds away to the spine (left), next is revealed
-      ctx.drawImage(s.imgs[fl.to], 0, 0);
-      const w = W * Math.cos(a * Math.PI / 2);
-      if (w > 1) { ctx.drawImage(s.imgs[fl.from], 0, 0, W, H, 0, 0, w, H); const sh = ctx.createLinearGradient(0, 0, w, 0); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(0,0,0," + 0.45 * a + ")"); ctx.fillStyle = sh; ctx.fillRect(0, 0, w, H); }
-    } else { // turning back: previous page unfolds from the spine over the current one
-      ctx.drawImage(s.imgs[fl.from], 0, 0);
-      const w = W * Math.sin(a * Math.PI / 2);
-      if (w > 1) { ctx.drawImage(s.imgs[fl.to], 0, 0, W, H, 0, 0, w, H); const sh = ctx.createLinearGradient(0, 0, w, 0); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(0,0,0," + 0.45 * (1 - a) + ")"); ctx.fillStyle = sh; ctx.fillRect(0, 0, w, H); }
+    const a = fl.t, from = fl.from, to = fl.to; shown = a < 0.5 ? from : to;
+    if (fl.dir > 0) { // right page lifts, folds over the spine, lands on the left
+      put(L(from), 0, W); put(R(to), W, W);
+      if (a < 0.5) { const w = W * Math.cos(a * Math.PI); put(R(from), W, w); ctx.fillStyle = "rgba(0,0,0," + 0.4 * a + ")"; ctx.fillRect(W, 0, w, H); }
+      else { const w = W * Math.sin((a - 0.5) * Math.PI); put(L(to), W - w, w); ctx.fillStyle = "rgba(0,0,0," + 0.4 * (1 - a) + ")"; ctx.fillRect(W - w, 0, w, H); }
+    } else { // left page lifts over to the right
+      put(L(to), 0, W); put(R(from), W, W);
+      if (a < 0.5) { const w = W * Math.cos(a * Math.PI); put(L(from), W - w, w); ctx.fillStyle = "rgba(0,0,0," + 0.4 * a + ")"; ctx.fillRect(W - w, 0, w, H); }
+      else { const w = W * Math.sin((a - 0.5) * Math.PI); put(R(to), W, w); ctx.fillStyle = "rgba(0,0,0," + 0.4 * (1 - a) + ")"; ctx.fillRect(W, 0, w, H); }
     }
   }
-  const cur = fl ? fl.to : s.page;
-  ctx.fillStyle = "rgba(40,30,20,0.55)"; ctx.font = "16px serif"; ctx.textAlign = "center";
-  ctx.fillText((cur + 1) + " / " + n, W / 2, H - 14);
-  if (cur > 0) ctx.fillText("\u2039", 22, H / 2);
-  if (cur < n - 1) ctx.fillText("\u203a", W - 22, H / 2);
+  const sg = ctx.createLinearGradient(W - 26, 0, W + 26, 0); // the gutter
+  sg.addColorStop(0, "rgba(0,0,0,0)"); sg.addColorStop(0.5, "rgba(0,0,0,0.5)"); sg.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = sg; ctx.fillRect(W - 26, 0, 52, H);
+  ctx.fillStyle = "rgba(40,30,20,0.6)"; ctx.font = "16px serif"; ctx.textAlign = "center";
+  ctx.fillText(shown * 2 + 1, W / 2 - 40, H - 14); if (R(shown)) ctx.fillText(shown * 2 + 2, W + W / 2 + 40, H - 14);
+  ctx.font = "30px serif";
+  if (shown > 0) ctx.fillText("\u2039", 22, H / 2);
+  if (shown < s.n - 1) ctx.fillText("\u203a", 1024 - 22, H / 2);
 }
 function flipJournal(dir) {
   const s = journalState; if (!s || s.flip) return;
-  const to = s.page + dir;
-  if (to < 0 || to >= s.imgs.length) return;
-  s.flip = { t: 0, dir, from: s.page, to };
-  try { playScrape && playScrape(0.15); } catch (e) {}
+  const to = s.spread + dir;
+  if (to < 0 || to >= s.n) return;
+  s.flip = { t: 0, dir, from: s.spread, to };
+  try { playScrape(); } catch (e) {}
   let last = performance.now();
   const step = (now) => {
     if (journalState !== s) return;
-    s.flip.t += Math.min(0.05, (now - last) / 1000) / 0.42; last = now;
-    if (s.flip.t >= 1) { s.page = to; s.flip = null; drawJournal(); return; }
+    s.flip.t += Math.min(0.05, (now - last) / 1000) / 0.6; last = now;
+    if (s.flip.t >= 1) { s.spread = to; s.flip = null; drawJournal(); return; }
     drawJournal(); requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
@@ -6864,7 +6869,9 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (state.phase === "reading") {
-    if (key === "e") closeReader();
+    if (journalState && (key === "arrowright" || key === "d")) flipJournal(1);
+    else if (journalState && (key === "arrowleft" || key === "a")) flipJournal(-1);
+    else if (key === "e") closeReader();
     return;
   }
   if (state.phase === "inventory") {
