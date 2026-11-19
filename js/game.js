@@ -1065,7 +1065,16 @@ function addViewHand(group, kind, order) {
   };
   const ball = new THREE.SphereGeometry(1, 14, 10);
   const cap = new THREE.CapsuleGeometry(0.0105, 0.032, 4, 8);
-  if (kind === "light") {
+  if (kind === "reach") { // open right hand, palm down, reaching forward; forearm runs back toward the camera along +z
+    part(ball, skin, 0, 0, 0, 0.042, 0.016, 0.048); // palm
+    [[-0.027, 1.25], [-0.009, 1.5], [0.009, 1.4], [0.027, 1.1]].forEach(([fx, len], i) => {
+      const f = part(cap, skin, fx, -0.006 - i * 0.0005, -0.062 - len * 0.012, 0.9, len, 0.9, Math.PI / 2 + 0.28, 0, 0);
+    });
+    part(cap, skin, -0.048, -0.002, -0.022, 0.95, 1.1, 0.95, Math.PI / 2 - 0.5, 0, 0.9); // thumb
+    part(new THREE.CylinderGeometry(0.026, 0.03, 0.09, 10), skin, 0, 0.004, 0.065, 1, 1, 1, Math.PI / 2 + 0.12, 0, 0); // wrist
+    part(new THREE.CylinderGeometry(0.04, 0.05, 0.5, 12), sleeve, 0, 0.02, 0.36, 1, 1, 1, Math.PI / 2 + 0.12, 0, 0); // jacket sleeve
+    part(new THREE.TorusGeometry(0.036, 0.007, 6, 14), 0x23272c, 0, 0.008, 0.115, 1, 1, 1, 0.12, 0, 0); // cuff
+  } else if (kind === "light") {
     part(ball, skin, 0.004, -0.014, 0.045, 0.048, 0.04, 0.066); // palm
     for (let i = 0; i < 4; i++) { // fingers curled round the barrel: across the underside, then up the near side
       part(cap, skin, 0.0, -0.03, 0.012 + i * 0.02, 1, 1.35 - i * 0.1, 1, 0, 0, Math.PI / 2);
@@ -1116,7 +1125,6 @@ function buildFlashlightModel(unlit) {
   lens.position.z = -0.1715;
   const sw = add(new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.012, 0.03), mat(0xa03030)));
   sw.position.set(0, 0.031, 0.015);
-  if (unlit) addViewHand(group, "light", order);
   return { group, lensMat };
 }
 
@@ -6716,7 +6724,7 @@ document.getElementById("paper-canvas").addEventListener("click", (e) => {
 // ---- reach animation: your hand goes out and takes the thing; low things make you crouch ----
 let reachDrop = 0, reachPitchApplied = 0;
 const reachHand = new THREE.Group();
-addViewHand(reachHand, "light", 950);
+addViewHand(reachHand, "reach", 950);
 reachHand.visible = false;
 camera.add(reachHand);
 function startReach(o) {
@@ -6735,13 +6743,13 @@ function updateReach(dt) {
   const u = ph < 0.5 ? ph / 0.5 : (1 - ph) / 0.5;
   const e = u * u * (3 - 2 * u);
   const crouchE = Math.min(1, Math.min(ph / 0.3, (1 - ph) / 0.3)); // down and back up around the grab
-  reachDrop = r.low ? 0.72 * crouchE * crouchE * (3 - 2 * crouchE) : 0.05 * e;
-  reachPitchApplied = (r.low ? -0.62 : -0.16) * e;
+  reachDrop = r.low ? 0.72 * crouchE * crouchE * (3 - 2 * crouchE) : 0;
+  reachPitchApplied = (r.low ? -0.62 : -0.07) * e;
   camera.rotation.x += reachPitchApplied;
   reachHand.visible = true;
-  const tz = r.low ? -0.4 : -0.42, ty = r.low ? -0.2 : -0.1;
-  reachHand.position.set(0.32 + (0.05 - 0.32) * e, -0.5 + (ty + 0.5) * e, -0.12 + (tz + 0.12) * e);
-  reachHand.rotation.set(0.1 - 0.15 * e, 0.12 * (1 - e), -0.12 * (1 - e));
+  const tz = r.low ? -0.4 : -0.5, ty = r.low ? -0.18 : -0.13;
+  reachHand.position.set(0.4 + (0.1 - 0.4) * e, -0.55 + (ty + 0.55) * e, -0.12 + (tz + 0.12) * e);
+  reachHand.rotation.set(0.55, 0.3, 0.1);
   if (!r.done && ph >= 0.5) {
     r.done = true;
     if (r.cb) r.cb();
@@ -6760,7 +6768,7 @@ function reachFor(t) {
   if (t.type === "item") {
     const it = ITEMS.find((x) => x.id === t.id);
     if (!it) return null;
-    const low = it.id === "axe" || /^handle\d$/.test(it.id) || (it.h === undefined && !it.note) || (it.h !== undefined && it.h < 0.3);
+    const low = it.id === "axe" || /^handle\d$/.test(it.id) || (it.h !== undefined && it.h < 0.3);
     let line = null, key = null;
     if (it.name === "Batteries") { key = "bat"; line = "I can use these later."; }
     else if (it.key || /Key$/.test(it.name)) { key = "key"; line = "A key. There must be a lock for it."; }
