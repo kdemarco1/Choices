@@ -8625,7 +8625,7 @@ function updateHusks(dt) {
       if (h.frozen <= 0) playFreeze();
       h.frozen = 2.6;
       h.lit = (h.lit || 0) + dt;
-      if (h.lit >= 5 && !h.boss) { h.fleeing = true; h.fleeT = 0; playSkitter(); playGrowl(0.6); }
+      if (h.lit >= 0.5) { vanishHusk(h); return; } // caught in the light: it flickers and is simply gone
     } else h.lit = Math.max(0, (h.lit || 0) - dt * 0.4);
     h.frozen = Math.max(0, h.frozen - dt);
     h.stun = Math.max(0, h.stun - dt);
