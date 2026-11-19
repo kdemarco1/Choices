@@ -1296,6 +1296,7 @@ function swingImpact() {
 }
 
 function updateHeldFlashlight(dt) {
+  if (state.reach) { heldAxe.visible = false; heldFlashlight.visible = false; return; }
   heldAxe.visible = state.held === "axe" && !!state.inventory.axe;
   if (heldAxe.visible) {
     if (state.swing) updateSwing(dt);
@@ -2355,6 +2356,11 @@ function buildWorld() {
       const hk = addBox(0.09, 0.07, 0.07, it.x, 0.04, it.y, 0x8a8a92); hk.rotation.y = it.x * 3.1;
     }
     else if (it.name === "Batteries") [0, 0.07].forEach((o) => addBox(0.05, 0.05, 0.05, it.x, it.h + 0.02, it.y + o - 0.03, 0x9a7a1a));
+    else if (it.journal) {
+      const nb = addBox(0.15, 0.022, 0.21, it.x, it.h + 0.012, it.y, 0x2a1a14); nb.rotation.y = 0.35;
+      const pg = addBox(0.135, 0.014, 0.195, it.x, it.h + 0.016, it.y, 0xd8d2bc); pg.rotation.y = 0.35;
+      const bd = addBox(0.02, 0.026, 0.21, it.x - 0.062 * Math.cos(0.35), it.h + 0.013, it.y + 0.062 * Math.sin(0.35), 0x5a1a14); bd.rotation.y = 0.35;
+    }
     else if (it.tape) {
       addBox(0.19, 0.03, 0.1, it.x, (it.h || 0.02) + 0.015, it.y, 0x151515);
       addBox(0.08, 0.005, 0.06, it.x, (it.h || 0.02) + 0.032, it.y, 0xd8d2bc);
@@ -2713,24 +2719,15 @@ function addApartment(a) {
       b(0.1, 0.05, 0.06, 0.12, 0.54, 0.05, 0x151515); // dead alarm clock
     });
     // (floor clutter, laundry, takeout, cans, bins and dishes removed: simple rooms read better)
-    const pic = addBox(0.04, 0.4, 0.3, ox + 0.04, 1.75, 1.2, 0x2a2018);
-    pic.rotation.x = 0.25;
-    addBox(0.02, 0.33, 0.24, ox + 0.07, 1.75, 1.2, 0x5a6a5a).rotation.x = 0.25;
-    const stain = addBox(0.02, 1.0, 0.7, ox + 0.03, 1.2, 0.95, 0x1c1a14);
-    stain.rotation.x = 0.02;
+    if (a.id !== "john") {
+      const pic = addBox(0.04, 0.4, 0.3, ox + 0.04, 1.75, 1.2, 0x2a2018);
+      pic.rotation.x = 0.25;
+      addBox(0.02, 0.33, 0.24, ox + 0.07, 1.75, 1.2, 0x5a6a5a).rotation.x = 0.25;
+      const stain = addBox(0.02, 1.0, 0.7, ox + 0.03, 1.2, 0.95, 0x1c1a14);
+      stain.rotation.x = 0.02;
+    }
     addBox(0.7, 0.01, 0.5, ox + 0.9, 0.012, 1.55, 0x1f1a16).rotation.y = 0.4; // stain under the bed
   }
-
-  // ---- writing on the wall
-  WALL_WRITING.filter((w) => w.apt === a.id).forEach((w) => {
-    const m = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.8, 1.0),
-      new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawPaper(document.createElement("canvas"), w.paper, w.sloppy, w.seed)), roughness: 1 })
-    );
-    m.rotation.y = w.rot;
-    m.position.set(ox + w.rx, 1.6, w.rz);
-    worldGroup.add(m);
-  });
 
   // ---- trim: baseboards and crown moulding make each flat look finished, in its own colour
   {
@@ -2767,12 +2764,6 @@ function addApartment(a) {
     cal.rotation.y = -Math.PI / 2;
     cal.position.set(ox + 2.96, 1.55, 3.4);
     worldGroup.add(cal);
-  }
-  if (a.id === "john") {
-    // red string and clippings on the north wall, newspapers piled on the floor, foil over the glass
-    const sb = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.9), new THREE.MeshStandardMaterial({ map: new THREE.CanvasTexture(drawStringBoard()), roughness: 1 }));
-    sb.position.set(ox + 2.35, 1.7, 0.045);
-    worldGroup.add(sb);
   }
   // ---- damage
   (dmg.ceil || []).forEach(([x, z, w, d]) => {
@@ -3750,9 +3741,9 @@ function startEnding() {
   if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
   const ov = document.getElementById("ending-overlay");
   // two endings: how much of John's story you pieced together decides which one you get
-  const STORY_IDS = ["nSep2", "nSep25", "jr1", "jr2", "jr3", "jr4", "jr5", "note5", "johnNote", "mazeNote0", "mazeNote1", "nestNote"];
+  const STORY_IDS = ["nSep2", "nSep25", "johnJournal", "note5", "johnNote", "mazeNote0", "mazeNote1", "nestNote"];
   const found = STORY_IDS.filter((id) => state.inventory[id]).length;
-  const knowsAll = found >= 7 && state.inventory.nestNote;
+  const knowsAll = found >= 5 && state.inventory.nestNote;
   const lines = knowsAll
     ? [
         "The elevator carries you up through the dark.",
@@ -6112,6 +6103,9 @@ function nearestInteractable() {
   ITEMS.forEach((item) => {
     if (state.inventory[item.id] || item.hidden) return;
     const d = Math.hypot(item.x - px, item.y - py);
+    if (item.id === "axe" && d < closestDist) {
+      if (camera.rotation.x > -0.3) { hintOnce("lookdown", "Look closer."); return; }
+    }
     if (d < closestDist) {
       closestDist = d;
       closest = { type: "item", id: item.id, label: `Pick up ${item.name}` };
@@ -6197,7 +6191,7 @@ function updatePlayerHeight(dt) {
     return;
   }
   crouchK += ((state.phase === "explore" && state.crouch ? 1 : 0) - crouchK) * Math.min(1, dt * 9);
-  const target = EYE_HEIGHT - CROUCH_DROP * crouchK + floorHeight(p.x, p.z);
+  const target = EYE_HEIGHT - CROUCH_DROP * crouchK - reachDrop + floorHeight(p.x, p.z);
   p.y += (target - p.y) * Math.min(1, dt * 10);
   const s = stairAt(p.x, p.z);
   if (s && s.to && state.phase === "explore") {
@@ -6317,11 +6311,15 @@ function updateInteractPrompt() {
   prompt.classList.remove("hidden");
 }
 
-function handleInteract() {
-  if (state.activeNpc || state.flags.tut === "open") return;
+function handleInteract(pre) {
+  if (state.activeNpc || state.flags.tut === "open" || (state.reach && !pre)) return;
   if (state.hiding) { exitHide(false); return; }
-  const target = nearestInteractable();
+  const target = pre || nearestInteractable();
   if (!target) return;
+  if (!pre && !(target.type === "fixture" && target.id === "elevator")) {
+    const rf = reachFor(target);
+    if (rf) { startReach({ ...rf, cb: () => handleInteract(target) }); return; }
+  }
 
   if (target.type === "fixture") {
     const f = FIXTURES.find((x) => x.id === target.id);
@@ -6343,7 +6341,7 @@ function handleInteract() {
     const door = doorList().find((d) => d.id === target.id);
     if (isDoorOpen(door)) {
       const e = state.entity;
-      const blocked = (e.mode === "active" && Math.hypot(e.x - door.x, e.z - door.y) < 1.1) || husks.some((h) => h.mode !== "dead" && Math.hypot(h.x - door.x, h.z - door.y) < 1.0);
+      const blocked = (e.mode === "active" && Math.hypot(e.x - door.x, e.z - door.y) < 1.1) || husks.some((h) => h.mode !== "dead" && h.mode !== "gone" && Math.hypot(h.x - door.x, h.z - door.y) < 1.0);
       if (blocked) {
         playClick();
         return;
@@ -6660,12 +6658,135 @@ function playTape(it, canvas) {
   };
   requestAnimationFrame(frame);
 }
+// ---- John's notebook: a small book you can flip through, one page at a time ----
+let journalState = null;
+function openJournal(it, pc) {
+  pc.width = 512; pc.height = 640;
+  const imgs = it.pages.map((p) => { const c = document.createElement("canvas"); drawPaper(c, p.paper, p.sloppy, p.seed); return c; });
+  journalState = { imgs, page: 0, flip: null, pc };
+  drawJournal();
+}
+function drawJournal() {
+  const s = journalState; if (!s) return;
+  const ctx = s.pc.getContext("2d"), W = 512, H = 640;
+  ctx.clearRect(0, 0, W, H);
+  const n = s.imgs.length;
+  const fl = s.flip;
+  if (!fl) ctx.drawImage(s.imgs[s.page], 0, 0);
+  else {
+    const a = fl.t; // 0..1
+    if (fl.dir > 0) { // turning forward: current page folds away to the spine (left), next is revealed
+      ctx.drawImage(s.imgs[fl.to], 0, 0);
+      const w = W * Math.cos(a * Math.PI / 2);
+      if (w > 1) { ctx.drawImage(s.imgs[fl.from], 0, 0, W, H, 0, 0, w, H); const sh = ctx.createLinearGradient(0, 0, w, 0); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(0,0,0," + 0.45 * a + ")"); ctx.fillStyle = sh; ctx.fillRect(0, 0, w, H); }
+    } else { // turning back: previous page unfolds from the spine over the current one
+      ctx.drawImage(s.imgs[fl.from], 0, 0);
+      const w = W * Math.sin(a * Math.PI / 2);
+      if (w > 1) { ctx.drawImage(s.imgs[fl.to], 0, 0, W, H, 0, 0, w, H); const sh = ctx.createLinearGradient(0, 0, w, 0); sh.addColorStop(0, "rgba(0,0,0,0)"); sh.addColorStop(1, "rgba(0,0,0," + 0.45 * (1 - a) + ")"); ctx.fillStyle = sh; ctx.fillRect(0, 0, w, H); }
+    }
+  }
+  const cur = fl ? fl.to : s.page;
+  ctx.fillStyle = "rgba(40,30,20,0.55)"; ctx.font = "16px serif"; ctx.textAlign = "center";
+  ctx.fillText((cur + 1) + " / " + n, W / 2, H - 14);
+  if (cur > 0) ctx.fillText("\u2039", 22, H / 2);
+  if (cur < n - 1) ctx.fillText("\u203a", W - 22, H / 2);
+}
+function flipJournal(dir) {
+  const s = journalState; if (!s || s.flip) return;
+  const to = s.page + dir;
+  if (to < 0 || to >= s.imgs.length) return;
+  s.flip = { t: 0, dir, from: s.page, to };
+  try { playScrape && playScrape(0.15); } catch (e) {}
+  let last = performance.now();
+  const step = (now) => {
+    if (journalState !== s) return;
+    s.flip.t += Math.min(0.05, (now - last) / 1000) / 0.42; last = now;
+    if (s.flip.t >= 1) { s.page = to; s.flip = null; drawJournal(); return; }
+    drawJournal(); requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+document.getElementById("paper-canvas").addEventListener("click", (e) => {
+  if (!journalState) return;
+  const r = e.target.getBoundingClientRect();
+  flipJournal(e.clientX - r.left > r.width / 2 ? 1 : -1);
+  e.stopPropagation();
+});
+
+// ---- reach animation: your hand goes out and takes the thing; low things make you crouch ----
+let reachDrop = 0, reachPitchApplied = 0;
+const reachHand = new THREE.Group();
+addViewHand(reachHand, "light", 950);
+reachHand.visible = false;
+camera.add(reachHand);
+function startReach(o) {
+  if (state.reach) return;
+  state.reach = { t: 0, dur: o.dur || 0.9, low: !!o.low, cb: o.cb, done: false, line: o.line, key: o.key };
+  keys.clear();
+  if (o.low) { try { playFootstep(false); } catch (e) {} }
+}
+function updateReach(dt) {
+  camera.rotation.x -= reachPitchApplied; reachPitchApplied = 0;
+  const r = state.reach;
+  if (!r) { reachDrop += (0 - reachDrop) * Math.min(1, dt * 8); reachHand.visible = false; return; }
+  keys.clear();
+  r.t += dt;
+  const ph = Math.min(1, r.t / r.dur);
+  const u = ph < 0.5 ? ph / 0.5 : (1 - ph) / 0.5;
+  const e = u * u * (3 - 2 * u);
+  const crouchE = Math.min(1, Math.min(ph / 0.3, (1 - ph) / 0.3)); // down and back up around the grab
+  reachDrop = r.low ? 0.72 * crouchE * crouchE * (3 - 2 * crouchE) : 0.05 * e;
+  reachPitchApplied = (r.low ? -0.62 : -0.16) * e;
+  camera.rotation.x += reachPitchApplied;
+  reachHand.visible = true;
+  const tz = r.low ? -0.4 : -0.42, ty = r.low ? -0.2 : -0.1;
+  reachHand.position.set(0.32 + (0.05 - 0.32) * e, -0.5 + (ty + 0.5) * e, -0.12 + (tz + 0.12) * e);
+  reachHand.rotation.set(0.1 - 0.15 * e, 0.12 * (1 - e), -0.12 * (1 - e));
+  if (!r.done && ph >= 0.5) {
+    r.done = true;
+    if (r.cb) r.cb();
+    if (r.line) maria(r.key, r.line);
+  }
+  if (r.t >= r.dur) state.reach = null;
+}
+// Maria thinks out loud, only the first time for each kind of thing
+function maria(key, text) {
+  if (!state.flags.said) state.flags.said = {};
+  if (state.flags.said[key]) return;
+  state.flags.said[key] = true;
+  setTimeout(() => { try { showMessage("\u201c" + text + "\u201d"); } catch (e) {} }, 350);
+}
+function reachFor(t) {
+  if (t.type === "item") {
+    const it = ITEMS.find((x) => x.id === t.id);
+    if (!it) return null;
+    const low = it.id === "axe" || /^handle\d$/.test(it.id) || (it.h === undefined && !it.note) || (it.h !== undefined && it.h < 0.3);
+    let line = null, key = null;
+    if (it.name === "Batteries") { key = "bat"; line = "I can use these later."; }
+    else if (it.key || /Key$/.test(it.name)) { key = "key"; line = "A key. There must be a lock for it."; }
+    else if (it.id === "axe") { key = "axe"; line = "Heavy. I'll hold on to it."; }
+    else if (/^handle\d$/.test(it.id)) { key = "handle"; line = "Some kind of handle."; }
+    else if (it.id === "hallCoin") { key = "coin"; line = "Just a coin."; }
+    else if (it.id === "flashlight") { key = "light"; line = "Hopefully it still works."; }
+    else if (it.journal) { key = "journal"; line = "John's handwriting."; }
+    return { low, dur: low ? 1.5 : 0.85, line, key };
+  }
+  if (t.type === "fixture") return { dur: 0.6 };
+  if (t.type === "hotspot") {
+    const h = HOTSPOTS.find((x) => x.id === t.id);
+    if (!h || h.lever !== undefined || h.hide || h.safe || h.exit || h.finaleExit || h.elevatorDown || h.go || h.loot || h.id === "boards" || h.id === "breaker") return null;
+    return { dur: 0.7 };
+  }
+  return null;
+}
+
 function openPaper(it) {
   state.phase = "reading";
   keys.clear();
   const pc = document.getElementById("paper-canvas");
   stopTape();
-  if (it.tape) playTape(it, pc);
+  if (it.journal) openJournal(it, pc);
+  else if (it.tape) playTape(it, pc);
   else {
     pc.width = 512; pc.height = 640;
     if (it.draw) it.draw(pc);
@@ -6677,6 +6798,7 @@ function openPaper(it) {
 
 function closeReader() {
   stopTape();
+  journalState = null;
   document.getElementById("paper-overlay").classList.add("hidden");
   document.getElementById("reader-overlay").classList.add("hidden");
   state.phase = "explore";
@@ -8293,9 +8415,10 @@ function updateInkDrips(dt) {
 function ensureHusks() {
   if (husks.length || typeof CELLAR === "undefined") return;
   CELLAR.husks.forEach((h, i) => {
+    if (i === 1 || i === 5 || i === 8) return; // fewer of them: the cellar is mostly empty
     const v = h.kind === "crawl" ? INK_VARIANT : HUSK_VARIANTS[i % 3 === 1 ? 1 : i % 4 === 3 ? 2 : 0];
     const mesh = makeHuskMesh(v);
-    const o = { mesh, v, tint: v.tint, spd: v.spd, x: h.c + 0.5, z: h.r + 0.5, kind: h.kind, hp: v.hp, mode: "dormant", frozen: 0, stun: 0, wake: 0, y: h.kind === "hang" ? 1.4 : 0.12, vy: 0, t: Math.random() * 6, trig: i === 0 ? 3.4 : 2.5, path: null, repath: 0 };
+    const o = { mesh, v, tint: v.tint, spd: v.spd, x: h.c + 0.5, z: h.r + 0.5, kind: h.kind, hp: v.hp, mode: "dormant", frozen: 0, stun: 0, wake: 0, y: h.kind === "hang" ? 1.4 : 0.12, vy: 0, t: Math.random() * 6, trig: i === 0 ? 3.4 : 2.5, path: null, repath: 0, pop: Math.random() < 0.5, hx: h.c + 0.5, hz: h.r + 0.5 };
     mesh.position.set(o.x, o.y, o.z);
     if (h.kind === "crawl") { mesh.scale.y = 0.4; o.puddle = inkPuddle(o.x, o.z, 0.75); scene.add(o.puddle); } // curled up in its puddle
     scene.add(mesh);
@@ -8334,14 +8457,10 @@ function wakeHusk(h) {
   if (h.mode !== "dormant") return;
   h.mode = "waking";
   markScare();
-  joltCamera(1.1);
+  joltCamera(0.5);
   h.wake = h.kind === "hang" ? 0.9 : 0.5;
-  playBang();
-  playGrowl(1);
-  playVoice("gasp2", 0.8, 3);
-  scareBlackout = 0.5;
-  doorShake = 0.4;
-  if (h.kind === "crawl") playScreech();
+  playGrowl(0.6);
+  if (h.kind === "crawl") playSkitter();
 }
 function spareHandles() {
   return [0, 1, 2].filter((i) => state.inventory["handle" + i]).length - (state.flags.leverFit || []).length;
@@ -8382,7 +8501,7 @@ function hitHusk() {
   const fz = -Math.cos(yawObject.rotation.y);
   let hit = false;
   husks.forEach((h) => {
-    if (h.mode === "dead") return;
+    if (h.mode === "dead" || h.mode === "gone") return;
     const dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz) || 1;
     if (d > 1.9 || (dx * fx + dz * fz) / d < 0.45 || !hasLineOfSight(p.x, p.z, h.x, h.z)) return;
     hit = true;
@@ -8406,22 +8525,54 @@ function hitHusk() {
   });
   return hit;
 }
+// Down here nothing can hurt you: they pop out, stare, creep closer, and are gone before they arrive.
+function vanishHusk(h) {
+  playVanish();
+  h.mode = h.boss ? "dead" : "gone";
+  h.cool = 35 + Math.random() * 45;
+  h.mesh.visible = false;
+  if (h.puddle) h.puddle.visible = false;
+}
+function resetHusk(h) {
+  h.mode = "dormant"; h.mesh.visible = true;
+  h.x = h.hx; h.z = h.hz; h.y = h.kind === "hang" ? 1.4 : 0.12;
+  h.mesh.position.set(h.x, h.y, h.z); h.mesh.scale.y = h.kind === "crawl" ? 0.4 : 1; h.mesh.rotation.set(0, 0, 0);
+  h.fleeing = false; h.fleeT = 0; h.lit = 0; h.hold = 0; h.haunt = 0; h.hp = h.v ? h.v.hp : 2; h.stun = 0; h.frozen = 0;
+  h.pop = Math.random() < 0.5;
+  if (h.puddle) h.puddle.visible = true;
+}
+const phantom = { cd: 14 };
+function updatePhantom(dt) {
+  phantom.cd -= dt;
+  if (phantom.cd > 0 || !audioReady()) return;
+  phantom.cd = 16 + Math.random() * 22;
+  const r = Math.random();
+  if (r < 0.4) { // footsteps that come closer, then stop dead
+    const n = 5 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < n; i++) setTimeout(() => { if (levelOf(yawObject.position.x) === 2) playFootstep(i < n - 3); }, i * (520 - i * 25));
+  } else if (r < 0.6) playScrape();
+  else if (r < 0.8) playMoan();
+  else { playWhisper(0.5); setTimeout(() => playSkitter(), 900 + Math.random() * 1200); }
+}
 function updateHusks(dt) {
   if (state.phase !== "explore" || state.flags.tut === "open" || state.flags.finale) return;
   const p = yawObject.position;
   if (levelOf(p.x) !== 2) return;
   ensureHusks();
+  updatePhantom(dt);
   let near = 0;
+  const awakeN = husks.filter((x) => x.mode === "awake" || x.mode === "waking").length;
   husks.forEach((h) => {
     const m = h.mesh;
     const ud = m.userData;
     h.t += dt;
+    if (h.mode === "gone") { h.cool -= dt; if (h.cool <= 0 && Math.hypot(p.x - h.hx, p.z - h.hz) > 8) resetHusk(h); return; }
     const dx = p.x - h.x, dz = p.z - h.z, d = Math.hypot(dx, dz);
     if (h.mode === "dead") return;
     if (h.mode === "dormant") {
       if (h.kind === "hang") { m.position.y = h.y + Math.sin(h.t * 1.3) * 0.03; m.rotation.z = Math.sin(h.t * 0.9) * 0.05; }
       else m.position.y = 0.12 + Math.sin(h.t * 1.6) * 0.01; // breathing
-      if ((state.flags.huskAlarm || (d < h.trig * noiseMul() && hasLineOfSight(p.x, p.z, h.x, h.z))) && sinceScare() > 6) wakeHusk(h);
+      if (h.pop && awakeN < 2 && (state.flags.huskAlarm || (d < h.trig * noiseMul() && hasLineOfSight(p.x, p.z, h.x, h.z))) && sinceScare() > 6) wakeHusk(h);
       return;
     }
     if (h.mode === "waking") {
@@ -8452,7 +8603,7 @@ function updateHusks(dt) {
       m.rotation.y = away + Math.sin(h.t * 9) * 0.25;
       animateCreature(ud, h.t, 6, 0.7, false);
       m.position.x = h.x; m.position.z = h.z;
-      if (h.fleeT > 5.5 || d > 15) { h.mode = "dead"; m.visible = false; }
+      if (h.fleeT > 5.5 || d > 15) vanishHusk(h);
       return;
     }
     if (entityInBeam(h)) {
@@ -8467,7 +8618,11 @@ function updateHusks(dt) {
     ud.skin.color.set(frozen ? 0x6f93bd : h.tint);
     if (!frozen && h.stun <= 0) {
       h.grace = Math.max(0, (h.grace || 0) - dt);
-      const speed = (los && d < 6 ? 3.6 : 3.0) * h.spd * (1 - h.grace / 0.9); // fast, but it lurches up to speed so you have a moment
+      const stopD = h.boss ? 3.2 : 4.2;
+      h.haunt = (h.haunt || 0) + dt;
+      if (d < stopD + 0.3) h.hold = (h.hold || 0) + dt;
+      if (h.hold > (h.boss ? 6 : 3 + (h.t % 2)) || h.haunt > (h.boss ? 16 : 10)) { vanishHusk(h); return; }
+      const speed = (d > stopD ? 2.1 : 0) * h.spd * (1 - h.grace / 0.9); // creeps closer, never arrives
       h.repath -= dt;
       if (h.repath <= 0 || !h.path) { h.path = entityPath(h.x, h.z, p.x, p.z); h.repath = 0.25; }
       let tx = p.x, tz = p.z;
@@ -8485,7 +8640,7 @@ function updateHusks(dt) {
       animateCreature(ud, h.t, 2.6, 0.7, false);
       if (ud.arms) animateGrinner(ud, h.t);
       if (los) near = Math.max(near, 1 - Math.min(1, d / 7));
-      if (d < 0.9 && los && h.grace <= 0) { caughtByEntity(); return; }
+      if (d <= stopD) m.rotation.y = Math.atan2(dx, dz);
     } else if (frozen) {
       m.position.x = h.x + (Math.random() - 0.5) * 0.02; // shivering in the light
       m.position.z = h.z + (Math.random() - 0.5) * 0.02;
@@ -8495,9 +8650,9 @@ function updateHusks(dt) {
     m.position.x = h.x; m.position.z = h.z;
   });
   if (near > 0) {
-    entityTension = Math.max(entityTension, near);
+    entityTension = Math.max(entityTension, near * 0.5);
     const v = document.getElementById("fear-vignette");
-    setFear(Math.max(parseFloat(v.style.opacity) || 0, near * 0.7));
+    setFear(Math.max(parseFloat(v.style.opacity) || 0, near * 0.35));
   }
 }
 
@@ -8576,6 +8731,7 @@ function gameLoop() {
   doorShake = Math.max(0, doorShake - dt);
   if (doorShake > 0) camera.rotation.z += Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4);
   updateJolt(dt);
+  updateReach(dt);
   applyTension(entityTension);
   updateDoorAnimation(dt);
   updateFluorescents(dt);
