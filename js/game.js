@@ -690,8 +690,6 @@ function resetRun() {
   lastEventKind = "";
   stingIdx = 0;
   voiceCool = 0;
-  if (faceScare && faceScare.el && faceScare.el.parentNode) faceScare.el.parentNode.removeChild(faceScare.el);
-  faceScare = null;
   moveVX = moveVZ = 0;
   setFear(0);
   keys.clear();
@@ -2352,6 +2350,7 @@ function buildWorld() {
   addFluorescents();
   addInkDecor();
   addActivities();
+  addScareProps();
   worldGroup.traverse((o) => { if (o.isPointLight) o.intensity *= 1.1; }); // environment 10% brighter
   NPCS.forEach((npc) => addMarkerSprite(npc.x, npc.y, npc.color, 0.9));
   ITEMS.filter((it) => !state.inventory[it.id] && !it.hidden).forEach((it) => {
@@ -2578,60 +2577,6 @@ function addApartment(a) {
     addBox(0.025, 0.14, 0.03, 0.38, 0, 0.045, 0x8a8a76);
     buildTarget = prev;
   });
-  furn(2.7, 1.95, W, [0.65, 0.6], (b) => {
-    b(0.6, 0.88, 0.62, 0, 0.44, 0, white);
-    [[-0.15, -0.14], [0.15, -0.14], [-0.15, 0.14], [0.15, 0.14]].forEach(([x, z]) => b(0.16, 0.02, 0.16, x, 0.9, z, 0x1a1a1a));
-    b(0.46, 0.3, 0.02, 0, 0.42, 0.32, 0x151515); // oven window
-    b(0.62, 0.2, 0.5, 0, 2.0, -0.05, 0x8a8a84); // range hood
-    b(0.22, 0.45, 0.22, 0, 2.33, -0.16, 0x7a7a76);
-  });
-  furn(2.7, 2.55, W, [0.7, 0.6], (b) => {
-    const wl = 0xa7a597;
-    b(0.6, 1.5, 0.03, 0, 0.75, -0.305, wl); // hollow shell: back, sides, top, base
-    b(0.03, 1.5, 0.64, -0.285, 0.75, 0, wl);
-    b(0.03, 1.5, 0.64, 0.285, 0.75, 0, wl);
-    b(0.6, 0.03, 0.64, 0, 1.485, 0, wl);
-    b(0.6, 0.12, 0.64, 0, 0.06, 0, wl);
-    [0.45, 0.85, 1.2].forEach((y) => b(0.54, 0.015, 0.58, 0, y, 0, 0xbfc4b8));
-    b(0.52, 0.2, 0.5, 0, 0.26, 0, 0x7f8f88); // crisper
-    b(0.09, 0.22, 0.09, -0.15, 0.97, -0.1, 0xe6e4d6); // milk, long past its date
-    b(0.09, 0.05, 0.09, -0.15, 1.1, -0.1, 0x3a5a9a);
-    b(0.08, 0.12, 0.08, 0.05, 0.92, -0.15, 0x6a7a3a);
-    b(0.18, 0.1, 0.16, 0.12, 0.51, -0.05, 0xd8d4c4);
-    b(0.1, 0.02, 0.1, 0.12, 0.57, -0.05, 0x4a6a3a); // mold
-    b(0.2, 0.06, 0.12, -0.1, 0.49, -0.12, 0xc8b890);
-    b(0.14, 0.1, 0.14, 0.1, 1.26, -0.1, 0x3a4a22);
-    [-0.15, -0.05, 0.05].forEach((x, i) => b(0.04, 0.14, 0.04, x, 1.27, 0.1, [0x8a2a22, 0x9a8a22, 0x4a3a22][i]));
-    b(0.2, 0.08, 0.14, -0.05, 0.89, 0.1, 0x6a6a5a);
-    const pv = new THREE.Group();
-    pv.position.set(-0.3, 0, 0.32);
-    buildTarget.add(pv);
-    aptDoors[a.id + "_fridge"] = pv;
-    pv.rotation.y = ((state.flags.doorsOpenA || {})[a.id + "_fridge"]) ? DOOR_OPEN : 0;
-    if (a.id === "apt2") {
-      const lt = new THREE.PointLight(0xd8f0c8, 0, 2.6, 2);
-      lt.userData.on = 1.4;
-      lt.intensity = pv.rotation.y ? 1.4 : 0;
-      lt.position.set(0, 0.9, 0.1);
-      buildTarget.add(lt);
-      aptDoors[a.id + "_fridge_light"] = lt;
-    }
-    const prev = buildTarget;
-    buildTarget = pv;
-    addBox(0.6, 1.48, 0.04, 0.3, 0.76, 0.02, 0xa7a597);
-    addBox(0.03, 0.4, 0.04, 0.54, 1.1, 0.06, 0x77756e);
-    addBox(0.03, 0.3, 0.04, 0.54, 0.5, 0.06, 0x77756e);
-    addBox(0.62, 0.015, 0.045, 0.3, 0.98, 0.02, 0x333330);
-    addBox(0.1, 0.1, 0.01, 0.2, 1.25, 0.05, 0xc84a3a);
-    addBox(0.12, 0.08, 0.01, 0.38, 0.7, 0.05, 0xe0dcc8);
-    buildTarget = prev;
-  });
-  furn(2.85, 1.2, W, null, (b) => {
-    b(0.9, 0.7, 0.32, 0, 1.95, 0, wood);
-    b(0.012, 0.65, 0.02, 0, 1.95, 0.17, darkwood);
-    const door = b(0.4, 0.65, 0.03, 0.5, 1.95, 0.3, wood);
-    door.rotation.y = 0.9; // a cabinet door hanging open
-  });
 
   // ---- bed, nightstand, dresser
   furn(0.55, 1.5, 0, [0.9, 1.8], (b) => {
@@ -2669,14 +2614,6 @@ function addApartment(a) {
   });
 
   // ---- couch (west wall, south end) and a small desk (south-east corner)
-  if (a.id !== "apt2") furn(0.45, 3.05, Math.PI / 2, [0.8, 1.3], (b) => {
-    b(1.3, 0.38, 0.8, 0, 0.23, 0, 0x4a4036);
-    b(1.3, 0.45, 0.2, 0, 0.58, -0.3, 0x4a4036);
-    b(0.18, 0.5, 0.8, -0.56, 0.35, 0, 0x3e362e);
-    b(0.18, 0.5, 0.8, 0.56, 0.35, 0, 0x3e362e);
-    b(0.5, 0.1, 0.55, -0.2, 0.46, 0.08, 0x554a3e);
-    b(0.5, 0.1, 0.55, 0.28, 0.46, 0.08, 0x554a3e);
-  });
   furn(2.45, 3.6, W, [0.5, 0.7], (b) => {
     b(0.7, 0.05, 0.5, 0, 0.74, 0, wood);
     b(0.04, 0.72, 0.46, -0.31, 0.36, 0, darkwood);
@@ -3797,7 +3734,6 @@ if (endingReturnBtn) endingReturnBtn.addEventListener("click", () => {
 });
 
 // ---- the face behind apartment 2's door -------------------------------------------------------------
-let faceScare = null;
 function drawCreepyFace(c) {
   const S = (c.width = c.height = 512);
   const x = c.getContext("2d");
@@ -3919,68 +3855,6 @@ function playScreech() {
   n.start(t);
   n.stop(t + 0.85);
   playBang();
-}
-function startFaceScare() {
-  if (faceScare) return;
-  markScare();
-  playScreamMusic();
-  playVoice("gasp", 0.9, 1);
-  faceScare = { t: 0, shown: false, el: null };
-}
-function updateFaceScare(dt) {
-  const f = faceScare;
-  if (!f) return;
-  f.t += dt;
-  const HIT = 2.5; // the music builds, then it hits
-  if (!f.shown && f.t >= HIT) {
-    f.shown = true;
-    playScreech();
-    playSting(3);
-    try {
-      const wrap = document.createElement("div");
-      wrap.style.cssText = "position:fixed;inset:0;z-index:9999;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden";
-      const mk = () => {
-        const cv = document.createElement("canvas");
-        cv.style.cssText = "position:absolute;height:100vh;max-width:100vw;object-fit:contain";
-        drawCreepyFace(cv);
-        wrap.appendChild(cv);
-        return cv;
-      };
-      f.cvs = [mk(), mk()]; // two different faces that flicker against each other
-      const red = document.createElement("div");
-      red.style.cssText = "position:absolute;inset:0;background:radial-gradient(circle at 50% 42%,rgba(255,0,0,0.0) 20%,rgba(200,0,0,0.75) 100%);mix-blend-mode:multiply;opacity:0";
-      wrap.appendChild(red);
-      const flash = document.createElement("div");
-      flash.style.cssText = "position:absolute;inset:0;background:#fff;opacity:1";
-      wrap.appendChild(flash);
-      document.body.appendChild(wrap);
-      f.el = wrap;
-      f.red = red;
-      f.flash = flash;
-    } catch (e) {}
-  }
-  if (f.shown) {
-    const k = f.t - HIT;
-    if (f.cvs) {
-      // it lunges at you: tiny to enormous in a fraction of a second, then keeps creeping closer, shaking
-      const lunge = 1 - Math.pow(1 - Math.min(k / 0.16, 1), 4);
-      const s = 0.4 + lunge * 1.25 + k * 0.3;
-      const sh = 18 + 40 * (1 - Math.min(k / 0.6, 1));
-      const which = Math.floor(k / 0.07) % 2;
-      f.cvs.forEach((cv, i) => {
-        cv.style.opacity = i === which ? "1" : "0";
-        cv.style.transform = `translate(${(Math.random() - 0.5) * sh}px,${(Math.random() - 0.5) * sh}px) rotate(${(Math.random() - 0.5) * 7}deg) scale(${s * (i ? 1.08 : 1)}, ${s * (i ? 0.94 : 1.04)})`;
-        cv.style.filter = `contrast(${1.5 + Math.random() * 0.6}) saturate(0) brightness(${0.8 + Math.random() * 0.8})`;
-      });
-      if (f.flash) f.flash.style.opacity = String(Math.max(0, 1 - k / 0.09));
-      if (f.red) f.red.style.opacity = String(0.55 + Math.random() * 0.45);
-      f.el.style.filter = Math.random() < 0.22 ? "invert(1)" : "none";
-    }
-    if (k > 1.25) {
-      if (f.el && f.el.parentNode) f.el.parentNode.removeChild(f.el);
-      faceScare = null;
-    }
-  }
 }
 
 // ---- walls and floors: wallpaper, wainscot, tile, wood, carpet, and things hanging on the walls --------------
@@ -6169,9 +6043,6 @@ function nearestInteractable() {
       if (h.loot && isDoorSpot(spotOf(h))) label = (state.flags.doorsOpenA || {})[h.id] ? "Close" : h.label;
       if (h.lever !== undefined) label = (state.flags.leverSeq || []).includes(h.lever) ? "" : (state.flags.leverFit || []).includes(h.lever) ? h.label : (spareHandles() > 0 ? "Fit Handle" : "Bare Lever");
       if (h.hide) label = "Hide";
-      if (h.safe) label = state.flags.safeDone ? "" : "Try Safe";
-      if (h.phone) label = state.flags.phoneDone ? "" : "Answer Phone";
-      if (h.vend) label = state.flags.vendDone ? "" : "Vending Machine";
       if (h.lightSwitch) label = state.flags.apt2Light ? "" : "Flip Light Switch";
       if (h.elevatorDown && state.inventory.elevKey) label = "Use Elevator Key";
       if (h.finaleExit) label = state.flags.finaleWon ? h.label : "";
@@ -6370,7 +6241,6 @@ function handleInteract(pre) {
       state.doorsOpen[door.id] = true;
       playDoorCreak(door);
       setTimeout(() => hintOnce("closeDoor", "You can shut doors behind you: face an open door and press " + kn("interact") + ". It can't open them."), 2200);
-      if (door.id === "apt2" && !(state.flags.faceSeen)) { state.flags.faceSeen = true; startFaceScare(); }
       if (door.id === "hallDoor" && state.entity.mode === "idle") {
         state.entity.mode = "waiting";
         state.entity.timer = ENTITY_SPAWN_DELAY;
@@ -6383,28 +6253,6 @@ function handleInteract(pre) {
       return;
     }
     if (h.hide) { enterHide(h); return; }
-    if (h.safe) { openSafe(h); return; }
-    if (h.phone) {
-      if (state.flags.phoneDone) return;
-      state.flags.phoneDone = true;
-      playWhisper(1.2);
-      setTimeout(() => playVanish(), 2200);
-      markScare();
-      scareBlackout = 0.25;
-      hintOnce("phone", "Static. A slow breath. Then, very close: \"Maria.\"");
-      return;
-    }
-    if (h.vend) {
-      if (state.flags.vendDone) return;
-      if (!state.flags.powerOn) { hintOnce("vendoff", "It's dead."); return; }
-      if (!state.inventory.hallCoin) { hintOnce("vendcoin", "It only takes coins."); return; }
-      state.inventory.hallCoin = false;
-      state.flags.vendDone = true;
-      state.batteries += 2;
-      playWoodCrack(); setTimeout(() => playBang(), 500);
-      showPickup("Batteries x2");
-      return;
-    }
     if (h.id === "boards") {
       if (state.held === "axe") {
         state.flags.boardsChopped = true;
@@ -6779,7 +6627,6 @@ function reachFor(t) {
     else if (it.key || /Key$/.test(it.name)) { key = "key"; line = "A key. There must be a lock for it."; }
     else if (it.id === "axe") { key = "axe"; line = "Heavy. I'll hold on to it."; }
     else if (/^handle\d$/.test(it.id)) { key = "handle"; line = "Some kind of handle."; }
-    else if (it.id === "hallCoin") { key = "coin"; line = "Just a coin."; }
     else if (it.id === "flashlight") { key = "light"; line = "Hopefully it still works."; }
     else if (it.journal) { key = "journal"; line = "John's handwriting."; }
     return { low, dur: low ? 1.5 : 0.85, line, key };
@@ -6787,7 +6634,7 @@ function reachFor(t) {
   if (t.type === "fixture") return { dur: 0.6 };
   if (t.type === "hotspot") {
     const h = HOTSPOTS.find((x) => x.id === t.id);
-    if (!h || h.lever !== undefined || h.hide || h.safe || h.exit || h.finaleExit || h.elevatorDown || h.go || h.loot || h.id === "boards" || h.id === "breaker") return null;
+    if (!h || h.lever !== undefined || h.hide || h.exit || h.finaleExit || h.elevatorDown || h.go || h.loot || h.id === "boards" || h.id === "breaker") return null;
     return { dur: 0.7 };
   }
   return null;
@@ -7140,6 +6987,7 @@ function makeCreature(s) {
   return grp;
 }
 function animateCreature(c, t, speed, near, frozen) {
+  if (c && c.toon) return animateToon(c, t, speed, near, frozen);
   if (!c || !c.limbs) return;
   const gait = t * (3 + speed * 2.2);
   const amp = frozen ? 0 : Math.min(0.6, 0.15 + speed * 0.14);
@@ -8137,9 +7985,9 @@ function addCellarMaze() {
 
 // the husks: starved things that sleep in the maze. The light freezes them; the axe finishes them.
 const HUSK_VARIANTS = [
-  { name: "common", s: 0.8, tint: 0x8e8c84, spd: 1.0, hp: 2 },
-  { name: "pale", s: 0.62, tint: 0xd2d0c4, spd: 1.2, hp: 1 }, // small, bone white, quick
-  { name: "brute", s: 1.05, tint: 0x5c504a, spd: 0.72, hp: 4 }, // big, bruised, slow and hard to put down
+  { name: "tall", s: 1.0, tint: 0x2f2b36, spd: 0.95, hp: 3, form: "tall" },
+  { name: "short", s: 0.85, tint: 0xd8cfb4, spd: 1.5, hp: 1, form: "short" }, // small, bone white, quick
+  { name: "eyes", s: 1.0, tint: 0x000000, spd: 0.9, hp: 1, form: "eyes" }, // big, bruised, slow and hard to put down
 ];
 // "Mr. Grin": an original toy-shop horror. Tall and mustard-yellow with a stitched seam, button eyes and far too many teeth.
 function makeGrinner() {
@@ -8201,8 +8049,83 @@ function spawnGrinner() {
   markScare(); joltCamera(1.4); playBang(); playGrowl(1.4); playWhisper(0.6);
   scareBlackout = 0.8; doorShake = 0.5;
 }
-const INK_VARIANT = { name: "ink", s: 0.8, tint: 0x0b0b10, spd: 1.1, hp: 2, ink: true }; // a melted shape that climbs out of a puddle
+
+// ---- basement creatures: low-poly, flat-shaded, sickly colours; four bodies, none of them friendly ----
+const TOON_CFG = { // torso [rx, ry, rz, y], head [r, y, stretch], shoulders [x, y], arm segments, leg length, sockets
+  tall: { tor: [0.1, 0.8, 0.08, 1.7], hd: [0.11, 2.62, 1.6], sh: [0.13, 2.4], up: 1.2, lo: 1.35, leg: 1.4 }, // nearly touches the ceiling; its fingers drag the floor
+  short: { tor: [0.2, 0.16, 0.18, 0.38], hd: [0.23, 0.74, 1.0], sh: [0.2, 0.5], up: 0.22, lo: 0.3, leg: 0.22, sock: 1 }, // knee-high, nearly all head
+};
+function makeToon(v) {
+  const s = v.s, form = v.form, C = TOON_CFG[form];
+  const grp = new THREE.Group(), body = new THREE.Group();
+  grp.add(body);
+  const mk = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 1, flatShading: true });
+  const skin = mk(v.tint), dark = mk(0x140f0f), glow = new THREE.MeshBasicMaterial({ color: 0xffe27a });
+  const ud = { toon: true, form, skin, limbsT: [], eyes: [], head: null, body, root: grp, s, thread: null, top: 1.7 * s };
+  const P = (geo, m, x, y, z, par) => { const o = new THREE.Mesh(geo, m); o.position.set(x * s, y * s, z * s); (par || body).add(o); return o; };
+  const ball = (r) => new THREE.IcosahedronGeometry(r * s, 0), tube = (a, b, l) => new THREE.CylinderGeometry(a * s, b * s, l * s, 5);
+  const limb = (side, x, y, z, up, lo, th) => {
+    const sh = new THREE.Group(); sh.position.set(x * s, y * s, z * s); body.add(sh);
+    P(tube(th, th * 0.8, up), skin, 0, -up / 2, 0, sh);
+    const el = new THREE.Group(); el.position.set(0, -up * s, 0); sh.add(el);
+    P(tube(th * 0.8, th * 0.4, lo), skin, 0, -lo / 2, 0, el);
+    for (let f = -1; f <= 1; f++) { const c = P(new THREE.ConeGeometry(0.014 * s, 0.14 * s, 4), dark, f * 0.025, -lo - 0.05, 0.02, el); c.rotation.x = Math.PI; } // claws
+    ud.limbsT.push({ sh, el, side });
+  };
+  const eyes = (par, r, y, n) => { // glowing pinpoints; some have black sockets round them
+    for (let i = 0; i < n; i++) {
+      const x = (n === 2 ? (i ? 1 : -1) * 0.42 : (i - (n - 1) / 2) * 0.3) * r, ey = (y + (n > 2 ? ((i * 7) % 3) * 0.04 - 0.04 : 0.1) * r / 0.14);
+      if (C && C.sock) P(ball(r * 0.34), dark, x / s, ey / s, r * 0.82 / s, par);
+      const e = P(ball(r * 0.14), glow, x / s, ey / s, r * 0.95 / s, par); ud.eyes.push(e);
+    }
+  };
+  if (C) {
+    const [rx, ry, rz, ty] = C.tor;
+    P(ball(1), skin, 0, ty, 0).scale.set(rx * s, ry * s, rz * s);
+    const hd = new THREE.Group(); hd.position.set(0, C.hd[1] * s, 0.04 * s); body.add(hd); ud.head = hd;
+    P(ball(C.hd[0]), skin, 0, 0, 0, hd).scale.y = C.hd[2];
+    eyes(hd, C.hd[0] * s, 0, 2);
+    [-1, 1].forEach((sd) => { limb(sd, sd * C.sh[0], C.sh[1], 0, C.up, C.lo, 0.035); P(tube(0.045, 0.03, C.leg), skin, sd * 0.07, C.leg / 2, 0); });
+    ud.top = C.hd[1] * s + C.hd[0] * s;
+  } else if (form === "eyes") { // nothing but two eyes in the dark
+    [-1, 1].forEach((sd) => { const e = P(ball(0.07), glow, sd * 0.12, 1.55, 0); e.scale.set(1.5, 0.7, 0.6); ud.eyes.push(e); });
+    ud.top = 99;
+  } else { // crawler: a low, wide body on four bent limbs with a cluster of eyes
+    P(ball(1), skin, 0, 0.3, 0).scale.set(0.4 * s, 0.17 * s, 0.5 * s);
+    const hd = new THREE.Group(); hd.position.set(0, 0.34 * s, 0.38 * s); body.add(hd); ud.head = hd;
+    eyes(hd, 0.2 * s, 0, 5);
+    [[-1, 0.28], [1, 0.28], [-1, -0.28], [1, -0.28]].forEach(([sd, z]) => limb(sd, sd * 0.3, 0.3, z, 0.35, 0.4, 0.03));
+    ud.top = 0.5 * s;
+  }
+  const th = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1, 4), dark);
+  th.visible = false; grp.add(th); ud.thread = th;
+  grp.userData = ud;
+  return grp;
+}
+function animateToon(c, t, speed, near, frozen) {
+  const ts = Math.floor(t * 10) / 10; // drawn "on twos": ten poses a second, a little too jerky
+  const moving = speed > 0.5, crawl = c.form === "crawler";
+  const bob = moving ? Math.abs(Math.sin(ts * 5.5)) : 0;
+  c.body.position.y = bob * 0.07 * c.s;
+  if (c.head) { c.head.rotation.z = frozen ? 0 : Math.sin(ts * 1.7) * 0.2; c.head.rotation.y = frozen ? 0 : Math.sin(ts * 0.8) * 0.4; }
+  c.limbsT.forEach((l, i) => {
+    const ph = ts * 6 + i * Math.PI;
+    const sw = frozen ? -1.1 : moving ? Math.sin(ph) * 0.7 : Math.sin(ts * 1.6 + i) * 0.1;
+    l.sh.rotation.x = sw;
+    l.sh.rotation.z = l.side * (crawl ? 1.15 : 0.12 + (frozen ? 0.9 : 0.05));
+    l.el.rotation.x = -(0.4 + (frozen ? 0.5 : Math.max(0, Math.sin(ph)) * 0.5));
+  });
+  const k = frozen ? 1.8 : Math.sin(ts * 9) > 0.96 ? 0.1 : 1; // eyes flare in the light; a rare blink
+  c.eyes.forEach((e) => e.scale.setScalar(k));
+  if (c.thread) { // it can hang from the ceiling on a strand of ink
+    const L = 3.0 - c.root.position.y - c.top;
+    c.thread.visible = L > 0.1;
+    if (L > 0.1) { c.thread.scale.y = L; c.thread.position.y = c.top + L / 2; }
+  }
+}
+const INK_VARIANT = { name: "ink", s: 0.9, tint: 0x3d3752, spd: 1.1, hp: 2, form: "crawler" }; // a melted shape that climbs out of a puddle
 function makeHuskMesh(v) {
+  if (v && v.form) return makeToon(v);
   const m = makeCreature((v || HUSK_VARIANTS[0]).s);
   const sk = m.userData.skin;
   if (v && sk) {
@@ -8245,7 +8168,7 @@ function addInkDecor() {
   }
 }
 let dripT = 4;
-// ---- noise, stamina bar, lockers to hide in, and a wall safe with a code --------------------------------
+// ---- noise, stamina bar, lockers to hide in --------------------------------
 function noiseMul() {
   const moving = Math.hypot(moveVX, moveVZ) > 0.4;
   return loudT > 0 ? 1.8 : sprintK > 0.5 ? 1.6 : moving ? 0.8 : 0.5;
@@ -8305,116 +8228,15 @@ function updateHiding(dt) {
   if (hd.locked && hd.breath > 0.4) hd.locked = false;
 }
 
-const SAFE_CODE = "4317"; // the doors, the third week, the one door, the gauge: in the order John wrote them
-let safeEl = null, safeDigits = [0, 0, 0, 0], safeSel = 0;
-function drawSafe() {
-  [...safeEl.querySelectorAll(".sd")].forEach((b, i) => { b.textContent = safeDigits[i]; b.style.outline = i === safeSel ? "2px solid #d4b04a" : "none"; });
-}
-function closeSafe() {
-  if (!safeEl || safeEl.style.display === "none") return;
-  safeEl.style.display = "none";
-  state.phase = "explore";
-  renderer.domElement.requestPointerLock();
-}
-function openSafe(h) {
-  if (state.flags.safeDone) return;
-  if (!safeEl) {
-    safeEl = document.createElement("div");
-    safeEl.style.cssText = "position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.75);z-index:60;font-family:'Courier New',monospace;";
-    safeEl.innerHTML = '<div style="background:#2b2d2c;border:3px solid #111;border-radius:8px;padding:26px 30px;text-align:center;box-shadow:0 8px 30px #000"><div style="display:flex;gap:12px;justify-content:center;margin-bottom:16px">' +
-      [0, 1, 2, 3].map((i) => '<button class="sd" data-i="' + i + '" style="width:58px;height:78px;font:bold 38px \'Courier New\',monospace;background:#0e100f;color:#e6e0c8;border:2px solid #555;border-radius:4px;cursor:pointer">0</button>').join("") +
-      '</div><button id="safe-ok" style="padding:8px 28px;font:16px \'Courier New\',monospace;background:#8a1c14;color:#eee;border:none;border-radius:4px;cursor:pointer">Open</button> <button id="safe-x" style="padding:8px 18px;font:16px \'Courier New\',monospace;background:#222;color:#aaa;border:1px solid #444;border-radius:4px;cursor:pointer">Back</button></div>';
-    document.body.appendChild(safeEl);
-    safeEl.querySelectorAll(".sd").forEach((b) => b.addEventListener("click", () => { const i = +b.dataset.i; safeSel = i; safeDigits[i] = (safeDigits[i] + 1) % 10; drawSafe(); }));
-    safeEl.querySelector("#safe-x").addEventListener("click", closeSafe);
-    safeEl.querySelector("#safe-ok").addEventListener("click", trySafe);
-    window.addEventListener("keydown", (e) => {
-      if (!safeEl || safeEl.style.display === "none") return;
-      e.stopImmediatePropagation(); e.preventDefault();
-      if (e.key === "Escape") closeSafe();
-      else if (e.key === "Enter") trySafe();
-      else if (/^[0-9]$/.test(e.key)) { safeDigits[safeSel] = +e.key; safeSel = Math.min(3, safeSel + 1); drawSafe(); }
-      else if (e.key === "ArrowLeft") { safeSel = Math.max(0, safeSel - 1); drawSafe(); }
-      else if (e.key === "ArrowRight") { safeSel = Math.min(3, safeSel + 1); drawSafe(); }
-      else if (e.key === "ArrowUp") { safeDigits[safeSel] = (safeDigits[safeSel] + 1) % 10; drawSafe(); }
-      else if (e.key === "ArrowDown") { safeDigits[safeSel] = (safeDigits[safeSel] + 9) % 10; drawSafe(); }
-    }, true);
-  }
-  state.phase = "reading";
-  keys.clear();
-  if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
-  safeSel = 0;
-  drawSafe();
-  safeEl.style.display = "flex";
-}
-function trySafe() {
-  if (safeDigits.join("") === SAFE_CODE) {
-    state.flags.safeDone = true;
-    closeSafe();
-    state.batteries += 3;
-    playWoodCrack(); setTimeout(() => playBang(), 400);
-    showPickup("Batteries x3");
-    setTimeout(() => showPickup("Silver Locket"), 1400);
-    state.inventory.locket = true;
-    buildWorld();
-  } else {
-    playBang();
-    loudT = 1;
-    doorShake = 0.25;
-    safeDigits = [0, 0, 0, 0]; safeSel = 0; drawSafe();
-  }
-}
-
-// the lobby payphone rings until you answer it; the vending machine upstairs hums
-let phoneT = 3;
-function updatePhone(dt) {
-  if (state.phase !== "explore" || state.flags.phoneDone || !state.inventory.flashlight) return;
-  const p = yawObject.position;
-  if (levelOf(p.x) !== 0 || isOutside() || Math.hypot(p.x - 1.2, p.z - 10.5) > 16) return;
-  phoneT -= dt;
-  if (phoneT > 0 || !audioReady()) return;
-  phoneT = 4.5;
-  const t = audioCtx.currentTime;
-  for (let k = 0; k < 6; k++) {
-    const o = audioCtx.createOscillator(), o2 = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.frequency.value = 1180; o2.frequency.value = 1420; o.type = o2.type = "square";
-    const at = t + k * 0.09 + (k > 2 ? 0.25 : 0);
-    g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.045, at + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.07);
-    o.connect(g); o2.connect(g); g.connect(audioCtx.destination); o.start(at); o2.start(at); o.stop(at + 0.08); o2.stop(at + 0.08);
-  }
-}
 function addActivities() {
   const lvl = levelOf(yawObject.position.x);
   const M = (c, r, m) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
-  if (lvl === 0 && yawObject.position.x < 21) {
-    addBox(0.18, 0.4, 0.28, 1.12, 1.45, 10.5, 0x1d1d1f);          // payphone box on the lobby wall
-    addBox(0.05, 0.28, 0.07, 1.25, 1.5, 10.38, 0x0c0c0d);          // handset
-    addBox(0.04, 0.12, 0.2, 1.24, 1.38, 10.5, 0x6a6a68);           // dial plate
-    const hit = ITEMS.find((i) => i.id === "hallCoin");
-    if (hit && !state.inventory.hallCoin && !state.flags.vendDone) { const c = addBox(0.07, 0.008, 0.07, hit.x, 0.02, hit.y, 0xd4b04a); c.rotation.y = 0.6; }
-  }
   const locker = (x, z, fx, fz) => { // a tall steel locker with vent slits
     addBox(Math.abs(fx) > 0 ? 0.62 : 0.8, 2.0, Math.abs(fx) > 0 ? 0.8 : 0.62, x, 1.0, z, 0x3c4640);
     for (let k = 0; k < 4; k++) addBox(Math.abs(fx) > 0 ? 0.02 : 0.4, 0.03, Math.abs(fx) > 0 ? 0.4 : 0.02, x + fx * 0.32, 1.6 + k * 0.06, z + fz * 0.32, 0x0a0c0b);
     addBox(Math.abs(fx) > 0 ? 0.03 : 0.04, 0.12, Math.abs(fx) > 0 ? 0.04 : 0.03, x + fx * 0.33, 1.05, z + fz * 0.33 + (fx ? 0.25 : 0), 0x888a86);
   };
   HOTSPOTS.filter((h) => h.hide && levelOf(h.x) === lvl).forEach((h) => locker(h.lx, h.ly, h.yaw === -Math.PI / 2 ? 1 : 0, h.yaw === Math.PI ? 1 : 0));
-  if (lvl === 0 && yawObject.position.x < 21) { // the wall safe in the lobby
-    addBox(0.3, 0.5, 0.5, 1.2, 1.2, 12.45, 0x2a2c2d);
-    addBox(0.04, 0.4, 0.4, 1.38, 1.2, 12.45, state.flags.safeDone ? 0x111111 : 0x3a3d3f);
-    addBox(0.05, 0.08, 0.08, 1.42, 1.22, 12.3, 0x9a9a96);
-  }
-  if (lvl === 1) {
-    addBox(0.95, 1.9, 0.7, 30.0, 0.95, 1.0, 0x23405a);              // vending machine
-    addBox(0.7, 1.1, 0.02, 30.0, 1.15, 1.36, 0x0a0f12);            // dark glass
-    addBox(0.7, 0.05, 0.03, 30.0, 0.38, 1.37, 0x111111);            // dispensing slot
-    const lit = !state.flags.vendDone;
-    const glow = new THREE.PointLight(0x7fd0ff, lit ? 1.4 : 0.15, 5, 2);
-    glow.position.set(30.0, 1.4, 1.9);
-    worldGroup.add(glow);
-    if (lit) flickerLights.push({ light: glow, base: 1.4, phase: 4.4 });
-    [0.75, 1.1, 1.45, 1.8].forEach((y, i) => [-0.22, 0, 0.22].forEach((dx, j) => addBox(0.12, 0.2, 0.05, 30.0 + dx, y - 0.1, 1.33, (i + j) % 2 ? 0x8a2a2a : 0xcaa84a)));
-  }
 }
 function updateInkDrips(dt) {
   if (state.phase !== "explore" || levelOf(yawObject.position.x) === 0 || isOutside()) return;
@@ -8429,11 +8251,14 @@ function updateInkDrips(dt) {
 }
 function ensureHusks() {
   if (husks.length || typeof CELLAR === "undefined") return;
-  CELLAR.husks.forEach((h, i) => {
+  let ck = 0;
+  CELLAR.husks.forEach((h0, i) => {
     if (i === 1 || i === 5 || i === 8) return; // fewer of them: the cellar is mostly empty
-    const v = h.kind === "crawl" ? INK_VARIANT : HUSK_VARIANTS[i % 3 === 1 ? 1 : i % 4 === 3 ? 2 : 0];
+    const h = { ...h0 };
+    if (h.kind === "crawl" && ++ck % 3 !== 1) h.kind = "walk"; // only every third one is a crawler; the others stand
+    const v = h0.kind === "crawl" && ck % 3 === 1 ? INK_VARIANT : h0.kind === "crawl" ? HUSK_VARIANTS[ck % 3 === 2 ? 2 : 1] : h.kind === "crawl" ? INK_VARIANT : HUSK_VARIANTS[[0, 0, 2, 0, 1, 0, 2, 1, 0, 0, 2][i] || 0]; // tall, short, eyes
     const mesh = makeHuskMesh(v);
-    const o = { mesh, v, tint: v.tint, spd: v.spd, x: h.c + 0.5, z: h.r + 0.5, kind: h.kind, hp: v.hp, mode: "dormant", frozen: 0, stun: 0, wake: 0, y: h.kind === "hang" ? 1.4 : 0.12, vy: 0, t: Math.random() * 6, trig: i === 0 ? 3.4 : 2.5, path: null, repath: 0, pop: Math.random() < 0.5, hx: h.c + 0.5, hz: h.r + 0.5 };
+    const o = { mesh, v, tint: v.tint, spd: v.spd, x: h.c + 0.5, z: h.r + 0.5, kind: h.kind, hp: v.hp, mode: "dormant", frozen: 0, stun: 0, wake: 0, y: h.kind === "hang" ? 1.4 : 0.12, vy: 0, t: Math.random() * 6, trig: i === 0 ? 3.4 : 2.5, path: null, repath: 0, pop: v.form === "eyes" || Math.random() < 0.5, hx: h.c + 0.5, hz: h.r + 0.5 };
     mesh.position.set(o.x, o.y, o.z);
     if (h.kind === "crawl") { mesh.scale.y = 0.4; o.puddle = inkPuddle(o.x, o.z, 0.75); scene.add(o.puddle); } // curled up in its puddle
     scene.add(mesh);
@@ -8516,7 +8341,7 @@ function hitHusk() {
   const fz = -Math.cos(yawObject.rotation.y);
   let hit = false;
   husks.forEach((h) => {
-    if (h.mode === "dead" || h.mode === "gone") return;
+    if (h.mode === "dead" || h.mode === "gone" || h.mode === "fading") return;
     const dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz) || 1;
     if (d > 1.9 || (dx * fx + dz * fz) / d < 0.45 || !hasLineOfSight(p.x, p.z, h.x, h.z)) return;
     hit = true;
@@ -8541,19 +8366,119 @@ function hitHusk() {
   return hit;
 }
 // Down here nothing can hurt you: they pop out, stare, creep closer, and are gone before they arrive.
-function vanishHusk(h) {
-  playVanish();
-  h.mode = h.boss ? "dead" : "gone";
+function vanishHusk(h, fast) {
+  if (h.mode === "fading") return;
+  h.fadeRate = fast ? 6 : 0.9;
+  // it doesn't just pop out: it locks onto you, jerks, stretches thin and tears out of the world
+  h.final = h.boss ? "dead" : "gone";
+  h.mode = "fading"; h.fadeT = 0;
+  h.s0 = { x: h.mesh.scale.x, y: h.mesh.scale.y, z: h.mesh.scale.z };
   h.cool = 35 + Math.random() * 45;
-  h.mesh.visible = false;
+  playVanish(); if (!fast) { playGrowl(0.35); joltCamera(0.3); }
   if (h.puddle) h.puddle.visible = false;
+}
+
+// ---- small jumpscares with props: a chair that slides on its own, a lamp that topples and breaks ----
+const PROP_SCARES = [
+  { id: "chair", at: { x: 14.7, z: 3.7 }, to: { x: 14.15, z: 3.0 }, trigger: { x: 14.5, z: 2.4, r: 1.3 } }, // John's apartment
+  { id: "lamp", at: { x: 7.6, z: 3.55 }, trigger: { x: 6.9, z: 2.7, r: 1.2 } },                           // the desk in apartment 2
+];
+let propObjs = {};
+function playShatter() {
+  if (!audioReady()) return;
+  const t = audioCtx.currentTime, n = audioCtx.createBufferSource(), hp = audioCtx.createBiquadFilter(), g = audioCtx.createGain();
+  n.buffer = noiseBuf; hp.type = "highpass"; hp.frequency.value = 3200;
+  g.gain.setValueAtTime(0.5, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+  n.connect(hp); hp.connect(g); g.connect(audioCtx.destination); n.start(t); n.stop(t + 0.6);
+  for (let k = 0; k < 5; k++) {
+    const o = audioCtx.createOscillator(), og = audioCtx.createGain(), at = t + 0.08 + k * 0.07;
+    o.frequency.value = 2600 + Math.random() * 3500; og.gain.setValueAtTime(0.0001, at); og.gain.exponentialRampToValueAtTime(0.06, at + 0.005); og.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+    o.connect(og); og.connect(audioCtx.destination); o.start(at); o.stop(at + 0.14);
+  }
+}
+function addScareProps() {
+  propObjs = {};
+  const done = state.flags.props || {};
+  const wood = new THREE.MeshStandardMaterial({ color: 0x4a3524, roughness: 0.9 });
+  const mk = (par, w, h, d, x, y, z, m) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m || wood); o.position.set(x, y, z); par.add(o); return o; };
+  PROP_SCARES.forEach((def) => {
+    if (levelOf(def.at.x) !== levelOf(yawObject.position.x)) return;
+    const g = new THREE.Group();
+    if (def.id === "chair") {
+      mk(g, 0.42, 0.05, 0.42, 0, 0.45, 0); mk(g, 0.42, 0.45, 0.04, 0, 0.7, -0.2);
+      [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => mk(g, 0.04, 0.45, 0.04, a * 0.18, 0.22, b * 0.18));
+      const p = done.chair ? def.to : def.at;
+      g.position.set(p.x, 0, p.z); g.rotation.y = done.chair ? 1.3 : 0.4;
+    } else {
+      const brass = new THREE.MeshStandardMaterial({ color: 0x8a7440, roughness: 0.5, metalness: 0.5 });
+      const shade = new THREE.MeshStandardMaterial({ color: 0xcfc3a0, roughness: 1, side: THREE.DoubleSide });
+      mk(g, 0.16, 0.03, 0.16, 0, 0.015, 0, brass); mk(g, 0.025, 0.3, 0.025, 0, 0.18, 0, brass);
+      const sh = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.17, 0.2, 10, 1, true), shade); sh.position.y = 0.4; g.add(sh);
+      if (done.lamp) { g.position.set(def.at.x, 0.17, def.at.z - 0.35); g.rotation.x = -Math.PI / 2; }
+      else g.position.set(def.at.x, 0.77, def.at.z);
+    }
+    worldGroup.add(g);
+    propObjs[def.id] = { g, def, t: -1 };
+  });
+}
+function updateProps(dt) {
+  if (state.phase !== "explore") return;
+  if (!state.flags.props) state.flags.props = {};
+  const p = yawObject.position;
+  PROP_SCARES.forEach((def) => {
+    const o = propObjs[def.id];
+    if (!o) return;
+    if (o.t < 0 && !state.flags.props[def.id] && Math.hypot(p.x - def.trigger.x, p.z - def.trigger.z) < def.trigger.r) {
+      state.flags.props[def.id] = true; o.t = 0; o.hit = false;
+      if (def.id === "chair") playScrape();
+    }
+    if (o.t < 0 || o.t >= 99) return;
+    o.t += dt;
+    if (def.id === "chair") {
+      const k = Math.min(1, o.t / 0.55), e = 1 - (1 - k) * (1 - k);
+      o.g.position.set(def.at.x + (def.to.x - def.at.x) * e, 0, def.at.z + (def.to.z - def.at.z) * e);
+      o.g.rotation.y = 0.4 + 0.9 * e;
+      if (k >= 1) { playKnock(); joltCamera(0.5); markScare(); o.t = 99; }
+    } else {
+      const t = o.t;
+      if (t < 0.3) o.g.rotation.x = -0.9 * (t / 0.3) * (t / 0.3); // it tips...
+      else {
+        const f = t - 0.3, y = 0.77 - 0.5 * 9.8 * f * f;           // ...and falls off the desk
+        o.g.rotation.x = -0.9 - Math.min(1, f / 0.5) * 0.67;
+        o.g.position.set(def.at.x, Math.max(0.17, y), def.at.z - 0.35 * Math.min(1, f / 0.5));
+        if (y <= 0.17 && !o.hit) {
+          o.hit = true; playShatter(); joltCamera(0.9); markScare();
+          const m = new THREE.MeshStandardMaterial({ color: 0xdfe8ea, roughness: 0.3 });
+          for (let k = 0; k < 6; k++) { const s = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.004, 0.02), m); s.position.set(def.at.x + (Math.random() - 0.5) * 0.5, 0.01, def.at.z - 0.35 + (Math.random() - 0.5) * 0.5); s.rotation.y = Math.random() * 6; worldGroup.add(s); }
+          o.t = 99;
+        }
+      }
+    }
+  });
+}
+function updateFading(h, dt, dx, dz) {
+  const m = h.mesh, ud = m.userData;
+  h.fadeT += dt;
+  const f = Math.min(1, h.fadeT * (h.fadeRate || 0.9));
+  m.rotation.y += (Math.atan2(dx, dz) - m.rotation.y) * Math.min(1, dt * 14); // snaps to face you
+  const j = 0.05 * Math.sin(f * Math.PI);
+  m.position.x = h.x + (Math.random() - 0.5) * j * 2; m.position.z = h.z + (Math.random() - 0.5) * j * 2;
+  m.scale.set(h.s0.x * (1 - 0.92 * f * f), h.s0.y * (1 + 1.3 * f * f), h.s0.z * (1 - 0.92 * f * f));
+  m.position.y = (h.kind === "hang" ? h.y : 0) + (Math.random() - 0.5) * 0.04 * f;
+  if (ud.skin) ud.skin.color.setRGB(1 - f * 0.9, 1 - f * 0.95, 1 - f * 0.95).multiplyScalar(0.9);
+  m.visible = f < 0.25 || Math.random() > f * 0.85; // stutters out like a dying tube
+  if (f >= 1) {
+    m.visible = false; m.scale.set(h.s0.x, h.s0.y, h.s0.z);
+    if (ud.skin) ud.skin.color.set(h.tint);
+    h.mode = h.final;
+  }
 }
 function resetHusk(h) {
   h.mode = "dormant"; h.mesh.visible = true;
   h.x = h.hx; h.z = h.hz; h.y = h.kind === "hang" ? 1.4 : 0.12;
-  h.mesh.position.set(h.x, h.y, h.z); h.mesh.scale.y = h.kind === "crawl" ? 0.4 : 1; h.mesh.rotation.set(0, 0, 0);
+  h.mesh.position.set(h.x, h.y, h.z); h.mesh.scale.set(1, h.kind === "crawl" ? 0.4 : 1, 1); h.mesh.rotation.set(0, 0, 0);
   h.fleeing = false; h.fleeT = 0; h.lit = 0; h.hold = 0; h.haunt = 0; h.hp = h.v ? h.v.hp : 2; h.stun = 0; h.frozen = 0;
-  h.pop = Math.random() < 0.5;
+  h.pop = h.v.form === "eyes" || Math.random() < 0.5;
   if (h.puddle) h.puddle.visible = true;
 }
 const phantom = { cd: 14 };
@@ -8581,6 +8506,14 @@ function updateHusks(dt) {
     const m = h.mesh;
     const ud = m.userData;
     h.t += dt;
+    if (h.mode === "fading") { updateFading(h, dt, p.x - h.x, p.z - h.z); return; }
+    if (h.v && h.v.form === "eyes" && (h.mode === "dormant" || h.mode === "awake")) { // look straight at it and it is gone
+      const ex = h.x - p.x, ez = h.z - p.z, ed = Math.hypot(ex, ez) || 1, yw = yawObject.rotation.y;
+      if ((-Math.sin(yw) * ex - Math.cos(yw) * ez) / ed > 0.93 && ed < 16 && hasLineOfSight(p.x, p.z, h.x, h.z)) {
+        h.lookT = (h.lookT || 0) + dt;
+        if (h.lookT > 0.1) { h.lookT = 0; vanishHusk(h, true); return; }
+      } else h.lookT = 0;
+    }
     if (h.mode === "gone") { h.cool -= dt; if (h.cool <= 0 && Math.hypot(p.x - h.hx, p.z - h.hz) > 8) resetHusk(h); return; }
     const dx = p.x - h.x, dz = p.z - h.z, d = Math.hypot(dx, dz);
     if (h.mode === "dead") return;
@@ -8730,7 +8663,6 @@ function gameLoop() {
   updateHiding(dt);
   updateBars(dt);
   updateInkDrips(dt);
-  updatePhone(dt);
   updateFinale(dt);
   updateBreaker(dt);
   updateScares(dt);
@@ -8740,13 +8672,13 @@ function gameLoop() {
   updateDoorAnims(dt);
   updateWindowRun(dt);
   updateBedEyes(dt);
-  updateFaceScare(dt);
   updateDust(dt);
   updateMusic(dt);
   doorShake = Math.max(0, doorShake - dt);
   if (doorShake > 0) camera.rotation.z += Math.sin(performance.now() / 18) * 0.012 * (doorShake / 0.4);
   updateJolt(dt);
   updateReach(dt);
+  updateProps(dt);
   applyTension(entityTension);
   updateDoorAnimation(dt);
   updateFluorescents(dt);
