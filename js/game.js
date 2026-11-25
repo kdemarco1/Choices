@@ -5863,11 +5863,17 @@ function measureBeam(dt) {
     beamTick = 0.06;
     try {
       if (!beamRay) beamRay = new THREE.Raycaster();
-      camera.getWorldPosition(_bmO || (_bmO = new THREE.Vector3()));
-      camera.getWorldDirection(_bmD || (_bmD = new THREE.Vector3()));
-      beamRay.set(_bmO, _bmD);
-      beamRay.far = 6;
-      const hit = beamRay.intersectObject(worldGroup, true).find((h) => h.object && h.object.isMesh !== false);
+
+camera.getWorldPosition(_bmO || (_bmO = new THREE.Vector3()));
+camera.getWorldDirection(_bmD || (_bmD = new THREE.Vector3()));
+
+beamRay.set(_bmO, _bmD);
+beamRay.camera = camera;
+beamRay.far = 6;
+
+const hit = beamRay
+  .intersectObject(worldGroup, true)
+  .find((h) => h.object && h.object.isMesh === true);
       beamDist = hit && hit.distance != null ? hit.distance : 15;
     } catch (e) { beamDist = 15; }
     // backup: march the view ray through the map, so walls and floors count even if the mesh test misses
